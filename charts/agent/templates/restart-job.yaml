@@ -1,12 +1,4 @@
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: {{ include "vicegerent-agent.name" . }}-restart
-  namespace: agent-sandbox
-  annotations:
-    helm.sh/hook: pre-install,pre-upgrade
-    helm.sh/hook-delete-policy: before-hook-creation
+{{- define "vicegerent-agent.restartJob.spec" -}}
 spec:
   backoffLimit: 3
   template:
@@ -95,3 +87,11 @@ spec:
             name: {{ include "vicegerent-agent.name" . }}-approval-policy
         - name: tmp
           emptyDir: {}
+{{- end -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "vicegerent-agent.name" . }}-restart-{{ include "vicegerent-agent.restartJob.spec" . | sha256sum | trunc 8 }}
+  namespace: agent-sandbox
+{{ include "vicegerent-agent.restartJob.spec" . }}
