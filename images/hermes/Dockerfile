@@ -737,6 +737,15 @@ COPY patches/0039-runtime-footer-cost-field.py /tmp/0039-runtime-footer-cost-fie
 RUN /opt/hermes/.venv/bin/python /tmp/0039-runtime-footer-cost-field.py
 RUN rm -f /tmp/0039-runtime-footer-cost-field.py
 
+# Add a native /chatter command (Slack bang-alias !chatter) that toggles
+# display.interim_assistant_messages for the current session only --
+# in-memory, never persisted to config.yaml, resets at conversation
+# boundaries like /reasoning's session override. Adds wholly new
+# functionality with no upstream equivalent; no removal condition.
+COPY patches/0040-interim-assistant-messages-session-toggle.py /tmp/0040-interim-assistant-messages-session-toggle.py
+RUN /opt/hermes/.venv/bin/python /tmp/0040-interim-assistant-messages-session-toggle.py
+RUN rm -f /tmp/0040-interim-assistant-messages-session-toggle.py
+
 # The custom provider profile (Ollama/vLLM/llama.cpp/GLM-ARK/gpt-5.4-via-
 # agentgateway -- anything registered as provider: custom) unconditionally
 # emitted extra_body.think=False whenever reasoning was disabled. The
