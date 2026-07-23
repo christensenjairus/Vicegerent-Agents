@@ -1,6 +1,6 @@
 # Vicegerent Agent Instructions
 
-Vicegerent is the infra-agent platform: credential-isolated, egress-locked, harness-agnostic agent sandboxes on a local Kind cluster (Cilium CNI), managed by Flux. The same hardened sandbox runs whichever coding agent you point it at (Hermes, Claude Code, Codex); the git repo is named `vicegerent-agents`; everything inside it uses the name `vicegerent`.
+Vicegerent is the infra-agent platform: credential-isolated, egress-locked, harness-agnostic agent sandboxes on a local Kind cluster (Cilium CNI), managed by Flux. The same hardened sandbox runs whichever coding agent you point it at (Hermes, Claude Code, Codex, OpenCode); the git repo is named `vicegerent-agents`; everything inside it uses the name `vicegerent`.
 
 ## Always
 

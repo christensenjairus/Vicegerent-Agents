@@ -6,7 +6,7 @@ because the resolved token happens to be our sandbox's placeholder value.
 Context
 -------
 This platform sets ANTHROPIC_API_KEY="none" in the sandbox env (see  # pragma: allowlist secret
-_sandbox.tpl) so Claude Code / Codex / Hermes clients have a non-empty
+_sandbox.tpl) so Claude Code / Codex / OpenCode / Hermes clients have a non-empty
 credential string to send -- the real upstream key is injected by
 agentgateway and the value never leaves the pod (egress proxy scrubs it
 in transit either way). "none" is intentionally chosen because it IS on
