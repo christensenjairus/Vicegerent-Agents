@@ -87,6 +87,16 @@ data:
     # 2048 chars is generous for all legitimate API/search use cases.
     MAX_URL_LENGTH = 2048
 
+    # Caps the logged MCP-RESPONSE result/error payload. Tool call ARGUMENTS
+    # (MCP-CALL, uncapped) are typically small; tool RESULTS can be huge (full
+    # file reads, long command output), and this proxy's logs share
+    # VictoriaLogs' cluster-wide 5GiB disk cap with three other sources
+    # (infrastructure/controllers/victoria-logs) — this bounds a pathological
+    # single response, not aggregate volume (even 10k calls/day at this cap is
+    # a few percent of the budget). Generous on purpose so ordinary tool
+    # output is never truncated, only outliers.
+    MAX_MCP_RESPONSE_LOG_LENGTH = 32768
+
     # In-cluster service hostnames — exempt from method/FQDN enforcement only (POST
     # allowed). Secret scrubbing (headers, URL, body) applies to them too; see request().
     INTERNAL_SUFFIXES = (".cluster.local", ".svc")
@@ -354,10 +364,21 @@ data:
         # Sorted by count desc for readability; e.g. "jwt:15,phone:57".
         return ",".join(f"{k}:{v}" for k, v in sorted(breakdown.items(), key=lambda kv: -kv[1]))
 
-    def _mcp_tool_calls(flow: http.HTTPFlow) -> list[tuple[str, object]]:
-        # Extract (tool, arguments) for every JSON-RPC tools/call in the request
-        # body; [] for anything that isn't one. Only the HTTP vmcp server transits
-        # this proxy (mnemosyne is stdio/local), so every call here is vmcp's
+    def _truncate_for_log(text: str, max_len: int) -> str:
+        # Truncated form is for human/grep consumption only — it is not valid
+        # JSON and must not be parsed back out.
+        if len(text) <= max_len:
+            return text
+        return text[:max_len] + f"...(truncated, {len(text)} bytes total)"
+
+    def _mcp_tool_calls(flow: http.HTTPFlow) -> list[tuple[object, str, object]]:
+        # Extract (id, tool, arguments) for every JSON-RPC tools/call in the
+        # request body; [] for anything that isn't one. id is the JSON-RPC
+        # request id, echoed back in the response — used to match this call to
+        # its result/error in _mcp_tool_responses (response() below), since
+        # client=ip:port alone doesn't disambiguate concurrent/keep-alive calls
+        # from the same sandbox. Only the HTTP vmcp server transits this proxy
+        # (mnemosyne is stdio/local), so every call here is vmcp's
         # call_tool/find_tool wrapper — call_tool is unwrapped so the REAL nested
         # tool surfaces. Fail-quiet on any parse error: logging must never break
         # the request path. Runs AFTER body redaction (request() below), so the
@@ -373,7 +394,7 @@ data:
             return []
         # Accept a single JSON-RPC object or a batch (list of them).
         entries = msg if isinstance(msg, list) else [msg]
-        calls: list[tuple[str, object]] = []
+        calls: list[tuple[object, str, object]] = []
         for entry in entries:
             if not isinstance(entry, dict) or entry.get("method") != "tools/call":
                 continue
@@ -384,13 +405,95 @@ data:
             args = params.get("arguments")
             if not isinstance(args, dict):
                 args = {}
+            call_id = entry.get("id")
             # Unwrap vmcp's call_tool wrapper to surface the real tool + its params.
             if name == "call_tool" and isinstance(args.get("tool_name"), str):
                 inner = args.get("parameters")
-                calls.append((args["tool_name"], inner if isinstance(inner, dict) else {}))
+                calls.append((call_id, args["tool_name"], inner if isinstance(inner, dict) else {}))
             else:
-                calls.append((name if isinstance(name, str) else "?", args))
+                calls.append((call_id, name if isinstance(name, str) else "?", args))
         return calls
+    def _mcp_response_entries(flow: http.HTTPFlow) -> list[dict] | None:
+        # Parse the JSON-RPC response entries (single object or batch) out of
+        # flow.response, accepting either a plain application/json body or a
+        # single-event text/event-stream body carrying one "data: <json>" line —
+        # the streamable-HTTP transport lets agentgateway answer a tools/call
+        # either way (mirrors mcp-cerbos-shim's extractJSONRPCBody,
+        # images/mcp-cerbos-shim/internal/upstream/client.go, which hits this
+        # SAME agentgateway vmcp route and has to handle both shapes). Chunked
+        # transfer-encoding needs no special-casing here — it's a wire encoding,
+        # not a content framing, and flow.response.get_text() already returns the
+        # fully assembled body regardless of it (this addon never sets
+        # flow.response.stream, so mitmproxy fully buffers before response()
+        # fires). Returns None if unparseable/not JSON-RPC-shaped — fail-quiet,
+        # logging must never break the response path.
+        if not flow.response or not flow.response.content:
+            return None
+        ct = flow.response.headers.get("content-type", "").split(";")[0].strip().lower()
+        try:
+            text = flow.response.get_text(strict=False)
+        except Exception:
+            return None
+        if ct == "application/json":
+            raw = text
+        elif ct == "text/event-stream":
+            raw = None
+            for line in text.split("\n"):
+                line = line.strip()
+                if line.startswith("data:"):
+                    raw = line[len("data:"):].strip()
+                    break
+            if raw is None:
+                return None
+            # This body bypassed the main response()-body redaction above (which
+            # skips SSE to avoid buffering issues) — it's about to be logged, so
+            # it must get the same secret-scrubbing every other logged string in
+            # this file gets. Only the local copy used for the log line is
+            # redacted; the bytes actually forwarded to the agent are untouched.
+            raw, _n, _bd = _redact(raw)
+        else:
+            return None
+        try:
+            msg = json.loads(raw)
+        except Exception:
+            return None
+        entries = msg if isinstance(msg, list) else [msg]
+        return [e for e in entries if isinstance(e, dict)]
+    def _mcp_tool_responses(flow: http.HTTPFlow) -> list[tuple[object, str, bool, object]]:
+        # Match each JSON-RPC tools/call in this flow's request (_mcp_tool_calls)
+        # to its entry in the response by id, returning (id, tool, ok, payload) —
+        # payload is the exact result (or error) object the agent receives,
+        # already secret-redacted. ok is False for a JSON-RPC-level error OR an
+        # MCP tool-level isError:true result, True otherwise (including the
+        # non-compliant case of neither key present — fail-open, matching this
+        # file's philosophy elsewhere). [] if this flow has no tools/call
+        # requests or the response can't be parsed as JSON-RPC.
+        #
+        # Matching is a linear scan, not an id -> entry dict: a hostile/buggy
+        # sandbox can send a JSON-RPC id that's a list or object (invalid per
+        # spec, but json.loads won't reject it), which would raise
+        # "unhashable type" if used as a dict key — logging must never break the
+        # response path. Batches are tiny-to-nonexistent in practice (MCP
+        # 2025-06-18, which this stack speaks, dropped JSON-RPC batching), so
+        # there's no real cost to the linear scan.
+        calls = _mcp_tool_calls(flow)
+        if not calls:
+            return []
+        entries = _mcp_response_entries(flow)
+        if not entries:
+            return []
+        results: list[tuple[object, str, bool, object]] = []
+        for call_id, tool, _args in calls:
+            entry = next((e for e in entries if e.get("id") == call_id), None)
+            if entry is None:
+                continue
+            if "error" in entry:
+                results.append((call_id, tool, False, entry["error"]))
+            else:
+                payload = entry.get("result")
+                ok = not (isinstance(payload, dict) and payload.get("isError") is True)
+                results.append((call_id, tool, ok, payload))
+        return results
     def request(flow: http.HTTPFlow) -> None:
         host = flow.request.pretty_host
         method = flow.request.method
@@ -548,10 +651,10 @@ data:
                 return
         mcp_calls = _mcp_tool_calls(flow)
         if mcp_calls:
-            for tool, args in mcp_calls:
+            for call_id, tool, args in mcp_calls:
                 log.info(
-                    "client=%s MCP-CALL tool=%s args=%s url=%s",
-                    _client(flow), tool,
+                    "client=%s MCP-CALL tool=%s id=%s args=%s url=%s",
+                    _client(flow), tool, call_id,
                     json.dumps(args, separators=(",", ":"), ensure_ascii=False), url,
                 )
         else:
@@ -579,6 +682,10 @@ data:
                             scrub_breakdown[k] = scrub_breakdown.get(k, 0) + v
                 except Exception:
                     pass
+        # Independent of the MCP-RESPONSE/RESPONSE summary line below — mirrors
+        # how REDACTED/REDACTED-URL are independent of MCP-CALL/ALLOW in
+        # request() above, so a scrubbed MCP tool response still gets its
+        # correlation line instead of it being silently dropped.
         if scrubbed:
             log.warning(
                 "client=%s RESPONSE-REDACTED count=%d patterns=%s method=%s status=%s url=%s",
@@ -589,7 +696,17 @@ data:
                 status,
                 flow.request.pretty_url,
             )
-        else:
+
+        mcp_responses = _mcp_tool_responses(flow)
+        if mcp_responses:
+            for call_id, tool, ok, payload in mcp_responses:
+                text = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+                text = _truncate_for_log(text, MAX_MCP_RESPONSE_LOG_LENGTH)
+                log.info(
+                    "client=%s MCP-RESPONSE tool=%s id=%s ok=%s result=%s status=%s url=%s",
+                    _client(flow), tool, call_id, ok, text, status, flow.request.pretty_url,
+                )
+        elif not scrubbed:
             log.info(
                 "client=%s RESPONSE method=%s status=%s url=%s",
                 _client(flow),
