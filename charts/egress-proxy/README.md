@@ -40,12 +40,21 @@ GET and HEAD requests with a non-empty body to external destinations → 403. GE
 Requests to RFC1918, link-local (169.254/16), loopback, and CGNAT (100.64/10) ranges → 403. Defence-in-depth alongside Cilium's `egressDeny` rules.
 
 ### Audit log
-Every request emits a JSON log line (one object per line, `message` carries the same content the pre-JSON format used):
+Every request/response emits a JSON log line (one object per line, `message` carries the same content the pre-JSON format used):
 ```
 {"time": "2026-07-08T22:14:03+0000", "level": "INFO", "logger": "egress-proxy", "message": "client=10.1.2.3:41822 ALLOW internal=False method=GET url=https://pypi.org/simple/requests/"}
 {"time": "2026-07-08T22:14:03+0000", "level": "WARNING", "logger": "egress-proxy", "message": "client=10.1.2.3:41822 BLOCKED method=POST url=https://api.github.com/repos/..."}
+{"time": "2026-07-08T22:14:03+0000", "level": "INFO", "logger": "egress-proxy", "message": "client=10.1.2.3:41822 RESPONSE method=GET status=200 url=https://pypi.org/simple/requests/"}
+{"time": "2026-07-08T22:14:03+0000", "level": "WARNING", "logger": "egress-proxy", "message": "client=10.1.2.3:41822 RESPONSE-REDACTED count=1 patterns=jwt:1 method=GET status=200 url=https://pypi.org/simple/requests/"}
 ```
 View with: `kubectl logs -n egress-proxy deploy/egress-proxy` — pipe through `jq` for readability, e.g. `... | jq -r .message`.
+
+MCP tool calls (`tools/call` through vmcp) get a dedicated pair of lines instead of the generic `ALLOW`/`RESPONSE`, correlated by the JSON-RPC `id` (echoed in both — `client=ip:port` alone doesn't disambiguate concurrent or keep-alive calls from the same sandbox):
+```
+{"time": "...", "level": "INFO", "logger": "egress-proxy", "message": "client=10.1.2.3:41822 MCP-CALL tool=kubectl_get id=7 args={\"resource\":\"pods\",\"namespace\":\"agent-sandbox\"} url=http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp"}
+{"time": "...", "level": "INFO", "logger": "egress-proxy", "message": "client=10.1.2.3:41822 MCP-RESPONSE tool=kubectl_get id=7 ok=True result={\"content\":[{\"type\":\"text\",\"text\":\"NAME ... \"}],\"isError\":false} status=200 url=http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp"}
+```
+`ok=False` for either a JSON-RPC-level `error` or an MCP tool-level `isError:true` result — grep `MCP-RESPONSE.*ok=False` to find failed calls without wading through the full result bodies. `result=` is truncated at 32KB (`...(truncated, N bytes total)` appended; the truncated form is for grep/human reading only, not re-parseable JSON) — sized to bound a pathological single response, not aggregate log volume, so ordinary tool output is never truncated. `result=` reflects content already redacted **twice** upstream of this line: once by `mcp-cerbos-shim`'s own independent `CheckResponse` redaction (before the response reaches agentgateway), and once by this proxy's own response-body redaction (see Secrets scrubbing above) — "exactly what the agent received," not the tool's raw first-hand output. MCP-RESPONSE parses both a plain `application/json` body and a single-event `text/event-stream` body (unlike the response-body redaction above, which skips SSE entirely to avoid buffering issues) — the streamable-HTTP transport lets agentgateway answer a `tools/call` either way.
 
 ---
 

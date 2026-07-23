@@ -20,6 +20,7 @@ Usage:
   python3 scripts/test-scrub-patterns.py
   SCRUB_PY=/path/to/rendered_scrub.py python3 scripts/test-scrub-patterns.py
 """
+import json
 import os
 import subprocess
 import sys
@@ -120,6 +121,49 @@ def fixtures():
     ]
 
 
+# Fake flow stand-ins for _mcp_tool_calls/_mcp_response_entries/_mcp_tool_responses --
+# NOT a real mitmproxy HTTPFlow, just the narrow surface those functions touch
+# (.request/.response .method/.headers/.content/.get_text()).
+class _FakeHeaders(dict):
+    def get(self, key, default=""):
+        return dict.get(self, key, default)
+
+
+class _FakeMessage:
+    def __init__(self, method="POST", headers=None, text="", content=b"x"):
+        self.method = method
+        self.headers = _FakeHeaders(headers or {})
+        self.content = content
+        self._text = text
+
+    def get_text(self, strict=False):
+        return self._text
+
+
+class _FakeFlow:
+    def __init__(self, request=None, response=None):
+        self.request = request
+        self.response = response
+
+
+def mcp_flow(request_body, response_text=None, response_content_type="application/json"):
+    """Build a _FakeFlow carrying a JSON-RPC request_body (dict or list) and,
+    optionally, a raw response_text served with response_content_type."""
+    req = _FakeMessage(
+        method="POST",
+        headers={"content-type": "application/json"},
+        text=json.dumps(request_body),
+    )
+    resp = None
+    if response_text is not None:
+        resp = _FakeMessage(
+            headers={"content-type": response_content_type},
+            text=response_text,
+            content=b"x",
+        )
+    return _FakeFlow(request=req, response=resp)
+
+
 def apply_regex(patterns, text):
     # patterns is REDACT_PATTERNS: a list of (name, compiled_pattern) tuples.
     total = 0
@@ -191,6 +235,129 @@ def main():
             failures += 1
         else:
             print("  ok   _redact fails open to regex-only when sidecar unreachable")
+
+    # 4. MCP tool-call/response correlation (_mcp_tool_calls / _mcp_response_entries /
+    #    _mcp_tool_responses), exercised against fake flow stand-ins (mcp_flow above) --
+    #    no live vmcp/mitmproxy needed, same "exec the real compiled objects" approach
+    #    as the rest of this file.
+    mcp_tool_calls = ns["_mcp_tool_calls"]
+    mcp_tool_responses = ns["_mcp_tool_responses"]
+    truncate_for_log = ns["_truncate_for_log"]
+    max_len = ns["MAX_MCP_RESPONSE_LOG_LENGTH"]
+
+    call_req = {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "kubectl_get", "arguments": {"resource": "pods"}},
+    }
+
+    # 4a. Single call, matching JSON result.
+    resp = json.dumps({"jsonrpc": "2.0", "id": 1,
+                        "result": {"content": [{"type": "text", "text": "ok"}], "isError": False}})
+    flow = mcp_flow(call_req, resp)
+    calls = mcp_tool_calls(flow)
+    if calls != [(1, "kubectl_get", {"resource": "pods"})]:
+        print(f"  FAIL mcp calls: unexpected extraction -> {calls!r}")
+        failures += 1
+    else:
+        print("  ok   _mcp_tool_calls extracts (id, tool, args)")
+    results = mcp_tool_responses(flow)
+    if results != [(1, "kubectl_get", True,
+                    {"content": [{"type": "text", "text": "ok"}], "isError": False})]:
+        print(f"  FAIL mcp response: matching result -> {results!r}")
+        failures += 1
+    else:
+        print("  ok   mcp response matched by id, ok=True on isError:false result")
+
+    # 4b. JSON-RPC-level error.
+    resp = json.dumps({"jsonrpc": "2.0", "id": 1, "error": {"code": -32000, "message": "boom"}})
+    flow = mcp_flow(call_req, resp)
+    results = mcp_tool_responses(flow)
+    if results != [(1, "kubectl_get", False, {"code": -32000, "message": "boom"})]:
+        print(f"  FAIL mcp response: JSON-RPC error -> {results!r}")
+        failures += 1
+    else:
+        print("  ok   mcp response: JSON-RPC-level error -> ok=False")
+
+    # 4c. MCP tool-level isError:true is a JSON-RPC *result*, not an error key --
+    #     must still be surfaced as ok=False.
+    resp = json.dumps({"jsonrpc": "2.0", "id": 1,
+                        "result": {"content": [{"type": "text", "text": "denied"}], "isError": True}})
+    flow = mcp_flow(call_req, resp)
+    results = mcp_tool_responses(flow)
+    if not results or results[0][2] is not False:
+        print(f"  FAIL mcp response: isError:true result should give ok=False -> {results!r}")
+        failures += 1
+    else:
+        print("  ok   mcp response: tool-level isError:true -> ok=False")
+
+    # 4d. Batch matched by id, deliberately out of request/response order -- proves
+    #     id-matching, not response-array-position matching.
+    batch_req = [
+        {"jsonrpc": "2.0", "id": "a", "method": "tools/call",
+         "params": {"name": "tool_a", "arguments": {}}},
+        {"jsonrpc": "2.0", "id": "b", "method": "tools/call",
+         "params": {"name": "tool_b", "arguments": {}}},
+    ]
+    batch_resp = json.dumps([
+        {"jsonrpc": "2.0", "id": "b", "result": {"content": [], "isError": False}},
+        {"jsonrpc": "2.0", "id": "a", "result": {"content": [], "isError": False}},
+    ])
+    flow = mcp_flow(batch_req, batch_resp)
+    results = mcp_tool_responses(flow)
+    by_tool = {tool: call_id for call_id, tool, _ok, _payload in results}
+    if by_tool != {"tool_a": "a", "tool_b": "b"}:
+        print(f"  FAIL mcp batch: id-matching failed -> {results!r}")
+        failures += 1
+    else:
+        print("  ok   mcp batch matched by id, not response position")
+
+    # 4e. Single-event text/event-stream framing is unwrapped the same as plain JSON --
+    #     the streamable-HTTP transport lets agentgateway answer either way.
+    sse_body = "event: message\ndata: " + json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "result": {"content": [], "isError": False}}
+    ) + "\n\n"
+    flow = mcp_flow(call_req, sse_body, response_content_type="text/event-stream")
+    results = mcp_tool_responses(flow)
+    if not results or results[0][2] is not True:
+        print(f"  FAIL mcp SSE: single-event data: line not unwrapped -> {results!r}")
+        failures += 1
+    else:
+        print("  ok   mcp SSE-framed (text/event-stream) response unwrapped same as application/json")
+
+    # 4f. _truncate_for_log caps long text with a marker and leaves short text alone.
+    short = "short result"
+    if truncate_for_log(short, max_len) != short:
+        print("  FAIL _truncate_for_log: modified text under the cap")
+        failures += 1
+    else:
+        print("  ok   _truncate_for_log leaves text under the cap untouched")
+    long_text = "x" * (max_len + 500)
+    truncated = truncate_for_log(long_text, max_len)
+    if len(truncated) <= max_len or not truncated.startswith("x" * max_len):
+        print(f"  FAIL _truncate_for_log: unexpected output (len={len(truncated)})")
+        failures += 1
+    else:
+        print(f"  ok   _truncate_for_log truncates oversized text ({len(long_text)} bytes) with a marker")
+
+    # 4g. Non-hashable JSON-RPC id (a list -- invalid per spec, but json.loads won't
+    #     reject it) must not raise. Proves id-matching is a linear scan, not a dict
+    #     keyed by id (which would TypeError: unhashable type).
+    weird_req = {"jsonrpc": "2.0", "id": [1, 2], "method": "tools/call",
+                 "params": {"name": "kubectl_get", "arguments": {}}}
+    weird_resp = json.dumps({"jsonrpc": "2.0", "id": [1, 2],
+                              "result": {"content": [], "isError": False}})
+    flow = mcp_flow(weird_req, weird_resp)
+    try:
+        results = mcp_tool_responses(flow)
+    except Exception as e:
+        print(f"  FAIL mcp non-hashable id raised instead of matching: {e}")
+        failures += 1
+    else:
+        if not results or results[0][0] != [1, 2]:
+            print(f"  FAIL mcp non-hashable id: expected a match -> {results!r}")
+            failures += 1
+        else:
+            print("  ok   mcp non-hashable (list) id matches without raising")
 
     if failures:
         print(f"\nFAIL: {failures} scrub-pattern assertion(s) failed", file=sys.stderr)
