@@ -17,35 +17,84 @@ import (
 // someone maps it without reading this comment first.
 const linearGetIssueTool = "linear_get_issue"
 
-// linearIssueResult is the subset of linear_get_issue's JSON result this
-// package needs. The live tool result carries "team" as the team's display
-// name directly at the top level (verified live against the real vMCP
-// route) -- e.g. {"id":"PROJ-69",...,"team":"HAHomelabs",...}. This
-// is a single JSON object, NOT the double-JSON-wrapped shape Notion's
-// notion-fetch uses (see ancestry.go's notionFetchEnvelope) -- Linear's own
-// MCP server returns its tool result as plain JSON text, no extra nesting.
-type linearIssueResult struct {
-	Team string `json:"team"`
+// linearIssueDetails is the subset of linear_get_issue's JSON result this
+// package needs. "team" carries the team's display name directly at the top
+// level (verified live against the real vMCP route) -- e.g.
+// {"id":"PROJ-69",...,"team":"HAHomelabs",...}. This is a single JSON
+// object, NOT the double-JSON-wrapped shape Notion's notion-fetch uses (see
+// ancestry.go's notionFetchEnvelope) -- Linear's own MCP server returns its
+// tool result as plain JSON text, no extra nesting.
+//
+// "assignee" is decoded as json.RawMessage rather than a typed string:
+// unlike team, this field's shape was NOT verified against a live call (this
+// sandbox has no Linear credentials to test against) -- by analogy with
+// team's own confirmed shape (same tool, same API), it's assumed to be a
+// similarly bare top-level string (the assignee's display name/identifier,
+// the same form list_issues'/save_issue's own `assignee` arg accepts), not a
+// nested user object. Decoding it as RawMessage first means an actual shape
+// surprise on assignee fails parseLinearAssignee (and therefore
+// GetIssueDetails) closed, rather than a Go json.Unmarshal type-mismatch
+// error on a plain `string`-typed field silently breaking team's own
+// (already-verified) parse too. Live verification against a real Linear
+// account is a mandatory follow-up before relying on this in production --
+// see the MR's own follow-up section.
+type linearIssueDetails struct {
+	Team     string          `json:"team"`
+	Assignee json.RawMessage `json:"assignee"`
 }
 
-// IssueTeam resolves a Linear issue/comment-parent id (e.g. "PROJ-69") to its
-// team's display name via ONE linear_get_issue call. Returns an error on any
-// lookup failure (timeout, non-200, malformed result, tool-reported error,
-// or an issue with no team) so the caller can fail closed -- mirrors
-// PageIsUnderAnyAncestor's contract in ancestry.go.
-func IssueTeam(ctx context.Context, client ToolCaller, issueID string) (string, error) {
+// GetIssueDetails resolves a Linear issue/comment-parent id (e.g. "PROJ-69")
+// to its team's display name AND current assignee identifier via ONE
+// linear_get_issue call -- shares a single lookup between server.go's
+// save_comment and save_issue-update gates, which previously issued
+// separate calls for team-only resolution.
+//
+// team is REQUIRED: every Linear issue belongs to exactly one team, so a
+// response with no resolvable team is a shape mismatch and returns an error
+// (mirrors the original IssueTeam's contract, and
+// PageIsUnderAnyAncestor's in ancestry.go). assignee is OPTIONAL: a real
+// issue can legitimately have no assignee at all, so an absent/null
+// assignee field resolves to "" with NO error -- the caller then omits the
+// attr, matching Cerbos's own has()-guarded deny-assignee-outside-allowed
+// rule (resource_linear.yaml), same as an ordinary update that never
+// touches assignee. Only a genuinely unparseable assignee shape (present,
+// but not a plain string) fails the whole call closed, since that means an
+// assignee DOES exist but this code can't verify who it is -- a silent
+// "no assignee" in that case would be a strictly more dangerous false
+// negative than failing closed.
+func GetIssueDetails(ctx context.Context, client ToolCaller, issueID string) (team, assignee string, err error) {
 	result, err := client.CallTool(ctx, linearGetIssueTool, map[string]any{"id": issueID})
 	if err != nil {
-		return "", fmt.Errorf("linear issue team lookup for %q: %w", issueID, err)
+		return "", "", fmt.Errorf("linear issue details lookup for %q: %w", issueID, err)
 	}
-	var parsed linearIssueResult
+	var parsed linearIssueDetails
 	if err := json.Unmarshal([]byte(result.Text()), &parsed); err != nil {
-		return "", fmt.Errorf("linear issue team lookup for %q: malformed get_issue result: %w", issueID, err)
+		return "", "", fmt.Errorf("linear issue details lookup for %q: malformed get_issue result: %w", issueID, err)
 	}
 	if parsed.Team == "" {
-		return "", fmt.Errorf("linear issue team lookup for %q: get_issue result has no team", issueID)
+		return "", "", fmt.Errorf("linear issue details lookup for %q: get_issue result has no team", issueID)
 	}
-	return parsed.Team, nil
+	assignee, err = parseLinearAssignee(parsed.Assignee)
+	if err != nil {
+		return "", "", fmt.Errorf("linear issue details lookup for %q: %w", issueID, err)
+	}
+	return parsed.Team, assignee, nil
+}
+
+// parseLinearAssignee decodes the raw assignee field from a linear_get_issue
+// result: absent or JSON null is "no assignee" (empty string, no error); a
+// JSON string is the assignee identifier directly; anything else (object,
+// number, bool) is an unexpected shape this code can't verify and returns
+// an error rather than silently resolving to "no assignee".
+func parseLinearAssignee(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", fmt.Errorf("assignee field has an unexpected shape (not a plain string): %s", string(raw))
+	}
+	return s, nil
 }
 
 // linearGetProjectTool is the vMCP tool name for Linear's read-only project

@@ -64,6 +64,20 @@ func main() {
 		log.Printf("WARNING: NOTION_ALLOWED_PARENT_PAGE_IDS unset/empty; notion update-page/create-comment will fail closed")
 	}
 
+	// Notion existing-page-write author-resolution gate (update-page,
+	// create-comment): NOTION_USER_ID is Flux's ${notionUserId} substituted
+	// directly into this Deployment's env -- the operator's own Notion user
+	// id, resolved once via a manual notion-fetch {"id":"self"} call per
+	// machine. Optional/fail-closed-if-absent, same posture as the ancestry
+	// gate above: a machine that hasn't had this configured yet denies every
+	// update-page/create-comment rather than silently skipping the check.
+	if uid := cfg.notionUserID; uid != "" {
+		opts = append(opts, server.WithNotionPageAuthor(upstream.New(upstream.DefaultVMCPURL, nil), uid))
+		log.Printf("notion existing-page-write author gate enabled (operator user id configured)")
+	} else {
+		log.Printf("WARNING: NOTION_USER_ID unset/empty; notion update-page/create-comment will fail closed")
+	}
+
 	// Linear save_comment team-resolution gate: unlike the Notion
 	// gate above, this needs no allowlist of its own -- it resolves
 	// issueId->team and hands that off to the SAME ${linearAllowedTeams}
@@ -90,6 +104,31 @@ func main() {
 	// for every manage_incidents/add_note_to_incident call.
 	opts = append(opts, server.WithPagerdutyIncidentService(upstream.New(upstream.DefaultVMCPURL, nil)))
 	log.Printf("pagerduty incident service-resolution gate enabled (manage_incidents, add_note_to_incident)")
+
+	// GitHub existing-PR-write author-resolution gate: same unconditional-
+	// enable posture as the gates above -- no allowlist of its own, hands off
+	// to the ${githubUsername} Cerbos rule (resource_github.yaml) via the
+	// prAuthor attr this gate resolves for every update_pull_request/
+	// update_pull_request_branch/request_copilot_review call.
+	opts = append(opts, server.WithGithubPRAuthor(upstream.New(upstream.DefaultVMCPURL, nil)))
+	log.Printf("github PR author-resolution gate enabled (update_pull_request, update_pull_request_branch, request_copilot_review)")
+
+	// Jira ticket-assignee resolution gate: same unconditional-enable
+	// posture as the gates above -- no allowlist of its own, hands off to
+	// the ${jiraAllowedAssignees} Cerbos rule (resource_jira.yaml) via the
+	// assignee attr this gate resolves for update_issue/add_comment/
+	// transition_issue calls that don't carry their own assignee signal.
+	opts = append(opts, server.WithJiraIssueAssignee(upstream.New(upstream.DefaultVMCPURL, nil)))
+	log.Printf("jira issue assignee-resolution gate enabled (update_issue, add_comment, transition_issue)")
+
+	// Alertmanager deleteSilence owner-resolution gate: same unconditional-
+	// enable posture as the gates above -- no allowlist of its own, hands off
+	// to the ${alertmanagerCreatedBy} Cerbos rule (resource_alertmanager.yaml)
+	// via the createdBy attr this gate resolves for every deleteSilence call.
+	// mapping.yaml's `force` block stamps that same value onto every
+	// createSilence call, so the two halves stay in sync by construction.
+	opts = append(opts, server.WithAlertmanagerSilenceOwner(upstream.New(upstream.DefaultVMCPURL, nil)))
+	log.Printf("alertmanager silence owner-resolution gate enabled (deleteSilence)")
 
 	// Outbound content-moderation gate, toggled per-cluster via CONTENT_MODERATION.
 	if cfg.contentModeration {
@@ -141,6 +180,7 @@ type envConfig struct {
 	cerbosAddr                 string
 	cerbosPlaintext            bool
 	notionAllowedParentPageIDs string
+	notionUserID               string
 	contentModeration          bool
 	moderationModel            string
 	moderationWriteVerbs       string
@@ -155,6 +195,7 @@ func loadEnv() envConfig {
 		cerbosAddr:                 envOr("CERBOS_ADDR", "cerbos.cerbos.svc.cluster.local:3593"),
 		cerbosPlaintext:            envOr("CERBOS_PLAINTEXT", "true") == "true",
 		notionAllowedParentPageIDs: envOr("NOTION_ALLOWED_PARENT_PAGE_IDS", ""),
+		notionUserID:               envOr("NOTION_USER_ID", ""),
 		// "enabled", never "true"/"false" -- see README's "Content Moderation".
 		contentModeration: envOr("CONTENT_MODERATION", "") == "enabled",
 		// Empty values fall back to the package defaults.

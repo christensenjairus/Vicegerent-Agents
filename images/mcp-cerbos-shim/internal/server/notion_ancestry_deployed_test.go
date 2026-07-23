@@ -63,7 +63,12 @@ func newNotionServer(t *testing.T, d *stubDecider, up upstream.ToolCaller) *Serv
 
 // newNotionServerWithParents lets multi-parent-scoping tests configure more
 // than one allowed parent, mirroring HAH's Scratchpad-plus-team-folders
-// production setup (NOTION_ALLOWED_PARENT_PAGE_IDS in main.go).
+// production setup (NOTION_ALLOWED_PARENT_PAGE_IDS in main.go). These tests
+// exercise the ANCESTRY gate specifically, so the author gate is wired with a
+// permissive stub that never errors -- its own resolve/mismatch behavior is
+// proven separately by notion_author_deployed_test.go. stubDecider ignores
+// res.Attr entirely, so whether that stub resolves a match or not is
+// immaterial here; it only must not fail closed on its own.
 func newNotionServerWithParents(t *testing.T, d *stubDecider, up upstream.ToolCaller, allowedParentIDs []string) *Server {
 	t.Helper()
 	m := deployedMapping(t)
@@ -72,7 +77,24 @@ func newNotionServerWithParents(t *testing.T, d *stubDecider, up upstream.ToolCa
 		t.Fatalf("compile: %v", err)
 	}
 	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
-		WithNotionAncestry(up, allowedParentIDs))
+		WithNotionAncestry(up, allowedParentIDs),
+		WithNotionPageAuthor(&permissiveNotionAuthorUpstream{}, "operator-user-id"))
+}
+
+// permissiveNotionAuthorUpstream is a ToolCaller stub for the page-author
+// gate that always resolves without error (any real match/mismatch verdict
+// is immaterial to callers using stubDecider -- see newNotionServerWithParents).
+type permissiveNotionAuthorUpstream struct{}
+
+func (permissiveNotionAuthorUpstream) CallTool(_ context.Context, tool string, _ map[string]any) (*upstream.CallToolResult, error) {
+	text := `{"results":[]}`
+	if tool == "notion_notion-fetch" {
+		text = `<page><properties>{"title":"Leaf"}</properties></page>`
+	}
+	return &upstream.CallToolResult{Content: []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}{{Type: "text", Text: text}}}, nil
 }
 
 func TestDeployedNotionMapping_UpdatePageNotUnderScratchpadIsDeniedBeforeCerbos(t *testing.T) {

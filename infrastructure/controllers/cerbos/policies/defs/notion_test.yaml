@@ -51,6 +51,14 @@ resources:
     id: notion-create-pages
     kind: notion_page
     attr: {parentKind: '', parentPageId: ''}
+  update_own_page_call:
+    id: f336d0bc-b841-465b-8045-024475c079dd
+    kind: notion_page
+    attr: {command: update_content, allowDeletingContent: 'false'}
+  not_own_page_call:
+    id: f336d0bc-b841-465b-8045-024475c079dd
+    kind: notion_page
+    attr: {command: update_content, allowDeletingContent: 'false', pageAuthorMismatch: true}
 tests:
   - name: non-destructive update commands are allowed
     input:
@@ -119,3 +127,23 @@ tests:
       - principal: hermes
         resource: create_pages_omitted_parent_call
         actions: {create: EFFECT_DENY}
+  - name: update/comment on a page the shim resolved as operator-authored (or couldn't
+      resolve, so no mismatch attr is set) is allowed
+    input:
+      principals: [hermes]
+      resources: [update_own_page_call]
+      actions: [update, comment]
+    expected:
+      - principal: hermes
+        resource: update_own_page_call
+        actions: {update: EFFECT_ALLOW, comment: EFFECT_ALLOW}
+  - name: update/comment on a page the shim resolved as NOT operator-authored is denied
+      regardless of which action is checked
+    input:
+      principals: [hermes]
+      resources: [not_own_page_call]
+      actions: [update, comment]
+    expected:
+      - principal: hermes
+        resource: not_own_page_call
+        actions: {update: EFFECT_DENY, comment: EFFECT_DENY}

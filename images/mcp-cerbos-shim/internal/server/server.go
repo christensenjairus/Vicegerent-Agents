@@ -133,6 +133,65 @@ var (
 
 const pagerdutyIncidentResource = "pagerduty_incident"
 
+// githubRepoResource and githubExistingPRTools identify the GitHub write
+// calls the PR-author resolution gate applies to: every tool that targets
+// an EXISTING pull request by pullNumber. create_pull_request has no prior
+// PR to check (nothing to look up, and the bot's own token authors it), and
+// the read tools (pull_request_read, list/search_pull_requests, get_me)
+// carry no ownership risk. Unlike the Linear/PagerDuty gates above, there is
+// no argument on any of these tools that could ever supply "author" directly
+// -- a PR's author isn't reassignable via any of these tools -- so this gate
+// always resolves live state, never a caller-supplied signal.
+const githubRepoResource = "github_repo"
+
+var githubExistingPRTools = map[string]bool{
+	"github_update_pull_request":        true,
+	"github_update_pull_request_branch": true,
+	"github_request_copilot_review":     true,
+}
+
+// jiraProjectResource and jiraAssigneeGatedTools identify the Jira write
+// calls the ticket-assignee resolution gate applies to: update_issue,
+// add_comment, and transition_issue -- tools that directly edit/comment/
+// transition an EXISTING issue's own content. create_issue_link/
+// link_to_epic relate two already-project-scoped tickets rather than edit
+// either ticket's own content, and create_issue is already covered by the
+// existing arg-based deny-create-missing-assignee rule (jiraFieldsAttr
+// surfaces its top-level assignee arg directly) -- neither needs this gate.
+const jiraProjectResource = "jira_project"
+
+var jiraAssigneeGatedTools = map[string]bool{
+	"jira_jira_update_issue":     true,
+	"jira_jira_add_comment":      true,
+	"jira_jira_transition_issue": true,
+}
+
+// alertmanagerSilenceResource and alertmanagerDeleteSilenceTools identify the
+// Alertmanager write calls the silence-owner resolution gate applies to:
+// deleteSilence, one entry per backend this shim fronts (toolhive-servers.json:
+// alertmanager, alertmanager_gov). Unlike the Linear/PagerDuty gates above,
+// deleteSilence's own args carry only an opaque silenceId -- nothing that
+// identifies the silence's real creator directly. The gate resolves the
+// target silence's REAL createdBy via a live getSilences lookup and hands it
+// to Cerbos's deny-not-own-silence rule (resource_alertmanager.yaml), the
+// same handoff pattern as the other live-resolved gates in this file.
+// createSilence's OWN createdBy is never read here -- it's unconditionally
+// forced to ${alertmanagerCreatedBy} via mapping.yaml's `force` mechanism, so
+// every silence this shim creates already carries the value this gate later
+// checks for.
+//
+// Each map's value is that SAME backend's own getSilences tool name -- the
+// live lookup must query the backend the silence actually lives in, same
+// rationale as pagerdutyManageIncidentsTools above. getSilences itself stays
+// unmapped in Cerbos for both backends, same recursion-safety reason
+// pagerduty_*_get_incident/notion_notion-fetch/linear_get_issue are unmapped.
+var alertmanagerDeleteSilenceTools = map[string]string{
+	"alertmanager_deleteSilence":     "alertmanager_getSilences",
+	"alertmanager_gov_deleteSilence": "alertmanager_gov_getSilences",
+}
+
+const alertmanagerSilenceResource = "alertmanager_silence"
+
 // DefaultModeratedWriteVerbs are tool-name substrings identifying a WRITE
 // call likely to carry free text a human will read. A verb heuristic
 // instead of a hand-enumerated tool list, so new write tools are covered
@@ -251,6 +310,55 @@ type Server struct {
 	// evaluates it exactly like an explicit-service call.
 	pagerdutyIncidentService upstream.ToolCaller
 
+	// githubPRAuthor, when set, resolves owner/repo/pullNumber to a pull
+	// request's real author via a live pull_request_read lookup -- a
+	// network round trip the CEL/Cerbos path can't make, same rationale as
+	// linearIssueTeam above. Used by every tool that writes to an EXISTING
+	// PR (githubExistingPRTools); create_pull_request has no prior PR to
+	// check. Injects the resolved login into the resource's prAuthor attr
+	// so Cerbos's deny-not-own-pr rule (resource_github.yaml) evaluates it
+	// against ${githubUsername}.
+	githubPRAuthor upstream.ToolCaller
+
+	// jiraIssueAssignee, when set, resolves a Jira issue key to its CURRENT
+	// assignee via a live jira_jira_get_issue lookup -- a network round trip
+	// the CEL/Cerbos path can't make, same rationale as linearIssueTeam
+	// above. Used by jiraAssigneeGatedTools when the call itself carries no
+	// verifiable assignee signal (jiraFieldsAttr always populates an
+	// assignee key, possibly empty). Injects the resolved assignee into the
+	// resource's assignee attr so Cerbos's existing
+	// deny-assignee-outside-allowed rule (resource_jira.yaml) evaluates it
+	// against ${jiraAllowedAssignees}.
+	jiraIssueAssignee upstream.ToolCaller
+
+	// notionPageAuthor, when set, resolves a Notion page id to whether it was
+	// created by notionOperatorUserID via a live notion-fetch+notion-search
+	// lookup -- a network round trip the CEL/Cerbos path can't make, same
+	// rationale as linearIssueTeam above. Used by notionAncestryGatedActions
+	// (update/comment on an EXISTING page; create has no prior-ownership
+	// question). Injects a pageAuthorMismatch=true attr (only on mismatch, so
+	// the no-signal case stays unset) so Cerbos's deny-not-own-page rule
+	// (resource_notion.yaml) evaluates it -- same inject-then-Cerbos-decides
+	// pattern as the other gates above, not a second direct-deny like the
+	// ancestry check this gate sits alongside.
+	notionPageAuthor upstream.ToolCaller
+
+	// notionOperatorUserID is the operator's own Notion user id
+	// (${notionUserId}), passed to notionPageAuthor's lookup as the identity
+	// a page's authorship is checked against.
+	notionOperatorUserID string
+
+	// alertmanagerSilenceOwner, when set, resolves a silenceId to its real
+	// createdBy via a live getSilences lookup -- a network round trip the
+	// CEL/Cerbos path can't make, same rationale as githubPRAuthor above.
+	// Used by alertmanagerDeleteSilenceTools. Injects the resolved createdBy
+	// into the resource's createdBy attr so Cerbos's deny-not-own-silence rule
+	// (resource_alertmanager.yaml) evaluates it against
+	// ${alertmanagerCreatedBy} -- the same value mapping.yaml's `force` stamps
+	// onto every createSilence call, so the two halves stay in sync by
+	// construction.
+	alertmanagerSilenceOwner upstream.ToolCaller
+
 	// moderationChecker, when set, sends free-text args of matching write
 	// calls through OpenAI's Moderations endpoint before the call reaches
 	// vMCP. Nil disables the gate (per-cluster toggle, see main.go). Unlike
@@ -326,6 +434,52 @@ func WithLinearProjectTeam(client upstream.ToolCaller) Option {
 func WithPagerdutyIncidentService(client upstream.ToolCaller) Option {
 	return func(s *Server) {
 		s.pagerdutyIncidentService = client
+	}
+}
+
+// WithGithubPRAuthor enables the GitHub existing-PR-write author-resolution
+// gate: every update_pull_request/update_pull_request_branch/
+// request_copilot_review call has its target PR's real author resolved via
+// a live lookup. client resolves owner/repo/pullNumber to the PR's author
+// login (production: an upstream.Client to vMCP; tests: a stub).
+func WithGithubPRAuthor(client upstream.ToolCaller) Option {
+	return func(s *Server) {
+		s.githubPRAuthor = client
+	}
+}
+
+// WithJiraIssueAssignee enables the Jira ticket-assignee resolution gate:
+// update_issue/add_comment/transition_issue calls that don't themselves
+// carry a verifiable assignee signal have the issue's CURRENT assignee
+// resolved via a live lookup. client resolves an issue key to its current
+// assignee (production: an upstream.Client to vMCP; tests: a stub).
+func WithJiraIssueAssignee(client upstream.ToolCaller) Option {
+	return func(s *Server) {
+		s.jiraIssueAssignee = client
+	}
+}
+
+// WithNotionPageAuthor enables the Notion existing-page-write author-
+// resolution gate: update-page/create-comment calls have their target
+// page's real author resolved via a live lookup and compared against
+// operatorUserID. client resolves a page id to whether it was authored by
+// operatorUserID (production: an upstream.Client to vMCP; tests: a stub).
+func WithNotionPageAuthor(client upstream.ToolCaller, operatorUserID string) Option {
+	return func(s *Server) {
+		s.notionPageAuthor = client
+		s.notionOperatorUserID = operatorUserID
+	}
+}
+
+// WithAlertmanagerSilenceOwner enables the Alertmanager deleteSilence
+// owner-resolution gate: every deleteSilence call has its target silence's
+// real createdBy resolved via a live lookup. client resolves a silenceId to
+// its createdBy (production: an upstream.Client to vMCP; tests: a stub). No
+// identity parameter needed -- the comparison value lives entirely in
+// Cerbos's ${alertmanagerCreatedBy}, same shape as WithGithubPRAuthor.
+func WithAlertmanagerSilenceOwner(client upstream.ToolCaller) Option {
+	return func(s *Server) {
+		s.alertmanagerSilenceOwner = client
 	}
 }
 
@@ -480,6 +634,25 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 		}
 	}
 
+	// Notion existing-page-write author-resolution gate: unlike the ancestry
+	// gate above, this doesn't deny directly -- it resolves the page's real
+	// author via a live lookup and, only on a mismatch, injects
+	// pageAuthorMismatch=true into res.Attr, so Cerbos's deny-not-own-page
+	// rule (resource_notion.yaml) evaluates it exactly like the other
+	// inject-then-Cerbos-decides gates (GitHub prAuthor, Jira/Linear
+	// assignee). A lookup failure still fails closed here (deny), since an
+	// unverifiable author is not the same as a verified non-mismatch.
+	if res.ResourceType == notionPageResource && notionAncestryGatedActions[res.Action] {
+		mismatch, derr := s.checkNotionPageAuthor(ctx, res.ID)
+		if derr != nil {
+			log.Printf("deny: notion %s author lookup (page=%q backend=%s): %v", res.Action, res.ID, backend, derr)
+			return deny(derr.Error()), nil
+		}
+		if mismatch {
+			res.Attr["pageAuthorMismatch"] = true
+		}
+	}
+
 	// Linear save_comment team-resolution gate: this runs BEFORE
 	// Cerbos and, unlike the Notion gate above, doesn't deny directly -- it
 	// resolves issueId to its team via a live lookup and injects that team
@@ -496,38 +669,63 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 	// non-empty-id convention save_project's id: get(args,'id','*') uses,
 	// since Cerbos itself rejects an empty resource.id before policy ever
 	// runs.
+	// The same lookup also resolves the issue's CURRENT assignee, injected
+	// into this same res.Attr's assignee key so Cerbos's existing
+	// deny-assignee-outside-allowed rule (resource_linear.yaml) evaluates a
+	// comment on someone else's issue exactly like an explicit-assignee
+	// save_issue call -- closes the analogous gap for assignee scoping: a
+	// comment (or a plain field edit, below) previously carried no assignee
+	// attr at all regardless of who the issue was really assigned to.
+	// assignee may legitimately resolve to "" (a real issue can have no
+	// assignee) -- only fails closed on a genuine lookup/shape failure, see
+	// upstream.GetIssueDetails's contract.
 	if cp.Name == linearSaveCommentTool && res.ResourceType == linearTeamResource {
 		issueID, _ := res.Attr["issueId"].(string)
 		if issueID != "" {
-			team, derr := s.checkLinearIssueTeam(ctx, issueID)
+			team, assignee, derr := s.checkLinearIssueTeam(ctx, issueID)
 			if derr != nil {
-				log.Printf("deny: linear save_comment team lookup (issue=%q backend=%s): %v", issueID, backend, derr)
+				log.Printf("deny: linear save_comment team/assignee lookup (issue=%q backend=%s): %v", issueID, backend, derr)
 				return deny(derr.Error()), nil
 			}
 			res.Attr["teamId"] = team
+			if assignee != "" {
+				res.Attr["assignee"] = assignee
+			}
 		}
 	}
 
-	// Linear save_issue UPDATE team-resolution gate: closes the gap
-	// where a plain field edit on an existing issue (no `team` arg at all)
-	// fell through to allow-all regardless of the issue's REAL team, since
-	// linearIssueAttr only surfaces teamId when the call itself sets `team`.
-	// Fires only when: (a) this is save_issue, (b) the call is an update
-	// (has an `id` arg -- res.ID is that same id per mapping.yaml's
-	// `id: get(args,'id', get(args,'team',''))`), and (c) attr already has
-	// NO teamId key, meaning the call didn't set `team` itself (an explicit
-	// team, create or update, is linearIssueAttr's own directly-verifiable
-	// signal and must never be overridden by a lookup here). A create call
-	// always sets `team`+has no `id`, so it never reaches this branch.
+	// Linear save_issue UPDATE team/assignee-resolution gate: closes the gap
+	// where a plain field edit on an existing issue (no `team`/`assignee` arg
+	// at all) fell through to allow-all regardless of the issue's REAL team
+	// or CURRENT assignee, since linearIssueAttr only surfaces teamId/assignee
+	// when the call itself sets them. Fires only when: (a) this is
+	// save_issue, (b) the call is an update (has an `id` arg -- res.ID is
+	// that same id per mapping.yaml's `id: get(args,'id', get(args,'team',''))`),
+	// and (c) attr is missing EITHER teamId or assignee, meaning the call
+	// didn't set that field itself (an explicit team/assignee, create or
+	// update, is linearIssueAttr's own directly-verifiable signal and must
+	// never be overridden by a lookup here) -- team and assignee are resolved
+	// independently from the SAME single lookup, each only overwriting the
+	// key it was missing. A create call always sets `team` (required) and
+	// has no `id`, so it never reaches this branch regardless of whether it
+	// set assignee (that gap is closed separately by
+	// deny-create-missing-assignee's own arg-based check).
 	if cp.Name == linearSaveIssueTool && res.ResourceType == linearTeamResource {
-		if _, hasTeam := res.Attr["teamId"]; !hasTeam {
+		_, hasTeam := res.Attr["teamId"]
+		_, hasAssignee := res.Attr["assignee"]
+		if !hasTeam || !hasAssignee {
 			if issueID, _ := cp.Arguments["id"].(string); issueID != "" {
-				team, derr := s.checkLinearIssueTeam(ctx, issueID)
+				team, assignee, derr := s.checkLinearIssueTeam(ctx, issueID)
 				if derr != nil {
-					log.Printf("deny: linear save_issue update team lookup (issue=%q backend=%s): %v", issueID, backend, derr)
+					log.Printf("deny: linear save_issue update team/assignee lookup (issue=%q backend=%s): %v", issueID, backend, derr)
 					return deny(derr.Error()), nil
 				}
-				res.Attr["teamId"] = team
+				if !hasTeam {
+					res.Attr["teamId"] = team
+				}
+				if !hasAssignee && assignee != "" {
+					res.Attr["assignee"] = assignee
+				}
 			}
 		}
 	}
@@ -581,6 +779,81 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 				return deny(derr.Error()), nil
 			}
 			res.Attr["serviceIds"] = serviceIDs
+		}
+	}
+
+	// GitHub PR-author gate: this runs BEFORE Cerbos and, like the Linear/
+	// PagerDuty gates above, doesn't deny directly -- it resolves the target
+	// PR's real author via a live pull_request_read lookup and injects it
+	// into the resource's prAuthor attr, so Cerbos's deny-not-own-pr rule
+	// (resource_github.yaml) can catch a hallucinated/wrong PR number even
+	// though nothing in these tools' own arguments ever names an "author" to
+	// check directly (a PR's author isn't reassignable via any of them).
+	// Only fires for tools that target an EXISTING PR by pullNumber;
+	// owner/repo/pullNumber are all required args on these tools, so a call
+	// missing any of them is already malformed and the gate is skipped
+	// (same "nothing verifiable, nothing to inject" posture as the Linear
+	// gates' own missing-id case) rather than specially fail-closed here.
+	if githubExistingPRTools[cp.Name] && res.ResourceType == githubRepoResource {
+		owner, _ := cp.Arguments["owner"].(string)
+		repo, _ := cp.Arguments["repo"].(string)
+		pullNumber, ok := cp.Arguments["pullNumber"].(float64)
+		if owner != "" && repo != "" && ok {
+			author, derr := s.checkGithubPRAuthor(ctx, owner, repo, pullNumber)
+			if derr != nil {
+				log.Printf("deny: %s PR author lookup (repo=%s/%s pr=%v backend=%s): %v", cp.Name, owner, repo, pullNumber, backend, derr)
+				return deny(derr.Error()), nil
+			}
+			res.Attr["prAuthor"] = author
+		}
+	}
+
+	// Alertmanager silence-owner resolution gate: this runs BEFORE Cerbos
+	// and, like the GitHub PR-author gate above, doesn't deny directly -- it
+	// resolves the target silence's real createdBy via a live getSilences
+	// lookup and injects it into the resource's createdBy attr, so Cerbos's
+	// deny-not-own-silence rule (resource_alertmanager.yaml) can catch a
+	// hallucinated/wrong silenceId even though deleteSilence's own args
+	// never carry an "owner" to check directly. silenceId is a required arg
+	// on this tool; a call missing it is already malformed and the gate is
+	// skipped (same "nothing verifiable, nothing to inject" posture as the
+	// GitHub gate's own missing-arg case).
+	if getSilencesTool, ok := alertmanagerDeleteSilenceTools[cp.Name]; ok && res.ResourceType == alertmanagerSilenceResource {
+		if silenceID, _ := cp.Arguments["silenceId"].(string); silenceID != "" {
+			createdBy, derr := s.checkAlertmanagerSilenceOwner(ctx, getSilencesTool, silenceID)
+			if derr != nil {
+				log.Printf("deny: %s silence owner lookup (silence=%s backend=%s): %v", cp.Name, silenceID, backend, derr)
+				return deny(derr.Error()), nil
+			}
+			res.Attr["createdBy"] = createdBy
+		}
+	}
+
+	// Jira ticket-assignee resolution gate: this runs BEFORE Cerbos and,
+	// like the Linear team/assignee gates above, doesn't deny directly -- it
+	// resolves the issue's CURRENT assignee via a live lookup and injects it
+	// into the resource's assignee attr, so Cerbos's existing
+	// deny-assignee-outside-allowed rule (resource_jira.yaml) evaluates a
+	// plain field edit/comment/transition on someone else's issue exactly
+	// like an explicit-assignee create_issue call. jiraFieldsAttr already
+	// populates an assignee key on every jira_project write (possibly
+	// empty), so an empty value reliably means "this call carries no
+	// verifiable assignee signal of its own" -- add_comment/
+	// transition_issue never carry one at all (no fields/additional_fields
+	// arg to smuggle it in), update_issue only when it doesn't touch
+	// assignee itself.
+	if jiraAssigneeGatedTools[cp.Name] && res.ResourceType == jiraProjectResource {
+		if assignee, _ := res.Attr["assignee"].(string); assignee == "" {
+			if issueKey, _ := res.Attr["issueKey"].(string); issueKey != "" {
+				resolved, derr := s.checkJiraIssueAssignee(ctx, issueKey)
+				if derr != nil {
+					log.Printf("deny: %s assignee lookup (issue=%q backend=%s): %v", cp.Name, issueKey, backend, derr)
+					return deny(derr.Error()), nil
+				}
+				if resolved != "" {
+					res.Attr["assignee"] = resolved
+				}
+			}
 		}
 	}
 
@@ -730,23 +1003,52 @@ func (s *Server) checkNotionAncestry(ctx context.Context, pageID string) error {
 	return nil
 }
 
-// checkLinearIssueTeam resolves issueID to its team via a live lookup, or
-// returns an error (used verbatim as the deny reason) on any failure --
-// fail-closed contract mirrors checkNotionAncestry above: an unconfigured
-// gate or a lookup error both deny rather than silently allow-through with
-// no teamId attr (which would let the call skip Cerbos's team check
-// entirely, the exact hole this gate closes).
-func (s *Server) checkLinearIssueTeam(ctx context.Context, issueID string) (string, error) {
-	if s.linearIssueTeam == nil {
-		return "", fmt.Errorf("linear issue-team gate not configured; denying write for issue %q", issueID)
+// checkNotionPageAuthor reports whether pageID's real author does NOT match
+// s.notionOperatorUserID -- a bool, not a direct deny, since this feeds
+// res.Attr's pageAuthorMismatch key for Cerbos's own deny-not-own-page rule
+// to evaluate (same inject-then-Cerbos-decides shape as
+// checkGithubPRAuthor/checkJiraIssueAssignee below). Still fails closed (a
+// non-nil error) on an unresolvable lookup, since an unverifiable author is
+// not the same as a verified match.
+func (s *Server) checkNotionPageAuthor(ctx context.Context, pageID string) (mismatch bool, err error) {
+	if s.notionPageAuthor == nil || s.notionOperatorUserID == "" {
+		// Mandatory for these tools: production always wires it (main.go) once
+		// NOTION_USER_ID is configured. Reaching here unconfigured means a
+		// broken/incomplete deploy, not a license to allow an unscoped page edit.
+		return false, fmt.Errorf("notion page-author gate not configured; denying write to page %q", pageID)
+	}
+	if pageID == "" {
+		return false, fmt.Errorf("notion call has no page_id; cannot verify page authorship")
 	}
 	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
 	defer cancel()
-	team, err := upstream.IssueTeam(ctx, s.linearIssueTeam, issueID)
+	authored, err := upstream.PageAuthoredByOperator(ctx, s.notionPageAuthor, pageID, s.notionOperatorUserID)
 	if err != nil {
-		return "", fmt.Errorf("could not verify this Linear issue's team (failing closed): %v", err)
+		return false, fmt.Errorf("could not verify this Notion page's author (failing closed): %v", err)
 	}
-	return team, nil
+	return !authored, nil
+}
+
+// checkLinearIssueTeam resolves issueID to its team AND current assignee via
+// ONE live lookup, or returns an error (used verbatim as the deny reason) on
+// any failure -- fail-closed contract mirrors checkNotionAncestry above: an
+// unconfigured gate, a lookup error, or an issue with no resolvable team all
+// deny rather than silently allow-through with no teamId attr (which would
+// let the call skip Cerbos's team check entirely, the exact hole this gate
+// closes). assignee may legitimately come back "" with no error -- a real
+// Linear issue can have no assignee at all; only a genuinely unparseable
+// assignee shape fails closed (see upstream.GetIssueDetails's contract).
+func (s *Server) checkLinearIssueTeam(ctx context.Context, issueID string) (team, assignee string, err error) {
+	if s.linearIssueTeam == nil {
+		return "", "", fmt.Errorf("linear issue-team gate not configured; denying write for issue %q", issueID)
+	}
+	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
+	defer cancel()
+	team, assignee, err = upstream.GetIssueDetails(ctx, s.linearIssueTeam, issueID)
+	if err != nil {
+		return "", "", fmt.Errorf("could not verify this Linear issue's team/assignee (failing closed): %v", err)
+	}
+	return team, assignee, nil
 }
 
 // checkLinearProjectTeam resolves projectID to its current team(s) via a
@@ -767,6 +1069,69 @@ func (s *Server) checkLinearProjectTeam(ctx context.Context, projectID string) (
 		return nil, fmt.Errorf("could not verify this Linear project's team(s) (failing closed): %v", err)
 	}
 	return teams, nil
+}
+
+// checkGithubPRAuthor resolves owner/repo/pullNumber to the PR's real author
+// login via a live lookup, or returns an error (used verbatim as the deny
+// reason) on any failure -- fail-closed contract mirrors
+// checkLinearIssueTeam/checkLinearProjectTeam above: an unconfigured gate or
+// a lookup error both deny rather than silently allow-through with no
+// prAuthor attr (which would let the call skip Cerbos's deny-not-own-pr rule
+// entirely, the exact hole this gate closes).
+func (s *Server) checkGithubPRAuthor(ctx context.Context, owner, repo string, pullNumber float64) (string, error) {
+	if s.githubPRAuthor == nil {
+		return "", fmt.Errorf("github PR-author gate not configured; denying write to %s/%s#%v", owner, repo, pullNumber)
+	}
+	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
+	defer cancel()
+	author, err := upstream.PRAuthor(ctx, s.githubPRAuthor, owner, repo, pullNumber)
+	if err != nil {
+		return "", fmt.Errorf("could not verify this GitHub PR's author (failing closed): %v", err)
+	}
+	return author, nil
+}
+
+// checkAlertmanagerSilenceOwner resolves silenceID to its real createdBy via
+// a live getSilences lookup, or returns an error (used verbatim as the deny
+// reason) on any failure -- fail-closed contract mirrors checkGithubPRAuthor
+// above: an unconfigured gate or a lookup error both deny rather than
+// silently allow-through with no createdBy attr (which would let the call
+// skip Cerbos's deny-not-own-silence rule entirely, the exact hole this gate
+// closes).
+func (s *Server) checkAlertmanagerSilenceOwner(ctx context.Context, getSilencesTool, silenceID string) (string, error) {
+	if s.alertmanagerSilenceOwner == nil {
+		return "", fmt.Errorf("alertmanager silence-owner gate not configured; denying delete of silence %q", silenceID)
+	}
+	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
+	defer cancel()
+	createdBy, err := upstream.SilenceCreatedBy(ctx, getSilencesTool, s.alertmanagerSilenceOwner, silenceID)
+	if err != nil {
+		return "", fmt.Errorf("could not verify this Alertmanager silence's creator (failing closed): %v", err)
+	}
+	return createdBy, nil
+}
+
+// checkJiraIssueAssignee resolves issueKey to its CURRENT assignee via a
+// live lookup, or returns an error (used verbatim as the deny reason) on any
+// failure -- fail-closed contract mirrors checkLinearIssueTeam above: an
+// unconfigured gate or a lookup error both deny rather than silently
+// allow-through with no assignee attr (which would let the call skip
+// Cerbos's deny-assignee-outside-allowed rule entirely, the exact hole this
+// gate closes). A genuinely unassigned issue resolves to "" with no error
+// (see upstream.IssueAssignee's contract) -- the caller only overwrites
+// res.Attr["assignee"] when non-empty, leaving the has()-guarded Cerbos rule
+// unaffected.
+func (s *Server) checkJiraIssueAssignee(ctx context.Context, issueKey string) (string, error) {
+	if s.jiraIssueAssignee == nil {
+		return "", fmt.Errorf("jira issue-assignee gate not configured; denying write for issue %q", issueKey)
+	}
+	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
+	defer cancel()
+	assignee, err := upstream.IssueAssignee(ctx, s.jiraIssueAssignee, issueKey)
+	if err != nil {
+		return "", fmt.Errorf("could not verify this Jira issue's assignee (failing closed): %v", err)
+	}
+	return assignee, nil
 }
 
 // pagerdutyIncidentIDsFromArgs extracts every incident id a

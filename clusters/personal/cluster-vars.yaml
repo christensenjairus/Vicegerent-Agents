@@ -28,6 +28,14 @@ data:
   githubForkOwners: >-
     "*"
 
+  # This machine's own GitHub login (resource_github.yaml's deny-not-own-pr).
+  # The shim resolves a targeted PR's REAL author via a live pull_request_read
+  # lookup and denies any update_pull_request/update_pull_request_branch/
+  # request_copilot_review call whose PR isn't authored by this user -- closes
+  # the class of incident where a hallucinated/wrong PR number let the agent
+  # write to someone else's PR.
+  githubUsername: christensenjairus
+
   # Jira projects this machine's agents may WRITE to (resource_jira.yaml) --
   # reads are unrestricted. CEL-list-ready; every issue/epic key is expected
   # to start with one of these prefixes + "-". (I don't use Jira for personal.)
@@ -120,6 +128,12 @@ data:
   # notionScratchpadPageId above regardless of this list.
   notionAllowedParentPageIds: 1ccde885971080989baffe615ee5922b  # pragma: allowlist secret (Notion page id; "Teamspace Home")
 
+  # Operator's own Notion user id (mcp-cerbos-shim's live page-author gate,
+  # defs/resource_notion.yaml's deny-not-own-page rule) -- resolved via a
+  # notion-search creator filter against this workspace, see
+  # PageAuthoredByOperator's doc comment.
+  notionUserId: 80ef9a06-7ab7-4479-b971-effdd3aa247c  # pragma: allowlist secret (Notion user id)
+
   # "enabled"/"disabled", never "true"/"false" -- see mcp-cerbos-shim README's
   # "Content Moderation" section.
   contentModeration: disabled
@@ -129,6 +143,17 @@ data:
   # createSilence's duration is capped by this value; personal machine gets a
   # longer leash than work.
   alertmanagerMaxSilenceSeconds: '1209600'  # 14 days
+
+  # This machine's fixed Alertmanager silence-creator identity
+  # (mcp-cerbos-shim's mapping.yaml forces every createSilence call's
+  # createdBy to this value, replacing the tool's own generic default; the
+  # live-resolved deleteSilence ownership gate, resource_alertmanager.yaml's
+  # deny-not-own-silence, then checks a targeted silence's real createdBy
+  # against this same value). Unlike githubUsername/notionUserId above,
+  # Alertmanager's own API has no authenticated "creator" concept to read --
+  # this is just a label the shim itself establishes and later verifies, set
+  # to the operator's own username for readability in the Alertmanager UI.
+  alertmanagerCreatedBy: jchristensen
 
   # Tavily/Firecrawl crawl+map caps (resource_webcrawl.yaml). Same value on
   # both machines -- there's no per-machine reason for a looser crawl budget
