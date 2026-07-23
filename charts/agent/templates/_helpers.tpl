@@ -3,9 +3,9 @@
 {{- end -}}
 
 {{- /* Shared coding-agent instruction: web_search/WebSearch/WebFetch are disabled
-      in codex and claude-code because they're server-side and bypass the sealed
-      egress proxy. Single source of truth for codex's developer_instructions and
-      claude-code's seeded CLAUDE.md — keep them in sync by editing only here. */ -}}
+      in codex, claude-code, and opencode because they're server-side and bypass the sealed
+      egress proxy. Single source of truth for codex's developer_instructions,
+      claude-code's seeded CLAUDE.md, and opencode's seeded AGENTS.md — keep them in sync by editing only here. */ -}}
 {{- define "vicegerent-agent.webSearchInstructions" -}}
 WebSearch/web_search and WebFetch are disabled — both are server-side tools that bypass the sealed egress proxy. For web search, curl $SEARXNG_URL/search?q=<query>&format=json instead.
 {{- end -}}
@@ -13,15 +13,15 @@ WebSearch/web_search and WebFetch are disabled — both are server-side tools th
 {{- /* Shared coding-agent instruction: every external capability is exposed through the
       single vmcp MCP server, discovered by tool search rather than a fixed named list.
       Single source of truth for hermes-agent's SOUL.md (via vicegerent-agent.environment),
-      codex's developer_instructions, and claude-code's seeded CLAUDE.md. */ -}}
+      codex's developer_instructions, claude-code's seeded CLAUDE.md, and opencode's seeded AGENTS.md. */ -}}
 {{- define "vicegerent-agent.vmcpToolDiscovery" -}}
 Every external capability you need (Kubernetes, GitLab, Notion, monitoring, etc.) is exposed through the single `vmcp` MCP server's tool search, not a fixed list you already know. Before telling the user an action isn't possible, exhaustively search vmcp (vary your query wording) — most capabilities already exist there and just need the right search terms.
 {{- end -}}
 
 {{- /* Shared coding-agent instruction: use .worktrees correctly for any repo with a
       persistent clone under /workspace. Single source of truth for hermes-agent's
-      SOUL.md (via vicegerent-agent.environment), codex's developer_instructions, and
-      claude-code's seeded CLAUDE.md — a wrong-worktree edit was observed live wasting
+      SOUL.md (via vicegerent-agent.environment), codex's developer_instructions,
+      claude-code's seeded CLAUDE.md, and opencode's seeded AGENTS.md — a wrong-worktree edit was observed live wasting
       most of an hour of agent runtime (edits landed in the primary clone instead of
       the assigned .worktrees/<branch>, and a full-repo validation script then scanned
       unrelated sibling worktrees and failed on their content). Also covers: keeping
@@ -82,7 +82,7 @@ redaction, or quietly give up. The user decides whether it was a false positive 
 you what you need another way.
 
 # Coding agents
-Use `claude-code` or `codex` for medium/large tasks and all code reviews — don't inline large coding work.
+Use `claude-code`, `codex`, or `opencode` for medium/large tasks and all code reviews — don't inline large coding work.
 Pick the model that fits the task: heavier reasoning for complex/design work, lighter/faster for quick fixes and alternatives.
 
 # Memory

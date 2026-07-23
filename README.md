@@ -1,6 +1,6 @@
 # Vicegerent Agents
 
-GitOps repository for the **vicegerent** infra agent platform — credential-isolated, egress-locked agent sandboxes on a local Kind cluster (Cilium CNI), managed by Flux. The platform is **harness-agnostic**: the same sandbox runs whichever coding agent you point it at — Hermes, Claude Code, or Codex — identically, because every containment layer wraps the *process and the pod*, not any one agent's internals. It lets an agent run genuinely unattended (schedules, event triggers, no human approving every action) because containment is enforced by the platform, not by the agent's behavior — see [`docs/design.md`](docs/design.md) for the full rationale and how this compares to a laptop CLI agent or a plain container.
+GitOps repository for the **vicegerent** infra agent platform — credential-isolated, egress-locked agent sandboxes on a local Kind cluster (Cilium CNI), managed by Flux. The platform is **harness-agnostic**: the same sandbox runs whichever coding agent you point it at — Hermes, Claude Code, Codex, or OpenCode — identically, because every containment layer wraps the *process and the pod*, not any one agent's internals. It lets an agent run genuinely unattended (schedules, event triggers, no human approving every action) because containment is enforced by the platform, not by the agent's behavior — see [`docs/design.md`](docs/design.md) for the full rationale and how this compares to a laptop CLI agent or a plain container.
 
 ![Architecture of Vicegerent Agents (Excalidraw)](./architecture.png)
 
