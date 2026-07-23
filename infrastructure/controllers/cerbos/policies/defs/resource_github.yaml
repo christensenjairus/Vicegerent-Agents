@@ -47,6 +47,18 @@
 # both tools, so the body rule only fires on create (isPrCreate) -- an
 # update that doesn't touch body isn't reassigning the description away from
 # a link it may already carry.
+#
+# deny-not-own-pr: closes the class of incident that motivated it -- an agent
+# hallucinating a wrong PR number and writing to a PR it doesn't own. Every
+# tool that targets an EXISTING PR by pullNumber (update_pull_request,
+# update_pull_request_branch, request_copilot_review) has the shim resolve
+# the PR's REAL author via a live pull_request_read lookup BEFORE Cerbos is
+# consulted (server.go's checkGithubPRAuthor -- a network round trip Cerbos
+# itself can't make) and injects it as this prAuthor attr. has()-guarded
+# since github_repo has only one Cerbos action (access) shared by every
+# mapped tool including reads and create_pull_request, neither of which ever
+# gets a prAuthor attr at all (nothing to check on a read; a newly created PR
+# has no prior-ownership question).
 apiVersion: api.cerbos.dev/v1
 resourcePolicy:
   version: default
@@ -160,6 +172,21 @@ resourcePolicy:
             "PR descriptions against moveworks-emu/k8s-manifests must include a"
             + " change-ticket link, e.g."
             + " https://bannertech.atlassian.net/browse/CHANGE-1234."
+    - name: deny-not-own-pr
+      actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.prAuthor) && request.resource.attr.prAuthor
+            != "${githubUsername}"
+      output:
+        when:
+          ruleActivated: >-
+            "This agent may only write to pull requests it authored itself."
+            + " This PR was not authored by the configured user; the target"
+            + " PR number may be wrong."
     - name: allow-all
       actions: ['*']
       effect: EFFECT_ALLOW

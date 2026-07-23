@@ -8,7 +8,7 @@ metadata:
 spec:
   interval: 1m0s
   ref:
-    branch: feat/deepseek-glm-providers
+    branch: scope-mcp-writes-using-shim
   secretRef:
     name: flux-system
   url: ssh://git@gitlab.hahomelabs.com/jchristensen/vicegerent-agents.git

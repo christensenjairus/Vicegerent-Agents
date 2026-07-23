@@ -8,13 +8,25 @@ Tool *selection* (which tools an agent can see and call) and argument-level *aut
 
 Tool selection here is done upstream in ToolHive's vMCP (`aggregation.tools` in `toolhive-servers.json`): an operator scopes a backend's tools by editing that file and restarting the host stack — no cluster round-trip. agentgateway can also enforce a per-tool allowlist itself (its MCP tool-filtering feature); a corporate/centralized deployment would put the allowlist there, version-controlled at the gateway. Which place owns it is a policy choice — this platform keeps it in ToolHive for developer flexibility.
 
-This shim + Cerbos are an orthogonal layer: argument-level authorization that denies by *resource* whatever the exposed tool set is — currently Kubernetes Secret reads, OpenSearch Grafana datasource reads, Elastic data-access calls targeting a blocked index/datastream token, Jira calls targeting a project other than CHANGE, GitHub calls targeting a repo outside an allowlist or writing directly to a protected branch, Linear `save_issue` calls (create or update) targeting a team other than DEVOPS, Alertmanager `createSilence` calls over the configured duration cap (`deleteSilence` has no ownership-based deny — see `defs/resource_alertmanager.yaml`), PagerDuty `manage_incidents` calls that change anything other than status=acknowledged/resolved, Notion `update-page` calls that set `command: replace_content` or `allow_deleting_content: true` (and, via a shim-side live ancestry check, any `update-page` targeting a page not under the agent's Scratchpad tree — see "How it works"), and Firecrawl `firecrawl_interact` calls that carry raw `code` to execute in the browser session (`prompt`-only interaction remains allowed). Notion `create-pages` calls whose parent isn't the Scratchpad folder are also denied (a deny, not a mutation — see below). GitLab has no Cerbos-mapped tools or policy at all (its git file/branch-write tools were dropped from the allowlist instead). (Notion `create-pages` is also mapped; see "How it works".)
+This shim + Cerbos are an orthogonal layer: argument-level authorization that denies by *resource* whatever the exposed tool set is — currently Kubernetes Secret reads, OpenSearch Grafana datasource reads, Elastic data-access calls targeting a blocked index/datastream token, Jira calls targeting a project other than CHANGE, GitHub calls targeting a repo outside an allowlist or writing directly to a protected branch, Linear `save_issue` calls (create or update) targeting a team other than DEVOPS, Alertmanager `createSilence` calls over the configured duration cap and `deleteSilence` calls targeting a silence this agent didn't create (live-resolved — see below), PagerDuty `manage_incidents` calls that change anything other than status=acknowledged/resolved, Notion `update-page` calls that set `command: replace_content` or `allow_deleting_content: true` (and, via a shim-side live ancestry check, any `update-page` targeting a page not under the agent's Scratchpad tree — see "How it works"), and Firecrawl `firecrawl_interact` calls that carry raw `code` to execute in the browser session (`prompt`-only interaction remains allowed). Notion `create-pages` calls whose parent isn't the Scratchpad folder are also denied (a deny, not a mutation — see below). GitLab has no Cerbos-mapped tools or policy at all (its git file/branch-write tools were dropped from the allowlist instead). (Notion `create-pages` is also mapped; see "How it works".)
+
+On top of that resource-scoping, five gates enforce **real, live ownership** rather
+than trusting a call's own arguments — see "Live-Resolved Ownership Gates" below: a
+write to an EXISTING GitHub PR is denied unless the PR's real author matches
+`${githubUsername}`; a write to an EXISTING Jira issue or Linear issue is denied unless
+the ticket's CURRENT assignee matches the allowed-assignees cluster-var; a write to
+an EXISTING Notion page is denied unless the page's real author matches
+`${notionUserId}`; and an Alertmanager `deleteSilence` call is denied unless the target
+silence's real creator matches `${alertmanagerCreatedBy}`. These exist specifically to
+catch a hallucinating agent that targets the *wrong* resource id — the call's own
+arguments have no reason to lie about ownership, so a check based solely on them can't
+catch this.
 
 | Layer | Job |
 | --- | --- |
 | **agentgateway** | MCP ingress gate: routing and mTLS to the host vMCP. Can also enforce a per-tool allowlist centrally; in this setup that's left to ToolHive. |
-| **mcp-cerbos-shim** (this) | Extract the resource a *resource-bearing* tool targets (a k8s kind, a Grafana datasource id, an Elastic index/datastream target, a Jira project/issue key, a GitHub owner/repo/branch, a Linear teamId, an Alertmanager silence duration, a PagerDuty manage_incidents change, a Notion update-page command, or a Firecrawl interact code payload) and ask Cerbos about it; apply any `force` arg-rewrite on allow. |
-| **Cerbos policy** | Make the deny decision: block calls that touch Secrets, OpenSearch datasources, a blocked Elastic index/datastream, a non-CHANGE Jira project, a GitHub repo outside the allowlist or a protected-branch write, a non-DEVOPS Linear team, an over-cap Alertmanager silence, an out-of-scope PagerDuty change, a destructive Notion update-page command, or a code-carrying Firecrawl interact call, and reject a kind-bearing call whose kind can't be resolved. Allow-all for all roles + deny overrides for the protected resources and empty-kind. |
+| **mcp-cerbos-shim** (this) | Extract the resource a *resource-bearing* tool targets (a k8s kind, a Grafana datasource id, an Elastic index/datastream target, a Jira project/issue key, a GitHub owner/repo/branch, a Linear teamId, an Alertmanager silence duration, a PagerDuty manage_incidents change, a Notion update-page command, or a Firecrawl interact code payload) and ask Cerbos about it; for a write to an EXISTING GitHub PR/Jira issue/Linear issue/Notion page, or an Alertmanager `deleteSilence` call, first resolves the resource's real author/assignee/creator via a live lookup and injects it as an attr (see "Live-Resolved Ownership Gates"); apply any `force` arg-rewrite on allow (e.g. stamping `createdBy` onto every `createSilence` call). |
+| **Cerbos policy** | Make the deny decision: block calls that touch Secrets, OpenSearch datasources, a blocked Elastic index/datastream, a non-CHANGE Jira project, a GitHub repo outside the allowlist or a protected-branch write, a non-DEVOPS Linear team, an over-cap Alertmanager silence, an out-of-scope PagerDuty change, a destructive Notion update-page command, or a code-carrying Firecrawl interact call; deny a GitHub PR/Jira issue/Linear issue/Notion page write or an Alertmanager silence delete whose live-resolved author/assignee/creator doesn't match the operator; and reject a kind-bearing call whose kind can't be resolved. Allow-all for all roles + deny overrides for the protected resources and empty-kind. |
 
 Consequences:
 - A new tool exposed by the vMCP needs **no** shim/Cerbos change unless it can name a protected resource; otherwise it passes the guardrail. (Whether it's *exposed* is the separate tool-selection choice above.)
@@ -22,6 +34,73 @@ Consequences:
 - The mapped tools are only the ones that name a protected resource: the k8s `kind`/resource selectors (`kubernetes_resources_get`, `kubernetes_resources_list`), the Grafana datasource-bearing tools (`grafana_get_datasource`, `grafana_query_prometheus*`, `grafana_list_prometheus_*`, `grafana_query_loki_logs`, `grafana_query_loki_stats`, `grafana_list_loki_label_*` — the Loki/VictoriaLogs tools carry the same `datasourceUid` arg as the Prometheus ones, so they hit the same OpenSearch-datasource block; `grafana_check_datasources_health` takes a plural `uids` array this single-resource-per-call model can't check, and only reveals up/down status rather than a datasource's actual data, so it's unmapped), the project/issue-bearing Jira tools (`jira_jira_create_issue`, `jira_jira_get_issue`, `jira_jira_update_issue`, `jira_jira_transition_issue`, `jira_jira_add_comment`, `jira_jira_get_transitions`, `jira_jira_get_project_issues`, `jira_jira_create_issue_link`, `jira_jira_link_to_epic`), every repo-bearing GitHub tool in the vMCP allowlist (`github_pull_request_read`, `github_create_pull_request`, `github_update_pull_request_branch`, etc. — full list in mapping.yaml; `github_get_me` is the one exception, since it names no repo). GitHub's tool set is deliberately PR-only: no issue tools (this operator doesn't use GitHub issues at work) and no generic git file/branch-write tools (`create_branch`/`create_or_update_file`/`push_files` — the bot has direct SSH access to github.com, so routine git operations go through git itself). GitLab is similarly trimmed of its three git file/branch-write tools (`push_files`/`create_or_update_file`/`create_branch` — same SSH-access rationale, gitlab.hahomelabs.com is also directly reachable over SSH) but is otherwise NOT scoped down like GitHub — the operator owns this GitLab instance and isn't picky about its issue/MR tools, which stay unmapped and allow-all. GitLab has no `resource_gitlab.yaml` policy or `gitlab_repo` Cerbos resource at all anymore — it was removed once nothing populated it. And Linear's `linear_save_issue` (`team` is required on create and always verifiable; on update the caller usually sends no `team` for the existing issue, so the shim leaves that call unmapped — but a call that DOES set `team` on an update, i.e. a deliberate reassignment, is checked exactly like a create). `linear_save_comment`/`linear_save_project` target an existing comment/project by id and carry no team of their own, so they're unmapped. `notion_notion-create-pages` is mapped to a Cerbos deny on any parent other than the Scratchpad folder (`defs/resource_notion.yaml`'s `deny-create-outside-scratchpad` rule), and `notion_notion-update-page` is mapped both to the destructive-command Cerbos deny AND to a shim-side live ancestry gate that denies updates to any page not under the Scratchpad tree. `notion_notion-create-comment` shares that same live ancestry gate (it targets an existing page by id too, with no destructive-command surface of its own). And the Elastic (Kibana Agent Builder) data-access tools (`elastic_platform_core_search`, `elastic_platform_core_execute_esql`, `elastic_platform_core_get_document_by_id`, `elastic_platform_core_get_index_mapping`, `elastic_platform_core_list_indices`, `elastic_platform_core_index_explorer`, the `elastic_platform_streams_*` tools, and `elastic_security_alerts`) map to the `elastic` resource carrying a `targets` list (every index-bearing arg plus the `execute_esql` query text, built by the `elasticTargetsAttr` helper); Cerbos denies any call whose target matches a blocked index/datastream token (`${elasticDeniedIndexPatterns}`). The discovery/doc/entity/trace tools that name a source without reading its data (`product_documentation`, `integration_knowledge`, `security_labs_search`, `cases`, `get_entity`, `search_entities`, `get_trace_change_points`, `generate_esql`) and the arg-less `platform_streams_list_streams` are unmapped. Everything else passes untouched.
 
 The shim mapping and Cerbos rules exist to *deny* protected resources, not to permit tools. To allow or disallow a tool outright, change the exposed tool set (ToolHive's `aggregation.tools` today, or an agentgateway per-tool allowlist in a centralized setup) — not the mapping or an `allow` rule here.
+
+### Live-Resolved Ownership Gates
+
+Every deny rule described above checks something a call's OWN arguments already say —
+a repo name, a project key, a team id. That's no defense against an agent that
+hallucinates the wrong *id*: nothing in the call's arguments is lying, it's simply
+targeting a resource it doesn't own, and an arg-only check has nothing to catch. This
+happened in production once — an agent hallucinated a GitHub PR number and edited
+someone else's PR description.
+
+Five gates close this by resolving the resource's REAL, CURRENT state via a live
+lookup back through vMCP (the shim acting as its own MCP client, `internal/upstream`
+— the same mechanism the Notion ancestry gate and the pre-existing Linear/PagerDuty
+team/service gates already use, since Cerbos's CEL evaluation is pure/synchronous and
+can't make network calls itself) and injecting the resolved value into the resource's
+`res.Attr` **before** Cerbos is consulted — the shim only resolves+injects, Cerbos's
+existing (or a new one-line) rule makes the actual allow/deny decision, exactly like
+every other gate in this file:
+
+| Backend | Gated tools | Resolves | Cerbos rule |
+| --- | --- | --- | --- |
+| GitHub | `update_pull_request`, `update_pull_request_branch`, `request_copilot_review` | the PR's real author login, via `pull_request_read` | `deny-not-own-pr` (`defs/resource_github.yaml`) vs. `${githubUsername}` |
+| Jira | `jira_jira_update_issue`, `jira_jira_add_comment`, `jira_jira_transition_issue` (only when the call itself carries no assignee) | the issue's CURRENT assignee, via `jira_jira_get_issue` | the existing `deny-assignee-outside-allowed` (`defs/resource_jira.yaml`) vs. `${jiraAllowedAssignees}` |
+| Linear | `save_issue` updates and `save_comment` (only when the call itself carries no team/assignee) | the issue's team AND current assignee, via ONE `linear_get_issue` call | the existing `deny-*-outside-allowed` rules (`defs/resource_linear.yaml`) vs. `${linearAllowedTeams}`/`${linearAllowedAssignees}` |
+| Notion | `notion-update-page`, `notion-create-comment` | whether the page was created by `${notionUserId}`, via `notion-fetch` + a `notion-search` creator-filtered query | `deny-not-own-page` (`defs/resource_notion.yaml`), boolean `pageAuthorMismatch` attr |
+| Alertmanager | `deleteSilence` | the target silence's real `createdBy`, via a `getSilences` list-then-filter lookup (no single-silence-get tool exists) | `deny-not-own-silence` (`defs/resource_alertmanager.yaml`) vs. `${alertmanagerCreatedBy}` |
+
+`create_pull_request`/`notion-create-pages`/Linear+Jira issue `create`/Alertmanager
+`createSilence` are excluded — a brand-new resource has no prior-ownership question to
+resolve (Alertmanager's `createSilence` instead FORCES its own `createdBy` arg to
+`${alertmanagerCreatedBy}` via `mapping.yaml`'s `force` block, which is what makes
+`deleteSilence`'s later check meaningful at all — see `defs/resource_alertmanager.yaml`).
+Read-only tools (`pull_request_read`, `get_issue`, `getSilences`, etc.) are excluded
+too — nothing to protect on a read.
+
+All five share the same **fail-closed** contract: an unconfigured gate or a lookup
+error (timeout, malformed response, upstream error) denies the call outright rather
+than silently skipping the check — the same posture as the Notion ancestry gate.
+Fail-closed applies to the LOOKUP, not to a legitimately-absent property: a real
+Jira/Linear issue can have no assignee at all, and that resolves to an empty string
+with no error (the existing `has()`-guarded Cerbos rules already treat an absent/empty
+attr as allow). A GitHub PR always has an author, so that gate has no such
+legitimately-empty case; Alertmanager's `createdBy` is the same shape once the
+`createSilence` force is in place, though silences created before this gate shipped
+still carry the old default `createdBy` value and so are undeletable via MCP until
+they expire naturally (non-security-relevant — it fails closed, never open). Notion's
+signal is a semantic search match rather than an exact field comparison
+(`notion-fetch`'s output carries no author field at all — see
+`PageAuthoredByOperator`'s doc comment in `internal/upstream/notion_author.go`), so a
+false negative (a legitimately-authored page the search doesn't match) is possible;
+this is deliberately fail-closed-**safe** — it denies a legitimate write rather than
+ever falsely allowing a non-owner's edit.
+
+Per-cluster configuration: `githubUsername` and `notionUserId` are each a single
+per-machine identity value (a personal PAT/workspace account, not a shared bot
+identity — the two machines already use different GitHub identities today), set in
+`clusters/<machine>/cluster-vars.yaml`. `notionUserId` may be an empty placeholder on
+a machine that hasn't had its operator id resolved yet (`notion-fetch {"id":"self"}`
+once, by hand); that machine's gate then fails closed on every Notion
+update-page/create-comment until it's filled in, same as `NOTION_ALLOWED_PARENT_PAGE_IDS`
+being unset. Jira/Linear reuse the existing `jiraAllowedAssignees`/`linearAllowedAssignees`
+cluster-vars — no new config for those two. `alertmanagerCreatedBy` is a fixed,
+per-machine label the shim itself establishes and later verifies (set to `jchristensen`
+on both machines here) rather than a real externally-authenticated identity like the
+other three — Alertmanager's own API has no authenticated "creator" concept to look up,
+so both halves (the `createSilence` force and the `deleteSilence` check) just need to
+agree with each other, which they do by reading the same cluster-var.
 
 ### Content Moderation
 
@@ -68,15 +147,18 @@ agentgateway's HTTP `extAuthz` (which Cerbos speaks natively) **cannot see MCP t
 For each `tools/call` the gateway forwards (`McpRequest`), the connector:
 
 1. Resolves the backend from `service_names` (exactly one mapped backend, else deny).
-2. Parses the JSON-RPC params (`{name, arguments}`); unparseable/missing denies. If `name` is `call_tool` (the vMCP optimizer's meta-tool — see `host/mcp/README.md` "Tool discovery optimizer"), unwraps `arguments.{tool_name,parameters}` into the real tool/args first; a missing or non-string `tool_name` denies. Without this, every optimizer-routed call would look identical (`call_tool`) to every other, defeating step 3 below.
-3. Looks up `(backend, tool)` in the mapping. The `vmcp` backend is `defaultAction: allow`, so an unmapped tool **passes** (it can't name a Secret); only the kind-bearing tools are mapped.
-4. Evaluates the mapped tool's CEL expressions against `{tool, args, backend, method}` to build a Cerbos resource (standardizing kind/apiResource via the `canonicalK8s` helper). A CEL eval failure denies (the shim's own malfunction; never send a half-built resource).
-5. For the one tool that needs live state Cerbos can't see — `notion_notion-update-page` (resource `notion_page`, action `update`) — runs a Scratchpad **ancestry gate** BEFORE Cerbos: it calls `notion_notion-fetch` back through the gateway/vMCP (`internal/upstream`) once for the target page and denies unless the returned `<ancestor-path>` contains the Scratchpad page id from the `NOTION_SCRATCHPAD_PAGE_ID` env var (`deployment.yaml`, same `${notionScratchpadPageId}` cluster-var create-pages's Cerbos rule checks — one id, two independent readers). This is the only network round trip in the request path; it fails **closed** (deny) on lookup timeout/error/malformed result or an unconfigured gate. `notion_notion-fetch` must stay unmapped (`defaultAction: allow`) so this re-entrant call isn't itself gated — see `internal/upstream/client.go`.
+5. For tools that need live state Cerbos can't see, runs a shim-side lookup back through the gateway/vMCP (`internal/upstream`) BEFORE Cerbos:
+   - `notion_notion-update-page`/`notion_notion-create-comment` (resource `notion_page`) run a Scratchpad **ancestry gate**: calls `notion_notion-fetch` once for the target page and denies unless the returned `<ancestor-path>` contains one of the allowed parent page ids from the `NOTION_ALLOWED_PARENT_PAGE_IDS` env var (`deployment.yaml`, same ids create-pages's Cerbos rule checks). A shim-side deny, not an injected attr — no natural single-attr Cerbos shape existed for "under this folder tree".
+   - The same two Notion tools also run a live **page-author** lookup (`notion_notion-fetch` + a creator-filtered `notion_notion-search`) and inject `pageAuthorMismatch` for Cerbos's `deny-not-own-page` rule to evaluate.
+   - GitHub's `update_pull_request`/`update_pull_request_branch`/`request_copilot_review`, Jira's `update_issue`/`add_comment`/`transition_issue`, and Linear's `save_issue` updates/`save_comment` each resolve the target PR/issue's real author or CURRENT assignee/team (a single `pull_request_read`/`jira_jira_get_issue`/`linear_get_issue` call) and inject it into the resource attrs for Cerbos's own rule to evaluate — see "Live-Resolved Ownership Gates" above for the full table.
+   - Alertmanager's `deleteSilence` resolves the target silence's real `createdBy` via a `getSilences` list-then-filter lookup (no single-silence-get tool exists) and injects it for `deny-not-own-silence` to evaluate — same table above.
+
+   Every one of these is the only network round trip its own request takes; each fails **closed** (deny) on lookup timeout/error/malformed result or an unconfigured gate. The lookup tools themselves (`notion_notion-fetch`, `notion_notion-search`, `pull_request_read`, `jira_jira_get_issue`, `linear_get_issue`, `alertmanager_getSilences`/`alertmanager_gov_getSilences`) must stay unmapped (`defaultAction: allow`) so a gate's own re-entrant call isn't itself gated — see `internal/upstream/client.go`.
 6. Calls Cerbos `CheckResources` (via the `authz.Decider` interface). Denied or Cerbos error returns `AuthorizationError`; the deny reason is the matched rule's policy-authored `output` (see `policies/defs/*.yaml` `output:` blocks, e.g. `deny-self-approve`'s "use REQUEST_CHANGES instead") when the rule has one configured, falling back to a generic backend-agnostic message when it doesn't. This is what lets a calling agent understand *why* it was blocked and self-correct instead of retrying blind or silently downgrading its own intent. Allowed returns `Pass{}` — unless the tool's mapping carries a `force` block (literal key/value overrides, e.g. GitHub PR create/update forcing `draft: true`), in which case it returns `Mutated{}` with those keys rewritten into the call's arguments (re-wrapped into `call_tool{tool_name,parameters}` first if the call arrived that way). `force` only ever applies on an allowed call — a denied call is never mutated.
 
 It never returns `header_mutation` or `metadata` (the gateway applies `metadata` even on `Pass`, so leaving it empty is part of the contract); `mutated` is set only for a `force`-mapped tool on allow, otherwise it's `pass` or `error`.
 
-The shim delegates the verdict to Cerbos for almost everything; it standardizes fields and forwards, with two narrow exceptions. A `force` block is a fixed, unconditional rewrite (never derived from the call's own args), not a judgment call. And the Notion update-page ancestry gate (step 5) is a shim-side deny — Cerbos can't make it, since resolving a page's ancestors needs a network lookup and Cerbos has no I/O. Every *other* deny is Cerbos's (Secrets, and a kind-bearing call whose kind can't be resolved as `kind==""`/`deny-no-kind`); everything else passes the guardrail by default — tool selection is handled upstream (ToolHive, or an agentgateway allowlist in a centralized setup), not here. The shim only fails closed on its own malfunction (unparseable params, unknown/multiple backend, CEL eval error, Cerbos unreachable, or a force-mapped tool's args failing to re-serialize). See `internal/server/server_test.go` for the full matrix.
+The shim delegates the verdict to Cerbos for almost everything; it standardizes fields and forwards, with two narrow exceptions. A `force` block is a fixed, unconditional rewrite (never derived from the call's own args), not a judgment call. And the Notion update-page/create-comment ancestry gate (step 5) is a shim-side deny — Cerbos can't make it, since resolving a page's ancestors needs a network lookup and Cerbos has no I/O. Every *other* live lookup in step 5 (GitHub PR author, Jira/Linear assignee, Notion page author) resolves-then-injects rather than denying directly, so Cerbos's own policy stays the single source of truth for those decisions. Every *other* deny is Cerbos's (Secrets, and a kind-bearing call whose kind can't be resolved as `kind==""`/`deny-no-kind`); everything else passes the guardrail by default — tool selection is handled upstream (ToolHive, or an agentgateway allowlist in a centralized setup), not here. The shim only fails closed on its own malfunction (unparseable params, unknown/multiple backend, CEL eval error, Cerbos unreachable, or a force-mapped tool's args failing to re-serialize). See `internal/server/server_test.go` for the full matrix.
 
 ## Config
 

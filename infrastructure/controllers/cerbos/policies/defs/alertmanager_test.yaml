@@ -4,12 +4,14 @@
 # clusters/work/cluster-vars.yaml, so the "exceeds work cap" fixtures are what
 # actually get exercised in CI; the personal-cap comment documents the wider
 # personal allowance for a human reading this file, not a second compiled
-# variant.
+# variant. createdBy fixtures use "jchristensen", the work cluster's
+# ${alertmanagerCreatedBy} value, for the same reason.
 name: alertmanager_silence_guardrails_test
 description: createSilence calls whose duration exceeds the cap are denied; calls
-  within the cap are allowed. deleteSilence and all other actions on this resource
-  fall through to allow-all (no ownership-based deny; see resource_alertmanager.yaml
-  for why that rule was removed).
+  within the cap are allowed. deleteSilence is denied unless the target silence's
+  real createdBy (injected by the shim's live getSilences lookup, see server.go's
+  checkAlertmanagerSilenceOwner) matches this machine's ${alertmanagerCreatedBy};
+  a silence with no createdBy attr at all falls through to allow (has()-guard).
 options:
   now: '2026-07-05T00:00:00Z'
 principals:
@@ -29,8 +31,16 @@ resources:
     id: HighMemoryUsage
     kind: alertmanager_silence
     attr: {durationSeconds: '172800'}  # 48h, exceeds the work 24h cap
-  existing_silence_to_delete:
+  own_silence_to_delete:
     id: 6f9d3a2e-1234-4567-8901-abcdef012345
+    kind: alertmanager_silence
+    attr: {createdBy: jchristensen}
+  other_silence_to_delete:
+    id: 7a0e4b3f-2345-5678-9012-bcdef0123456
+    kind: alertmanager_silence
+    attr: {createdBy: someone-else}
+  no_attr_silence_to_delete:
+    id: 8b1f5c40-3456-6789-0123-cdef01234567
     kind: alertmanager_silence
 tests:
   - name: createSilence within or at the cap is allowed
@@ -54,12 +64,31 @@ tests:
       - principal: hermes
         resource: over_work_cap_silence
         actions: {create: EFFECT_DENY}
-  - name: deleteSilence is allowed (no ownership-based deny; falls through to allow-all)
+  - name: deleteSilence on a silence this machine created is allowed
     input:
       principals: [hermes]
-      resources: [existing_silence_to_delete]
+      resources: [own_silence_to_delete]
       actions: [delete]
     expected:
       - principal: hermes
-        resource: existing_silence_to_delete
+        resource: own_silence_to_delete
+        actions: {delete: EFFECT_ALLOW}
+  - name: deleteSilence on a silence created by someone else is denied
+    input:
+      principals: [hermes]
+      resources: [other_silence_to_delete]
+      actions: [delete]
+    expected:
+      - principal: hermes
+        resource: other_silence_to_delete
+        actions: {delete: EFFECT_DENY}
+  - name: deleteSilence on a silence with no createdBy attr falls through to allow
+      (has()-guard)
+    input:
+      principals: [hermes]
+      resources: [no_attr_silence_to_delete]
+      actions: [delete]
+    expected:
+      - principal: hermes
+        resource: no_attr_silence_to_delete
         actions: {delete: EFFECT_ALLOW}

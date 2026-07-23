@@ -143,7 +143,14 @@ func TestDeployedLinearMapping_UpdateReassigningTeamReachesCerbos(t *testing.T) 
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	// This call sets `team` explicitly but not `assignee` -- the assignee
+	// half of the save_issue-update gate still fires a lookup for the
+	// missing signal (see server.go's checkLinearIssueTeam comment), so a
+	// fake upstream must be wired for its own lookup to succeed; this test
+	// only cares that the CALL's own team override reaches Cerbos unchanged,
+	// not about the resolved assignee value.
+	up := &fakeUpstream{text: linearIssueResultDevops}
+	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithLinearIssueTeam(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_issue",
 			map[string]any{"id": "issue-1", "team": "some-other-team-id"})))

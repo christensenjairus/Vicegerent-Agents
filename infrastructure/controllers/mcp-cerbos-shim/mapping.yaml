@@ -11,17 +11,24 @@
 # get-secret-value/batch, SSM get-parameter*), Jira WRITES targeting a project outside
 # ${jiraAllowedProjects} (reads are unrestricted), GitHub calls targeting a repo outside the allowlist or writing
 # directly to a protected branch, Linear calls targeting a team other than
-# DEVOPS, Alertmanager silences over the duration cap, Alertmanager getAlerts
-# calls with no filterLabel (an unfiltered call returns every active alert
-# and reliably times out; see resource_alertmanager_alert_query.yaml for why
-# the earlier "mcp-alertmanager's own hardcoded 30s client timeout"
-# attribution was retracted), out-of-scope PagerDuty incident changes, Notion create-pages calls whose parent isn't
+# DEVOPS, Alertmanager silences over the duration cap, a deleteSilence call
+# whose target silence the shim resolves as created by someone other than
+# ${alertmanagerCreatedBy} (a live getSilences lookup, since deleteSilence's
+# own silenceId arg proves nothing about who created it), Alertmanager
+# getAlerts calls with no filterLabel (an unfiltered call returns every
+# active alert and reliably times out; see
+# resource_alertmanager_alert_query.yaml for why the earlier "mcp-
+# alertmanager's own hardcoded 30s client timeout" attribution was
+# retracted), out-of-scope PagerDuty incident changes, Notion create-pages calls whose parent isn't
 # the Scratchpad folder, and Tavily/Firecrawl crawl+map calls targeting an
 # internal-only host or exceeding the limit/depth/breadth caps. GitLab has no mapped tools or Cerbos resource at all
 # (see the GitLab tools comment below). A `force` block instead
 # allows-with-rewritten-args — that's a mutation, not a deny (see server.go):
-# GitHub PR create/update force draft: true. Adding a tool here to permit it
-# is wrong; that belongs in the gateway allowlist.
+# GitHub PR create/update force draft: true; Alertmanager createSilence force
+# createdBy: ${alertmanagerCreatedBy}, so deleteSilence's live lookup above
+# has a real identity to check against instead of the tool's own unauthenticated
+# default. Adding a tool here to permit it is wrong; that belongs in the
+# gateway allowlist.
 backends:
   vmcp:
     defaultAction: allow
@@ -388,20 +395,50 @@ backends:
       # alertmanagerAttr helper (helpers_alertmanager.go) to convert it to
       # seconds first. An omitted duration defaults to Alertmanager's own
       # documented default (2h) rather than falling through unchecked.
-      # deleteSilence/getSilences/getAlerts/etc. are unmapped and pass:
-      # deleteSilence used to be denied outright over unverifiable ownership,
-      # but a deny with no discriminating signal blocked legitimate
-      # self-cleanup as much as it would have blocked anything else, so it was
-      # removed (see resource_alertmanager.yaml for the reasoning).
+      #
+      # force overrides createSilence's own caller-supplied (and optional --
+      # default 'mcp-alertmanager') createdBy arg with this machine's fixed
+      # ${alertmanagerCreatedBy} identity. Unlike GitHub's PR author/Notion's
+      # page creator/Jira-Linear's assignee -- all externally-authenticated
+      # identities this shim only ever READS -- createdBy has no genuine
+      # external identity behind it unless the shim establishes one at
+      # creation time, so this force is what makes deleteSilence's ownership
+      # check (below) meaningful at all: whatever this stamps is exactly what
+      # that check later verifies against.
       alertmanager_createSilence: &alertmanager_create_silence
         resourceType: alertmanager_silence
         action: create
         id: get(args,'alertName','')
         attrFrom: alertmanagerAttr(args)
-      # alertmanager_gov backend (toolhive-servers.json): same duration cap,
-      # reused verbatim -- the cap doesn't depend on which Alertmanager
-      # instance the silence is created on.
+        force:
+          createdBy: ${alertmanagerCreatedBy}
+      # alertmanager_gov backend (toolhive-servers.json): same duration cap
+      # and forced createdBy, reused verbatim -- neither depends on which
+      # Alertmanager instance the silence is created on.
       alertmanager_gov_createSilence: *alertmanager_create_silence
+      # Alertmanager silence-deleting tool -> alertmanager_silence/delete;
+      # Cerbos denies a delete whose target silence the shim resolves (via a
+      # live getSilences lookup, since silenceId itself is an opaque UUID
+      # that proves nothing about ownership) as created by anyone other than
+      # ${alertmanagerCreatedBy} -- the same inject-then-Cerbos-decides
+      # pattern as GitHub's prAuthor/Jira-Linear's assignee (server.go). This
+      # used to be an unconditional deny with no discriminating signal
+      # (removed -- see resource_alertmanager.yaml); the live lookup plus the
+      # createSilence force above together make the signal real.
+      # getSilences itself stays unmapped (recursion safety, same reasoning
+      # as pagerduty_*_get_incident/notion_notion-fetch/linear_get_issue).
+      # attr carries only silenceId -- createdBy isn't derivable from the
+      # call's own args (that's the whole reason this needs a live lookup),
+      # so server.go's checkAlertmanagerSilenceOwner injects it into
+      # res.Attr directly, same as GitHub's prAuthor.
+      alertmanager_deleteSilence: &alertmanager_delete_silence
+        resourceType: alertmanager_silence
+        action: delete
+        id: get(args,'silenceId','')
+        attr:
+          silenceId: get(args,'silenceId','')
+      # alertmanager_gov backend: same ownership check, reused verbatim.
+      alertmanager_gov_deleteSilence: *alertmanager_delete_silence
       # getAlerts with no filterLabel returns every active alert as full
       # unaggregated JSON, which reliably times out (confirmed live:
       # unfiltered getAlerts times out; the same call with

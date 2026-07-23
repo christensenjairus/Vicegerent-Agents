@@ -7,17 +7,26 @@
 # durationSeconds, defaulting an omitted duration to Alertmanager's own
 # documented 2h rather than bypassing the cap.
 #
-# deleteSilence (and every other Alertmanager tool -- getAlerts, getSilences,
-# etc.) is unmapped and passes. deleteSilence used to be denied outright
-# because ownership of a silence can't be verified from the call args (it
-# carries only a silenceId, a UUID, and this shim never calls back to
-# Alertmanager to look up a silence's actual creator). That blanket deny was
-# removed: an unconditional deny doesn't provide real ownership protection --
-# it blocks legitimate self-cleanup exactly as much as it would block
-# deleting someone else's silence, since there's no signal here (or in
-# Alertmanager's own API) to distinguish the two cases. A policy with no
-# discriminating signal isn't worth the added surface; deleteSilence now
-# behaves like any other unmapped call.
+# getAlerts/getSilences/etc. are unmapped and pass.
+#
+# deny-not-own-silence: deleteSilence used to be denied outright because
+# ownership of a silence couldn't be verified from the call args (it carries
+# only a silenceId, a UUID, and this shim never called back to Alertmanager
+# to look up a silence's actual creator) -- a blanket deny with no
+# discriminating signal, which blocked legitimate self-cleanup exactly as
+# much as it would have blocked deleting someone else's silence. That's no
+# longer true: mapping.yaml's createSilence entry now forces every silence's
+# createdBy to this machine's fixed ${alertmanagerCreatedBy} identity
+# (Alertmanager's own createdBy is caller-supplied and optional, unlike
+# GitHub/Notion's externally-authenticated author fields, so establishing a
+# real identity to check requires stamping one at creation time first), and
+# deleteSilence has the shim resolve the target silence's REAL createdBy via
+# a live getSilences lookup BEFORE Cerbos is consulted (server.go's
+# checkAlertmanagerSilenceOwner -- a network round trip Cerbos itself can't
+# make), injecting it as this createdBy attr. has()-guarded to match
+# deny-not-own-pr's posture, though in practice the shim's lookup gate fails
+# closed before Cerbos on any unresolvable createdBy, so this rule should
+# never actually see it absent.
 apiVersion: api.cerbos.dev/v1
 resourcePolicy:
   version: default
@@ -38,6 +47,21 @@ resourcePolicy:
             "Silence duration exceeds this agent's cap of ${alertmanagerMaxSilenceSeconds}
             seconds."
             + " Create a shorter silence, or ask a human to extend it."
+    - name: deny-not-own-silence
+      actions: [delete]
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.createdBy) && request.resource.attr.createdBy
+            != "${alertmanagerCreatedBy}"
+      output:
+        when:
+          ruleActivated: >-
+            "This agent may only delete silences it created itself. This"
+            + " silence was not created by the configured identity; the"
+            + " target silence id may be wrong."
     - name: allow-all
       actions: ['*']
       effect: EFFECT_ALLOW

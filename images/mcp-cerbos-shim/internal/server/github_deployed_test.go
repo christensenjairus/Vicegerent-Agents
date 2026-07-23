@@ -37,8 +37,13 @@ func TestDeployedGithubMapping_MappedToolsReachCerbos(t *testing.T) {
 		t.Run(tc.tool, func(t *testing.T) {
 			// allow=false: the shim must forward a well-formed resource to Cerbos
 			// and honor its deny (turning it into a PERMISSION_DENIED error).
+			// update_pull_request_branch also needs the PR-author gate wired (a
+			// fake upstream, so its own lookup succeeds) -- this test cares about
+			// the repo-allowlist path reaching Cerbos, not the author gate, which
+			// has its own dedicated tests in github_pr_author_deployed_test.go.
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+				WithGithubPRAuthor(&fakeUpstream{text: githubPRResultOwnAuthor}))
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -170,8 +175,12 @@ func TestDeployedGithubMapping_PullRequestsAlwaysForceDraft(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.tool, func(t *testing.T) {
+			// update_pull_request also needs the PR-author gate wired (a fake
+			// upstream, so its own lookup succeeds) -- this test cares about the
+			// force-draft mapping reaching Cerbos, not the author gate itself.
 			d := &stubDecider{allow: true}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+				WithGithubPRAuthor(&fakeUpstream{text: githubPRResultOwnAuthor}))
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -269,8 +278,12 @@ func TestDeployedGithubMapping_ReviewersAttrWiredOnCreateAndUpdate(t *testing.T)
 
 	for _, tc := range cases {
 		t.Run(tc.tool, func(t *testing.T) {
+			// update_pull_request also needs the PR-author gate wired (a fake
+			// upstream, so its own lookup succeeds) -- this test cares about the
+			// reviewers-attr mapping reaching Cerbos, not the author gate itself.
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+				WithGithubPRAuthor(&fakeUpstream{text: githubPRResultOwnAuthor}))
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {

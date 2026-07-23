@@ -144,7 +144,13 @@ func TestDeployedJiraMapping_SmuggledIssueTypeInFieldsReachesCerbos(t *testing.T
 	}
 
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	// This call carries no assignee signal of its own -- the assignee
+	// resolution gate (server.go's checkJiraIssueAssignee) still fires for
+	// the missing signal, so a fake upstream must be wired for its own
+	// lookup to succeed; this test only cares that the issueType-smuggling
+	// mapping reaches Cerbos, not the assignee gate itself.
+	up := &fakeUpstream{text: `{"fields":{"assignee":null}}`}
+	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithJiraIssueAssignee(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("jira_jira_update_issue", map[string]any{
 			"issue_key": "CHANGE-1",

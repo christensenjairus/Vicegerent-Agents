@@ -209,6 +209,27 @@ resources:
     id: moveworks-emu/k8s-manifests
     kind: github_repo
     attr: {owner: moveworks-emu, repo: k8s-manifests, branch: ''}
+  update_pr_own_author:
+    # githubUsername is jchristensen_movester on this cluster (matching
+    # validate.sh's work cluster-vars.yaml) -- a PR the shim resolved as
+    # authored by that same user is allowed.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', prAuthor: jchristensen_movester}
+  update_pr_other_author:
+    # The shim resolved a DIFFERENT real author -- denied regardless of what
+    # the call's own args say (there is no author-setting arg on any of
+    # these tools to begin with).
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', prAuthor: someoneelse}
+  read_tool_no_author_attr:
+    # Read tools and create_pull_request never get a prAuthor attr at all
+    # (server.go only injects it for the three existing-PR-write tools) --
+    # has()-guarded, so its absence must not deny.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: ''}
 tests:
   - name: calls confined to an allowed repo are allowed
     input:
@@ -375,4 +396,25 @@ tests:
         actions: {access: EFFECT_ALLOW}
       - principal: hermes
         resource: list_pull_requests_k8s_manifests
+        actions: {access: EFFECT_ALLOW}
+  - name: writes are only allowed on a PR the shim resolved as authored by this cluster's
+      own GitHub user (githubUsername is jchristensen_movester, matching validate.sh's
+      work cluster-vars.yaml); calls with no prAuthor attr at all (reads, create_pull_request)
+      are unaffected
+    input:
+      principals: [hermes]
+      resources:
+        - update_pr_own_author
+        - update_pr_other_author
+        - read_tool_no_author_attr
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: update_pr_own_author
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: update_pr_other_author
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: read_tool_no_author_attr
         actions: {access: EFFECT_ALLOW}
