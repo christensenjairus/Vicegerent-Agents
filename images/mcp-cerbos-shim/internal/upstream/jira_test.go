@@ -87,6 +87,28 @@ func TestIssueAssignee_AssigneeObjectWithNoIdentifierFailsClosed(t *testing.T) {
 	}
 }
 
+// TestIssueAssignee_UnassignedSentinelIsEmptyNotARealUser guards against a
+// second, distinct silent-misparse bug found live testing !636/!637's own
+// unassigned-issue gate against a real ticket: mcp-atlassian represents a
+// genuinely unassigned issue as {"display_name":"Unassigned"}, not a JSON
+// null -- so, before this fix, the DisplayName fallback below matched the
+// sentinel and returned "Unassigned" as if it were a real user, which made
+// deny-assignee-outside-allowed fire instead of deny-write-unassigned-issue.
+// Same net deny, wrong rule, wrong reason surfaced -- the mirror image of
+// TestIssueAssignee_RejectsLegacyRESTShape below (that one: a real assignee
+// silently resolved as unassigned; this one: "unassigned" silently resolved
+// as a real assignee).
+func TestIssueAssignee_UnassignedSentinelIsEmptyNotARealUser(t *testing.T) {
+	c := &fakeCaller{text: `{"id":"1","key":"CHANGE-1","assignee":{"display_name":"Unassigned"}}`}
+	got, err := IssueAssignee(context.Background(), c, "CHANGE-1")
+	if err != nil {
+		t.Fatalf("IssueAssignee: %v, want no error for the Unassigned sentinel", err)
+	}
+	if got != "" {
+		t.Errorf("IssueAssignee = %q, want empty: mcp-atlassian's {display_name:Unassigned} sentinel is not a real user", got)
+	}
+}
+
 // TestIssueAssignee_RejectsLegacyRESTShape guards against regressing back to
 // the raw REST fields.assignee.{accountId,emailAddress,displayName} shape
 // this package originally (and incorrectly) assumed -- that mismatch

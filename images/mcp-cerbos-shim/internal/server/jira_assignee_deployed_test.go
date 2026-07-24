@@ -24,6 +24,15 @@ const jiraIssueResultAssignedToMe = `{"id":"1","key":"CHANGE-1","assignee":{"ema
 const jiraIssueResultAssignedToOther = `{"id":"1","key":"CHANGE-2","assignee":{"email":"someone@example.com"}}`
 const jiraIssueResultUnassigned = `{"id":"1","key":"CHANGE-3","assignee":null}`
 
+// jiraIssueResultUnassignedSentinel is the shape mcp-atlassian ACTUALLY
+// returns for a genuinely unassigned issue -- {"display_name":"Unassigned"},
+// never a JSON null (see upstream/jira.go's jiraIssueResult doc comment).
+// jiraIssueResultUnassigned above (a literal null) is kept alongside this as
+// its own case: IssueAssignee must treat both shapes identically, and a
+// server-level regression that special-cases null but not the real sentinel
+// would only be caught by exercising both.
+const jiraIssueResultUnassignedSentinel = `{"id":"1","key":"CHANGE-7","assignee":{"display_name":"Unassigned"}}`
+
 func newJiraServer(t *testing.T, d *stubDecider, up upstream.ToolCaller) *Server {
 	t.Helper()
 	m := deployedMapping(t)
@@ -110,6 +119,40 @@ func TestDeployedJiraMapping_AddCommentOnUnassignedIssuePassesWithNoAssigneeAttr
 	}
 	if got, _ := d.gotAttr["assignee"].(string); got != "" {
 		t.Errorf("expected empty assignee attr for a genuinely unassigned issue, got %q", got)
+	}
+	if got, _ := d.gotAttr["assigneeVerified"].(bool); got != true {
+		t.Errorf("expected assigneeVerified=true forwarded for a resolved-unassigned issue, got %v", d.gotAttr["assigneeVerified"])
+	}
+}
+
+// TestDeployedJiraMapping_TransitionIssueOnUnassignedSentinelPassesWithNoAssigneeAttr
+// proves the gate treats mcp-atlassian's REAL unassigned-issue shape
+// ({"display_name":"Unassigned"}, never a JSON null -- see
+// upstream/jira.go's jiraIssueResult doc comment) identically to the literal
+// null case covered just above: no assignee attr of its own, but
+// assigneeVerified=true so Cerbos's deny-write-unassigned-issue rule
+// (defs/jira_test.yaml) can make the real deny decision. Live-testing
+// against a real ticket surfaced that the pre-fix DisplayName fallback
+// matched this sentinel as if "Unassigned" were an actual user's name,
+// which resolved a NON-empty assignee and made
+// deny-assignee-outside-allowed fire instead -- same net deny, wrong rule,
+// wrong reason. This test proves it at the request-path level, not just
+// upstream.IssueAssignee in isolation.
+func TestDeployedJiraMapping_TransitionIssueOnUnassignedSentinelPassesWithNoAssigneeAttr(t *testing.T) {
+	d := &stubDecider{allow: true}
+	up := &fakeUpstream{text: jiraIssueResultUnassignedSentinel}
+	s := newJiraServer(t, d, up)
+	res, err := s.CheckRequest(context.Background(),
+		mcpReq("vmcp", "tools/call", toolCall("jira_jira_transition_issue",
+			map[string]any{"issue_key": "CHANGE-7", "transition_id": "31"})))
+	if err != nil {
+		t.Fatalf("CheckRequest: %v", err)
+	}
+	if !isPass(res) {
+		t.Fatalf("expected pass: unassigned sentinel must not fail closed, got deny: %s", res.GetError().GetReason())
+	}
+	if got, _ := d.gotAttr["assignee"].(string); got != "" {
+		t.Errorf("expected empty assignee attr for the Unassigned sentinel, got %q (regression: sentinel treated as a real user)", got)
 	}
 	if got, _ := d.gotAttr["assigneeVerified"].(bool); got != true {
 		t.Errorf("expected assigneeVerified=true forwarded for a resolved-unassigned issue, got %v", d.gotAttr["assigneeVerified"])
