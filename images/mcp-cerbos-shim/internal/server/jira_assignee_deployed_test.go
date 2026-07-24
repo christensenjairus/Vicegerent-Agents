@@ -20,9 +20,9 @@ import (
 // decision for a non-matching assignee itself (deny-assignee-outside-allowed)
 // is proven separately by defs/jira_test.yaml.
 
-const jiraIssueResultAssignedToMe = `{"fields":{"assignee":{"emailAddress":"jchristensen@moveworks.ai"}}}`
-const jiraIssueResultAssignedToOther = `{"fields":{"assignee":{"emailAddress":"someone@example.com"}}}`
-const jiraIssueResultUnassigned = `{"fields":{"assignee":null}}`
+const jiraIssueResultAssignedToMe = `{"id":"1","key":"CHANGE-1","assignee":{"email":"person@example.com"}}`
+const jiraIssueResultAssignedToOther = `{"id":"1","key":"CHANGE-2","assignee":{"email":"someone@example.com"}}`
+const jiraIssueResultUnassigned = `{"id":"1","key":"CHANGE-3","assignee":null}`
 
 func newJiraServer(t *testing.T, d *stubDecider, up upstream.ToolCaller) *Server {
 	t.Helper()
@@ -56,8 +56,8 @@ func TestDeployedJiraMapping_UpdateIssueWithNoAssigneeArgResolvesCurrentAssignee
 	if up.gotTool != "jira_jira_get_issue" {
 		t.Errorf("lookup used tool %q, want jira_jira_get_issue", up.gotTool)
 	}
-	if got, _ := d.gotAttr["assignee"].(string); got != "jchristensen@moveworks.ai" {
-		t.Errorf("Cerbos saw assignee=%q, want the resolved assignee jchristensen@moveworks.ai", got)
+	if got, _ := d.gotAttr["assignee"].(string); got != "person@example.com" {
+		t.Errorf("Cerbos saw assignee=%q, want the resolved assignee person@example.com", got)
 	}
 }
 
@@ -126,7 +126,7 @@ func TestDeployedJiraMapping_UpdateIssueSettingAssigneeIsNotOverriddenByLookup(t
 	s := newJiraServer(t, d, up)
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("jira_jira_update_issue",
-			map[string]any{"issue_key": "CHANGE-4", "fields": `{"assignee": "jchristensen@moveworks.ai"}`})))
+			map[string]any{"issue_key": "CHANGE-4", "fields": `{"assignee": "person@example.com"}`})))
 	if err != nil {
 		t.Fatalf("CheckRequest: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestDeployedJiraMapping_UpdateIssueSettingAssigneeIsNotOverriddenByLookup(t
 	if up.calls != 0 {
 		t.Errorf("expected no lookup when the call already sets a verifiable assignee, got %d calls", up.calls)
 	}
-	if got, _ := d.gotAttr["assignee"].(string); got != "jchristensen@moveworks.ai" {
+	if got, _ := d.gotAttr["assignee"].(string); got != "person@example.com" {
 		t.Errorf("Cerbos saw assignee=%q, want the call's own explicit value", got)
 	}
 	if _, ok := d.gotAttr["assigneeVerified"]; ok {
