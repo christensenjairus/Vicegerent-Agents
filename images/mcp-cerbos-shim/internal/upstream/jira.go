@@ -26,49 +26,37 @@ import (
 const jiraGetIssueTool = "jira_jira_get_issue"
 
 // jiraIssueResult is the subset of jira_jira_get_issue's JSON result this
-// package needs. Jira Cloud's REST API represents an issue's assignee as a
-// nested fields.assignee object carrying accountId/emailAddress/displayName
-// (or a null fields.assignee when the issue is unassigned) -- this MCP
-// server (sooperset/mcp-atlassian) is documented as returning "the Jira
-// issue object" as JSON, so this assumes that object is a close passthrough
-// of the REST shape.
-//
-// NOTE: this field shape is inferred from Jira Cloud's documented REST API
-// conventions plus mcp-atlassian's own JSON-passthrough description, NOT
-// verified against a live call to this specific MCP tool (unlike
-// linear.go's team field, which was confirmed against a real live
-// response) -- this sandbox has no Jira credentials to test against. Known
-// footgun: Jira Cloud can suppress emailAddress from API responses entirely
-// per-org privacy settings, independent of whether the ticket really is
-// assigned to the configured user -- so IssueAssignee tries
-// emailAddress -> displayName -> accountId in that order (matching
-// ${jiraAllowedAssignees} being an email today) rather than hardcoding a
-// single field. If the real shape differs further, IssueAssignee fails
-// closed on an assignee object with none of the three identifiers populated
-// -- only a genuinely null/absent assignee resolves to "" -- so a shape
-// mismatch on an ASSIGNED issue denies the gated call rather than letting it
-// through unchecked. Live verification against a real Jira account is a
-// mandatory follow-up before relying on this in production -- see the MR's
-// own follow-up section.
+// package needs. mcp-atlassian (sooperset/mcp-atlassian) does NOT pass
+// through Jira Cloud's raw REST shape -- it flattens the issue to its own
+// simplified dict, with assignee (or a null assignee when the issue is
+// unassigned) at the TOP LEVEL, not nested under a "fields" object, and
+// snake_case member names -- live-verified 2026-07-24 against a real
+// assigned issue: {"id":"...","key":"...","assignee":{"account_id":"...",
+// "display_name":"...","name":"...","email":"...","avatar_url":"..."}}. An
+// earlier version of this struct assumed the raw REST fields.assignee.
+// {accountId,emailAddress,displayName} shape (inferred, never verified) --
+// that mismatch made json.Unmarshal silently leave Assignee nil on every
+// real assignee (Go doesn't error on an absent field), so every assigned
+// issue resolved as "unassigned" and got denied by
+// deny-write-unassigned-issue instead of deny-assignee-outside-allowed --
+// same net deny, wrong reason, a debugging trap for anyone reading shim
+// logs.
 type jiraIssueResult struct {
-	Fields struct {
-		Assignee *struct {
-			AccountID    string `json:"accountId"`
-			EmailAddress string `json:"emailAddress"`
-			DisplayName  string `json:"displayName"`
-		} `json:"assignee"`
-	} `json:"fields"`
+	Assignee *struct {
+		AccountID   string `json:"account_id"`
+		Email       string `json:"email"`
+		DisplayName string `json:"display_name"`
+	} `json:"assignee"`
 }
 
 // IssueAssignee resolves a Jira issue key (e.g. "PROJ-123") to its current
 // assignee's identifier via ONE jira_jira_get_issue call, requesting only
 // the assignee field. Returns ("", nil) for a genuinely unassigned issue
-// (fields.assignee is null/absent) -- a real Jira issue can have no
-// assignee at all, mirroring linear.go's GetIssueDetails asymmetric
-// contract (team required, assignee optional). Returns an error on any
-// lookup failure (timeout, non-200, malformed result, tool-reported error,
-// or an assignee object with no resolvable identifier) so the caller can
-// fail closed.
+// (assignee is null/absent) -- a real Jira issue can have no assignee at
+// all, mirroring linear.go's GetIssueDetails asymmetric contract (team
+// required, assignee optional). Returns an error on any lookup failure
+// (timeout, non-200, malformed result, tool-reported error, or an assignee
+// object with no resolvable identifier) so the caller can fail closed.
 func IssueAssignee(ctx context.Context, client ToolCaller, issueKey string) (string, error) {
 	result, err := client.CallTool(ctx, jiraGetIssueTool, map[string]any{"issue_key": issueKey, "fields": "assignee"})
 	if err != nil {
@@ -78,13 +66,13 @@ func IssueAssignee(ctx context.Context, client ToolCaller, issueKey string) (str
 	if err := json.Unmarshal([]byte(result.Text()), &parsed); err != nil {
 		return "", fmt.Errorf("jira issue assignee lookup for %q: malformed get_issue result: %w", issueKey, err)
 	}
-	if parsed.Fields.Assignee == nil {
+	if parsed.Assignee == nil {
 		return "", nil
 	}
-	a := parsed.Fields.Assignee
+	a := parsed.Assignee
 	switch {
-	case a.EmailAddress != "":
-		return a.EmailAddress, nil
+	case a.Email != "":
+		return a.Email, nil
 	case a.DisplayName != "":
 		return a.DisplayName, nil
 	case a.AccountID != "":
