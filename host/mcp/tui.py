@@ -2,15 +2,16 @@
 """Textual TUI dashboard for the vicegerent host ToolHive stack.
 
 Read-mostly dashboard over vicegerent_mcp: shows the 6 ToolHive workloads plus
-the supervised vMCP / ghostunnel / caffeinate processes, tails their logs, and
-offers start / stop / restart of the supervised stack.
+the supervised processes (vMCP, ghostunnel, rclone-s3, mcp-health-watch,
+caffeinate), tails their logs, and offers start / stop / restart of the
+supervised stack.
 
 Keybindings (k9s-flavoured):
   j/k, ↑/↓     navigate workload rows
   ctrl+s        start the stack
   ctrl+k        stop (kill) the supervised stack
   ctrl+r        restart the supervised stack
-  1-5           switch log tabs (vmcp, ghostunnel, rclone-s3, supervisord, caffeinate)
+  1-6           switch log tabs (vmcp, ghostunnel, rclone-s3, mcp-health-watch, supervisord, caffeinate)
   r             refresh now
   ?             help
   q / esc       quit
@@ -48,7 +49,7 @@ from vicegerent_mcp import (
     tail_log_iter,
 )
 
-LOG_TABS = ("vmcp", "ghostunnel", "rclone-s3", "supervisord", "caffeinate")
+LOG_TABS = ("vmcp", "ghostunnel", "rclone-s3", "mcp-health-watch", "supervisord", "caffeinate")
 
 
 def _proc_markup(state: str) -> str:
@@ -99,8 +100,9 @@ class HelpScreen(ModalScreen):
 | `1` | vmcp |
 | `2` | ghostunnel |
 | `3` | rclone-s3 |
-| `4` | supervisord |
-| `5` | caffeinate |
+| `4` | mcp-health-watch |
+| `5` | supervisord |
+| `6` | caffeinate |
 
 ## General
 | Key | Action |
@@ -144,8 +146,9 @@ class HostMCPApp(App):
         Binding("1", "tab_vmcp", "vmcp", show=False),
         Binding("2", "tab_ghostunnel", "ghostunnel", show=False),
         Binding("3", "tab_rclone_s3", "rclone-s3", show=False),
-        Binding("4", "tab_supervisord", "supervisord", show=False),
-        Binding("5", "tab_caffeinate", "caffeinate", show=False),
+        Binding("4", "tab_mcp_health_watch", "mcp-health-watch", show=False),
+        Binding("5", "tab_supervisord", "supervisord", show=False),
+        Binding("6", "tab_caffeinate", "caffeinate", show=False),
         Binding("question_mark", "help", "Help", show=True),
         Binding("q", "quit", "Quit", show=True),
         Binding("escape", "quit", "Quit", show=False),
@@ -300,6 +303,9 @@ class HostMCPApp(App):
 
     def action_tab_rclone_s3(self) -> None:
         self._activate_tab("rclone-s3")
+
+    def action_tab_mcp_health_watch(self) -> None:
+        self._activate_tab("mcp-health-watch")
 
     def action_tab_supervisord(self) -> None:
         self._activate_tab("supervisord")
