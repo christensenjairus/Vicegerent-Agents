@@ -11,8 +11,6 @@ storage:
   dataStorageClassName: csi-hostpath-sc
   gitreposStorageClassName: csi-hostpath-sc
   modelsStorageClassName: csi-hostpath-sc
-slack:
-  commandName: ''
 # Required per agent; empty leaves the NodePort auto-allocated, which is unstable.
 dashboard:
   nodePort: ''
