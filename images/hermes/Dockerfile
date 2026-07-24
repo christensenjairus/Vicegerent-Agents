@@ -398,13 +398,6 @@ RUN /opt/hermes/.venv/bin/python /tmp/0004-agentburn.py
 RUN rm -f /tmp/0004-agentburn.py
 
 
-# Patch Hermes Slack adapter so the catch-all slash command name is configurable
-# via HERMES_SLACK_COMMAND_NAME (default: "hermes"). Set in sandbox.yaml to rename
-# the bot's slash command (e.g. /hermes). Remove once upstream supports this.
-COPY patches/0006-slack-command-name.py /tmp/0006-slack-command-name.py
-RUN /opt/hermes/.venv/bin/python /tmp/0006-slack-command-name.py
-RUN rm -f /tmp/0006-slack-command-name.py
-
 # Make Slack always bypass the egress MITM proxy. slack_sdk auto-loads HTTPS_PROXY
 # (ignoring NO_PROXY), forcing Slack through the GET-only scrubbing proxy where it
 # cannot work (token scrubbing + POST/WebSocket blocking). Patch slack_sdk's env

@@ -52,7 +52,6 @@ make push
 Upstream Hermes is also customized at build time by numbered Python scripts in `patches/`, each `COPY`d in, run against `/opt/hermes/.venv`, then deleted. They edit installed package files in place and self-verify where feasible; remove one once the fix lands upstream. (Numbering is sparse — 0001/0002/0003/0010 were dropped; 0001 was upstream's own fix for offline Tool Search context-length resolution, landed natively by v2026.7.20.)
 
 - `0004-agentburn.py` — `HERMES_HOME` support for the agentburn adapter and missing Anthropic/OpenAI model prices.
-- `0006-slack-command-name.py` — make the catch-all Slack slash command configurable via `HERMES_SLACK_COMMAND_NAME` (default `/hermes`).
 - `0007-slack-bypass-egress-proxy.py` — patch `slack_sdk`'s env proxy loader to return `None` so Slack bypasses the GET-only egress MITM proxy (`slack_sdk` ignores `NO_PROXY`, which would otherwise force every Slack call through the proxy and fail).
 - `0008-approval-tirith-only-mode.py` — add `approvals.pattern_silence` to smart-mode command approval so operator-configured false-positive patterns skip the aux-LLM pre-screen (tirith findings and uncancellable patterns are never silenced).
 - `0009-mcp-circuit-breaker-business-errors.py` — stop the MCP circuit breaker from tripping on business errors (`isError: true` relayed as a JSON `"error"` key); only real transport/auth exceptions should count toward the 3-strike "server unreachable" block. Remove once upstream lands hermes-agent #47918/#47955 (issues #47851/#11113).

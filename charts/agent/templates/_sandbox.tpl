@@ -322,8 +322,6 @@ spec:
                   fieldPath: metadata.name
             - name: HERMES_HOME
               value: /opt/data
-            - name: HERMES_SLACK_COMMAND_NAME
-              value: {{ .Values.slack.commandName }}
             # Route all HTTP(S) traffic through the GET-only MITM proxy.
             - name: http_proxy
               value: http://egress-proxy.egress-proxy.svc.cluster.local:8080
