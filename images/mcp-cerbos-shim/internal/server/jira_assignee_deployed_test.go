@@ -88,9 +88,13 @@ func TestDeployedJiraMapping_TransitionIssueOnOtherAssigneeResolvesAndForwards(t
 }
 
 // TestDeployedJiraMapping_AddCommentOnUnassignedIssuePassesWithNoAssigneeAttr
-// proves the asymmetric contract: an issue with genuinely NO assignee must
-// not fail closed, and must not carry an empty-but-present assignee attr
-// either (Cerbos's deny-assignee-outside-allowed rule is has()-guarded).
+// proves the gate's half of the contract: it must not fail closed on a
+// genuinely unassigned issue, must not carry an empty-but-present assignee
+// attr on its own (Cerbos's deny-assignee-outside-allowed rule is
+// has()-guarded), but DOES forward assigneeVerified=true so Cerbos's own
+// deny-write-unassigned-issue rule (defs/jira_test.yaml) can make the actual
+// deny decision -- this test uses stubDecider (a fixed verdict) only to
+// confirm what the gate SENDS, not what Cerbos DECIDES.
 func TestDeployedJiraMapping_AddCommentOnUnassignedIssuePassesWithNoAssigneeAttr(t *testing.T) {
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: jiraIssueResultUnassigned}
@@ -106,6 +110,9 @@ func TestDeployedJiraMapping_AddCommentOnUnassignedIssuePassesWithNoAssigneeAttr
 	}
 	if got, _ := d.gotAttr["assignee"].(string); got != "" {
 		t.Errorf("expected empty assignee attr for a genuinely unassigned issue, got %q", got)
+	}
+	if got, _ := d.gotAttr["assigneeVerified"].(bool); got != true {
+		t.Errorf("expected assigneeVerified=true forwarded for a resolved-unassigned issue, got %v", d.gotAttr["assigneeVerified"])
 	}
 }
 
@@ -131,6 +138,9 @@ func TestDeployedJiraMapping_UpdateIssueSettingAssigneeIsNotOverriddenByLookup(t
 	}
 	if got, _ := d.gotAttr["assignee"].(string); got != "jchristensen@moveworks.ai" {
 		t.Errorf("Cerbos saw assignee=%q, want the call's own explicit value", got)
+	}
+	if _, ok := d.gotAttr["assigneeVerified"]; ok {
+		t.Errorf("expected no assigneeVerified attr when the lookup never ran, got %v", d.gotAttr["assigneeVerified"])
 	}
 }
 

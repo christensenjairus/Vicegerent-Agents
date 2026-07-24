@@ -678,7 +678,12 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 	// attr at all regardless of who the issue was really assigned to.
 	// assignee may legitimately resolve to "" (a real issue can have no
 	// assignee) -- only fails closed on a genuine lookup/shape failure, see
-	// upstream.GetIssueDetails's contract.
+	// upstream.GetIssueDetails's contract. assigneeVerified marks that this
+	// gate actually resolved a definitive current assignee (even "none"), so
+	// deny-write-unassigned-issue (resource_linear.yaml) can deny a comment
+	// on a genuinely unassigned issue -- previously that case left the
+	// assignee attr empty/absent and passed unchecked, same gap the Jira
+	// gate had.
 	if cp.Name == linearSaveCommentTool && res.ResourceType == linearTeamResource {
 		issueID, _ := res.Attr["issueId"].(string)
 		if issueID != "" {
@@ -688,6 +693,7 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 				return deny(derr.Error()), nil
 			}
 			res.Attr["teamId"] = team
+			res.Attr["assigneeVerified"] = true
 			if assignee != "" {
 				res.Attr["assignee"] = assignee
 			}
@@ -710,6 +716,15 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 	// has no `id`, so it never reaches this branch regardless of whether it
 	// set assignee (that gap is closed separately by
 	// deny-create-missing-assignee's own arg-based check).
+	//
+	// assigneeVerified marks that this gate actually resolved a definitive
+	// current assignee for THIS call (even "none") -- only set when
+	// !hasAssignee, i.e. only when the call itself didn't already supply a
+	// directly-verifiable assignee signal. deny-write-unassigned-issue
+	// (resource_linear.yaml) uses it to deny a plain field edit on a
+	// genuinely unassigned issue, closing the same gap the Jira gate had:
+	// previously such an update left the assignee attr empty/absent and
+	// passed unchecked.
 	if cp.Name == linearSaveIssueTool && res.ResourceType == linearTeamResource {
 		_, hasTeam := res.Attr["teamId"]
 		_, hasAssignee := res.Attr["assignee"]
@@ -723,8 +738,11 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 				if !hasTeam {
 					res.Attr["teamId"] = team
 				}
-				if !hasAssignee && assignee != "" {
-					res.Attr["assignee"] = assignee
+				if !hasAssignee {
+					res.Attr["assigneeVerified"] = true
+					if assignee != "" {
+						res.Attr["assignee"] = assignee
+					}
 				}
 			}
 		}
@@ -842,6 +860,18 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 	// transition_issue never carry one at all (no fields/additional_fields
 	// arg to smuggle it in), update_issue only when it doesn't touch
 	// assignee itself.
+	//
+	// assigneeVerified marks that THIS gate actually ran and got a
+	// definitive answer, even when that answer is "unassigned"
+	// (resolved == ""). Without it, an unassigned issue left the assignee
+	// attr empty and deny-assignee-outside-allowed's `attr.assignee != ""`
+	// guard never fired -- update_issue/add_comment/transition_issue on any
+	// unassigned ticket passed unchecked, regardless of ${jiraAllowedAssignees}.
+	// deny-write-unassigned-issue (resource_jira.yaml) uses this marker to
+	// deny that case specifically, without affecting create_issue (never
+	// gated here at all -- deny-create-missing-assignee already covers it
+	// via its own arg-based signal) or create_issue_link/link_to_epic
+	// (outside jiraAssigneeGatedTools, so never set).
 	if jiraAssigneeGatedTools[cp.Name] && res.ResourceType == jiraProjectResource {
 		if assignee, _ := res.Attr["assignee"].(string); assignee == "" {
 			if issueKey, _ := res.Attr["issueKey"].(string); issueKey != "" {
@@ -850,6 +880,7 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 					log.Printf("deny: %s assignee lookup (issue=%q backend=%s): %v", cp.Name, issueKey, backend, derr)
 					return deny(derr.Error()), nil
 				}
+				res.Attr["assigneeVerified"] = true
 				if resolved != "" {
 					res.Attr["assignee"] = resolved
 				}

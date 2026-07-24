@@ -69,11 +69,15 @@ func TestDeployedLinearMapping_UpdateWithNoAssigneeArgOnOtherAssigneeResolvesAnd
 }
 
 // TestDeployedLinearMapping_UpdateOnUnassignedIssuePassesWithNoAssigneeAttr
-// proves the asymmetric contract: an issue with genuinely NO assignee must
-// not fail closed, and must not carry an empty-but-present assignee attr
-// either (Cerbos's deny-assignee-outside-allowed rule is has()-guarded, so a
-// present-but-empty key would behave the same as absent here, but omitting
-// it entirely matches every other has()-guarded attr in this shim).
+// proves the gate's half of the contract: it must not fail closed on a
+// genuinely unassigned issue, must not carry an empty-but-present assignee
+// attr on its own (Cerbos's deny-assignee-outside-allowed rule is
+// has()-guarded, so a present-but-empty key would behave the same as absent
+// here, but omitting it entirely matches every other has()-guarded attr in
+// this shim), but DOES forward assigneeVerified=true so Cerbos's own
+// deny-write-unassigned-issue rule (defs/linear_test.yaml) can make the
+// actual deny decision -- stubDecider here always allows, so this only
+// confirms what the gate SENDS.
 func TestDeployedLinearMapping_UpdateOnUnassignedIssuePassesWithNoAssigneeAttr(t *testing.T) {
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: linearIssueResultDevopsUnassigned}
@@ -89,6 +93,9 @@ func TestDeployedLinearMapping_UpdateOnUnassignedIssuePassesWithNoAssigneeAttr(t
 	}
 	if _, hasAssignee := d.gotAttr["assignee"]; hasAssignee {
 		t.Errorf("expected no assignee attr for a genuinely unassigned issue, got %#v", d.gotAttr["assignee"])
+	}
+	if got, _ := d.gotAttr["assigneeVerified"].(bool); got != true {
+		t.Errorf("expected assigneeVerified=true forwarded for a resolved-unassigned issue, got %v", d.gotAttr["assigneeVerified"])
 	}
 }
 
@@ -115,6 +122,9 @@ func TestDeployedLinearMapping_UpdateSettingAssigneeIsNotOverriddenByLookup(t *t
 	if got, _ := d.gotAttr["assignee"].(string); got != "me" {
 		t.Errorf("Cerbos saw assignee=%q, want the call's own explicit value \"me\" (must not be overridden by the lookup's someone@example.com)", got)
 	}
+	if _, ok := d.gotAttr["assigneeVerified"]; ok {
+		t.Errorf("expected no assigneeVerified attr when the call already supplies its own assignee, got %v", d.gotAttr["assigneeVerified"])
+	}
 }
 
 // TestDeployedLinearMapping_SaveCommentWithNoAssigneeSignalResolvesFromSameLookup
@@ -139,5 +149,8 @@ func TestDeployedLinearMapping_SaveCommentWithNoAssigneeSignalResolvesFromSameLo
 	}
 	if got, _ := d.gotAttr["assignee"].(string); got != "jchristensen@moveworks.ai" {
 		t.Errorf("Cerbos saw assignee=%q, want the resolved assignee jchristensen@moveworks.ai", got)
+	}
+	if got, _ := d.gotAttr["assigneeVerified"].(bool); got != true {
+		t.Errorf("expected assigneeVerified=true forwarded when the lookup resolved the assignee, got %v", d.gotAttr["assigneeVerified"])
 	}
 }

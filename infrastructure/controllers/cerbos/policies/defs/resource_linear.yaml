@@ -56,6 +56,21 @@
 # touches assignee gets no assignee key at all and isn't affected by
 # either new rule. The "*" bypass is honored here too, matching
 # jiraAllowedAssignees's disable-the-whole-check semantics.
+#
+# deny-write-unassigned-issue: closes a real enforcement gap in
+# deny-assignee-outside-allowed above -- that rule only fires when
+# attr.assignee is non-empty, so a save_comment/save_issue-update against a
+# genuinely UNASSIGNED issue left the assignee attr empty/absent and fell
+# through to allow-all regardless of ${linearAllowedAssignees}. server.go's
+# team/assignee-resolution gates now also set an assigneeVerified=true
+# marker whenever they run the live lookup and get a definitive answer
+# (including "no assignee") but the call itself didn't already supply its
+# own directly-verifiable assignee -- this rule denies specifically when
+# that marker is true and the resolved assignee still came back empty.
+# save_issue CREATE is unaffected (assigneeVerified is never set there --
+# a create always sets `team`, never has an `id`, so it never reaches
+# either live-resolution gate; its own missing-assignee case is
+# deny-create-missing-assignee's job). The "*" bypass is honored here too.
 apiVersion: api.cerbos.dev/v1
 resourcePolicy:
   version: default
@@ -123,6 +138,24 @@ resourcePolicy:
           ruleActivated: >-
             "This agent may only assign Linear issues to an allowed user."
             + " The requested assignee is outside that scope."
+    - name: deny-write-unassigned-issue
+      actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.assigneeVerified) &&
+            request.resource.attr.assigneeVerified == true &&
+            (!has(request.resource.attr.assignee) || request.resource.attr.assignee
+            == "")
+            && !("*" in [${linearAllowedAssignees}])
+      output:
+        when:
+          ruleActivated: >-
+            "This agent may only comment on/update a Linear issue that has"
+            + " an assignee. This issue currently has no assignee -- assign"
+            + " it to an allowed user first."
     - name: allow-all
       actions: ['*']
       effect: EFFECT_ALLOW
