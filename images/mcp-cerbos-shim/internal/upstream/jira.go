@@ -41,6 +41,25 @@ const jiraGetIssueTool = "jira_jira_get_issue"
 // deny-write-unassigned-issue instead of deny-assignee-outside-allowed --
 // same net deny, wrong reason, a debugging trap for anyone reading shim
 // logs.
+//
+// A genuinely UNASSIGNED issue is NOT represented as a null/absent assignee
+// -- mcp-atlassian hardcodes a sentinel object instead: exactly
+// {"display_name": "Unassigned"}, with account_id/email/name all absent
+// (confirmed against its own source, jira/formatting.py: `"display_name":
+// "Unassigned"` with no other keys, emitted whenever the raw Jira payload's
+// assignee is null). Live-verified 2026-07-24 against a real unassigned
+// ticket: {"id":"...","key":"...","assignee":{"display_name":"Unassigned"}}.
+// jiraIssueResult's DisplayName-priority fallback (used when Email is
+// suppressed by org privacy settings -- a real, needed case) previously
+// matched this sentinel too, resolving it as if "Unassigned" were a real
+// user's display name. That produced a non-empty, assigneeVerified=true
+// result Cerbos could only evaluate via deny-assignee-outside-allowed
+// (nobody has "Unassigned" in ${jiraAllowedAssignees}, so the net effect was
+// still a deny) rather than deny-write-unassigned-issue -- same class of
+// bug as the shape mismatch above: still denies, wrong rule, wrong reason
+// surfaced to the caller and to anyone reading shim logs.
+const jiraUnassignedSentinelDisplayName = "Unassigned"
+
 type jiraIssueResult struct {
 	Assignee *struct {
 		AccountID   string `json:"account_id"`
@@ -52,11 +71,13 @@ type jiraIssueResult struct {
 // IssueAssignee resolves a Jira issue key (e.g. "PROJ-123") to its current
 // assignee's identifier via ONE jira_jira_get_issue call, requesting only
 // the assignee field. Returns ("", nil) for a genuinely unassigned issue
-// (assignee is null/absent) -- a real Jira issue can have no assignee at
-// all, mirroring linear.go's GetIssueDetails asymmetric contract (team
-// required, assignee optional). Returns an error on any lookup failure
-// (timeout, non-200, malformed result, tool-reported error, or an assignee
-// object with no resolvable identifier) so the caller can fail closed.
+// (assignee is null/absent, OR mcp-atlassian's {"display_name":"Unassigned"}
+// sentinel -- see jiraIssueResult's doc comment) -- a real Jira issue can
+// have no assignee at all, mirroring linear.go's GetIssueDetails asymmetric
+// contract (team required, assignee optional). Returns an error on any
+// lookup failure (timeout, non-200, malformed result, tool-reported error,
+// or an assignee object with no resolvable identifier) so the caller can
+// fail closed.
 func IssueAssignee(ctx context.Context, client ToolCaller, issueKey string) (string, error) {
 	result, err := client.CallTool(ctx, jiraGetIssueTool, map[string]any{"issue_key": issueKey, "fields": "assignee"})
 	if err != nil {
@@ -70,6 +91,9 @@ func IssueAssignee(ctx context.Context, client ToolCaller, issueKey string) (str
 		return "", nil
 	}
 	a := parsed.Assignee
+	if a.AccountID == "" && a.Email == "" && a.DisplayName == jiraUnassignedSentinelDisplayName {
+		return "", nil
+	}
 	switch {
 	case a.Email != "":
 		return a.Email, nil
