@@ -35,7 +35,6 @@ spec:
       initContainers:
         - name: prepare-run
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          imagePullPolicy: Always
           command: [sh, -c]
           args:
             - |
@@ -60,7 +59,6 @@ spec:
               mountPath: /opt/data/home/.hermes/mnemosyne/models
         - name: seed-data
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          imagePullPolicy: Always
           command: [bash, -c]
           args:
             - |-
@@ -201,7 +199,6 @@ spec:
         # doesn't require a pod restart to recover.
         - name: wait-deps
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          imagePullPolicy: Always
           command: [bash, -c]
           args:
             - |-
@@ -291,7 +288,6 @@ spec:
       containers:
         - name: {{ include "vicegerent-agent.name" . }}
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          imagePullPolicy: Always
           args: [gateway]
           env:
             - name: HERMES_DASHBOARD

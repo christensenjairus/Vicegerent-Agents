@@ -64,6 +64,12 @@
       "allowedVersions": "<2.0.0"
     },
     {
+      "description": "hermes-agent Harbor tag is <upstream-version>-rev<N> (e.g. v2026.7.20-rev1) -- loose versioning keeps the -rev suffix ordered instead of dropping it as a semver prerelease.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["harbor.hahomelabs.com/vicegerent/hermes-agent"],
+      "versioning": "loose"
+    },
+    {
       "description": "github-mcp-server v1.6.0 rejects a second `initialize` on the same stdio connection as a protocol error, which ToolHive's vMCP triggers routinely (one per incoming client session/health-check over the single shared stdio pipe) -- confirmed live, v1.6.0 never successfully aggregates through the vMCP at all (see host/mcp/README.md \"Version pinning\"). Don't bump past v1.5.0 without re-running that same live A/B check against the target version first.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/github/github-mcp-server"],
