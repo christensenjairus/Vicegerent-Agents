@@ -346,6 +346,9 @@ spec:
                 -Djavax.net.ssl.trustStore=/opt/data/certs/java-cacerts.p12
                 -Djavax.net.ssl.trustStoreType=PKCS12
                 -Djavax.net.ssl.trustStorePassword=changeit
+            # BAZELISK_HOME: read-only image bake, no PVC copy needed (see MR).
+            - name: BAZELISK_HOME
+              value: /opt/hermes/.cache/bazelisk
             # Slack bypasses the proxy — Socket Mode + Web API require POST + WebSocket.
             # Loopback stays direct. All other destinations (agentgateway, searxng, internet)
             # flow through the scrubbing proxy so secrets are redacted before forwarding.

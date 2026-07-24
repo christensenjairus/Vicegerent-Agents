@@ -156,8 +156,8 @@ ARG BAZELISK_VERSION=v1.29.0
 # renovate: datasource=github-releases depName=bazelbuild/buildtools
 ARG BUILDTOOLS_VERSION=v8.5.1
 # Pinned Bazel release to pre-warm bazelisk's cache with; keep in sync with the
-# .bazelversion of the Bazel repos this sandbox operates against (k8s-manifests: 8.5.1).
-ARG BAZEL_PINNED_VERSION=8.5.1
+# .bazelversion of the Bazel repos this sandbox operates against (moveworks + k8s-manifests: 8.7.0).
+ARG BAZEL_PINNED_VERSION=8.7.0
 ENV BAZELISK_HOME=/opt/hermes/.cache/bazelisk
 RUN case "${TARGETARCH}" in \
         arm64) BT_ARCH=arm64 ;; \
