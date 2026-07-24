@@ -408,6 +408,10 @@
           "name": "aws_config_dir",
           "prompt": "Path to your AWS config dir (blank = ~/.aws). Mounted read-only; refresh SSO tokens host-side with `aws sso login`.",
           "apply": "aws_config"
+        },
+        {
+          "name": "cred_watch_profile",
+          "prompt": "AWS profile for mcp-health-watch's credential-expiry check to poll -- set to the SSO profile you work against so the pre-expiry warning scopes to that login (blank = whichever AWS_PROFILE/[default] resolves to, no --profile flag)"
         }
       ],
       "tools": [

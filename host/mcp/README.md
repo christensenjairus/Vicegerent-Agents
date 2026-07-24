@@ -12,11 +12,13 @@ Hermes sandbox
   -> 17 ToolHive workloads (group 'vicegerent')
 ```
 
-`thv` runs the workloads as Docker containers under ToolHive's own daemon — they persist across `start`/`stop` so OAuth tokens are not re-prompted. `start` detects when a workload's declared spec (package, env, run/server flags, secret targets) has drifted from what's actually running — e.g. editing `env` or `tools` for a server already up — and recreates that one container instead of `thv restart`-ing it (which would silently keep the OLD args forever, since restart reuses whatever was passed to the container's original `thv run`). Supervisord manages only the three long-lived host processes:
+`thv` runs the workloads as Docker containers under ToolHive's own daemon — they persist across `start`/`stop` so OAuth tokens are not re-prompted. `start` detects when a workload's declared spec (package, env, run/server flags, secret targets) has drifted from what's actually running — e.g. editing `env` or `tools` for a server already up — and recreates that one container instead of `thv restart`-ing it (which would silently keep the OLD args forever, since restart reuses whatever was passed to the container's original `thv run`). Supervisord manages the long-lived host processes:
 
-- `caffeinate` — keeps macOS awake for as long as the stack is up.
 - `vmcp` — `thv vmcp serve` aggregating the group on 127.0.0.1:4483.
 - `ghostunnel` — terminates mTLS from the cluster (client CN `agent-client`) and forwards to vMCP.
+- `rclone-s3` — `rclone serve s3` on 127.0.0.1:9899, the S3 backend for the cluster's Velero backups.
+- `mcp-health-watch` — always on, no flag. Polls every *enabled* workload's own `thv list` status and fires a macOS notification the first time one drops out of "running" (e.g. an OAuth-backed remote like Notion or Linear losing its token and going `unauthenticated`/`error` — observed live: the workload drops out of vMCP entirely until `start` brings it back), and — whenever the `aws` server is enabled — additionally warns *before* that backend's AWS credentials expire (and again once expired). See "MCP health & credential watcher" below.
+- `caffeinate` — opt-in; keeps macOS awake for as long as the stack is up.
 
 ## The 17 backends (group `vicegerent`)
 
@@ -96,6 +98,33 @@ This requires `mcp-cerbos-shim` to unwrap `call_tool`'s wrapped `{tool_name, par
 
 `kubernetes` runs a custom image (`images/kubernetes-mcp-server`, not ToolHive's generic `npx://` protocol) that bundles the AWS CLI alongside the `kubernetes-mcp-server` npm package. That's needed to point `kubeconfig` at a *real* cluster instead: a kubeconfig from `aws eks update-kubeconfig` carries an `exec:` IAM-authenticator plugin that shells out to `aws eks get-token` at request time, using the operator's ambient AWS credentials — and that exec call runs inside this same container, so it needs the `aws` binary on `PATH` and the operator's AWS config available. The `aws_config_dir` param (`apply: "aws_config"`, same as the `aws` backend) always mounts `~/.aws` read-only for exactly that — blank defaults to `~/.aws`, and `start` fails if that directory doesn't exist, even for a kind-cluster-only setup (SSO refresh stays host-side, same as the `aws` backend). The agent's tool surface doesn't change either way — `aws eks get-token` runs as an internal credential helper the auth library invokes, never as an agent-callable tool, so none of the `aws` backend's own credential-minting Cerbos guardrails apply here.
 
+### MCP health & credential watcher
+
+`mcp-health-watch` is always on (no flag, no per-backend opt-in): a single supervised loop (`health_watch()` in `vicegerent_mcp.py`) that does two things each poll.
+
+**Workload health.** It polls `thv list`'s own status for every currently-*enabled* workload and fires a macOS notification the first time one drops out of `running`, clearing it once `running` again. This exists because an OAuth-backed remote (`notion`, `linear`) losing its token doesn't just make individual tool calls fail — the whole workload drops out of `thv list`/vMCP's aggregation entirely (`unauthenticated`/`auth_retrying`/`error` in `thv`'s own state, or missing altogether) and stays down until something explicitly restarts it. A static-credential backend (`jira`'s API token, and `kubernetes`/`aws`/`aws_profiles` via `apply:aws_config`) can hit the same "workload just isn't running" state for other reasons too (a crashed container, a bad image pull), so this check is generic across every enabled backend rather than hand-picking OAuth ones.
+
+**AWS credentials.** Whenever the `aws` server is enabled (nothing else here depends on AWS credentials), the same loop also watches that backend's credentials and warns *before* they expire, not only after. Two signals:
+
+- **Expired now** — `aws sts get-caller-identity` (works on any AWS CLI version) fails once the credentials are already expired/unresolvable. This is the guaranteed after-the-fact signal, run every interval against the watched profile.
+- **Expiring soon** — while (1) still succeeds, a lookahead warns before the *actionable* re-auth deadline, within the warning window (`--cred-warning-mins`, default 60). Where that deadline comes from depends on the credential type:
+  - **SSO** (the watched profile has an `sso_start_url`) — that login's own SSO token `expiresAt` from the local token cache (`~/.aws/sso/cache/*.json`), located by matching the cache file's `startUrl` (robust to botocore's cache-filename hashing). This is what matters for an SSO profile: the short-lived role creds `export-credentials` returns auto-refresh *from* that token, so their sub-hour `Expiration` is cry-wolf, while the token's own expiry is when `aws sso login` (or the operator's login flow) is genuinely needed again. The lookahead is **scoped to the watched profile's login** — it deliberately does *not* scan every cached session, so a stale login left over in another partition (e.g. a near-dead commercial token while GovCloud is fresh) can't fire a warning about credentials you aren't using. A token that carries a `refreshToken` auto-refreshes silently, so its `expiresAt` isn't actionable either — that yields no lookahead and the real re-auth surfaces via signal (1) instead.
+  - **Non-SSO** — the watched profile's own `aws configure export-credentials` (AWS CLI v2.9+) `Expiration`, the real hard deadline for a non-refreshing temp-cred source. Static long-lived creds have no `Expiration` (no lookahead), and any export/parse error (an older CLI) simply skips it — it never produces a false "expired".
+
+Which profile both signals track comes from the `aws` server's `cred_watch_profile` param (blank — the default — uses whichever profile `AWS_PROFILE`/`[default]` resolves to, with no `--profile` flag). Set it explicitly to the SSO profile you actually work against so the lookahead scopes to that login rather than an ambiguous default.
+
+Both checks are **detection-only** — the watcher never restarts or refreshes anything itself:
+
+- It never runs a credential-refresh command. However this operator's AWS session gets refreshed (`aws sso login`, an internal access-request tool, whatever) is host-side and often interactive/MFA-gated, which wouldn't work invoked headlessly from a supervised background process anyway — so the notification just says to refresh and re-run `start`, not how.
+- It never restarts a workload. `./vicegerent mcp start` already recreates only the workloads whose mounted `~/.aws` content actually changed (see the drift-fingerprint discussion above) and no-ops everything else — so re-running `start` after a notification is the whole fix, with no separate targeted-restart command needed.
+
+Notifications go through `terminal-notifier` (a Homebrew formula, `scripts/host/setup-host-mcp` installs it) rather than plain `osascript`, so they can carry `icon.png` (repo root) via `-contentImage`. That flag is the most macOS actually allows a script to customize: verified live (and confirmed against [node-notifier#71](https://github.com/mikaelbr/node-notifier/issues/71)) that macOS (Catalina+) no longer lets any unsigned script/CLI override the small sending-app icon badge itself — it always shows whichever `.app` bundle actually invoked the notification API (`terminal-notifier.app`'s own icon). Patching that would mean maintaining a separately-bundle-identified private copy of `terminal-notifier.app` (to avoid changing the icon for any other tool on the machine that happens to share the same Homebrew install) — not worth the ongoing fragility for a cosmetic win, so this repo doesn't do it.
+
+Two more gotchas found live while actually watching this fire against a real expired session (both handled once, in the shared `_notify` helper):
+
+- **Repeat notifications need distinct content.** macOS treats a notification with byte-identical title+message as a duplicate of any earlier undismissed one and silently drops it. Since the watcher's `notified` set resets on process start, a fresh process re-detecting the SAME still-ongoing issue (a crash, `autorestart`, or another `start` before the operator has actually fixed anything) would otherwise fire an identical notification that just vanishes. `_notify` appends a timestamp to every message for exactly this reason.
+- **A long-lived supervisord can lose its connection to the current GUI login session.** Confirmed live after ~6 hours of uptime: the watcher was correctly detecting the expired session and correctly invoking `terminal-notifier` (traced with `bash -x`) with zero errors, but nothing ever appeared on screen. Restarting just that one supervisord *program* didn't fix it — only fully restarting supervisord *itself* (`./vicegerent mcp stop --keep-workloads && ./vicegerent mcp start`) did. Every process a daemon forks inherits whatever GUI-session bootstrap namespace that daemon had at ITS OWN creation time, no matter how freshly the forked child itself was spawned — so a `terminal-notifier` invocation can report success (exit 0) while actually being delivered into a disconnected session. `_notify` dispatches via `launchctl asuser $(id -u) terminal-notifier ...` instead of calling it directly, which re-executes the command inside the CURRENT session's bootstrap namespace rather than the calling process's own (possibly stale) one — the standard fix for a long-running daemon that needs to reliably reach a logged-in user's GUI session. Verified this doesn't regress normal delivery; the multi-hour staleness itself isn't practically reproducible on demand to re-verify against that exact failure, but this is the documented, standard technique for it.
+
 ## Security & trust boundary (read before running on a shared machine)
 
 The host side of this stack trusts the host. Two exposures are inherent to how Docker Desktop + ToolHive work today — know them before running untrusted containers alongside the stack:
@@ -107,7 +136,7 @@ The host side of this stack trusts the host. Two exposures are inherent to how D
 ## Prerequisites
 
 ```bash
-./vicegerent mcp setup      # brew: thv, ghostunnel, supervisor + Python venv
+./vicegerent mcp setup      # brew: thv, ghostunnel, supervisor, terminal-notifier + Python venv
 ```
 
 Then configure ToolHive secrets (once):
@@ -137,7 +166,7 @@ thv secret set elastic_api_key       # read-only Elastic API key (Stack Manageme
 start         bring up workloads + vMCP + ghostunnel (idempotent)
 stop          shut down the supervised stack (workloads left running; --workloads to stop them too)
 status        workload + supervised-process state (rich table)
-logs PROC     tail logs for ghostunnel|vmcp|supervisord|caffeinate (Ctrl-C to exit)
+logs PROC     tail logs for ghostunnel|vmcp|rclone-s3|mcp-health-watch|supervisord|caffeinate (Ctrl-C to exit)
 doctor        check binaries, thv secrets provider + secrets, kind cluster
 tui           interactive dashboard (textual)
 ```

@@ -17,11 +17,21 @@ Owns the full local ToolHive stack that backs the cluster's MCP access:
   rclone-s3            `rclone serve s3` on 127.0.0.1:9899 backing the cluster's
                        Velero BackupStorageLocation from <repo>/velero-backups;
                        reached from pods via host.docker.internal.
+  mcp-health-watch     polls every enabled workload's own `thv list` status and
+                       fires a macOS notification the first time one drops out of
+                       "running" (e.g. an OAuth-backed remote losing its token and
+                       going unauthenticated/error -- observed live: the workload
+                       drops out of vMCP entirely until `start` brings it back).
+                       When the `aws` server is enabled it also watches that
+                       backend's AWS credentials, warning BEFORE they expire (and
+                       again once expired). Detection only -- never restarts or
+                       refreshes anything itself.
   caffeinate           opt-in: holds a macOS "stay awake" assertion while the
                        stack is up (enable per-start with --caffeinate, or --always).
 
-vMCP, ghostunnel, and rclone-s3 (plus caffeinate when enabled) run under supervisord
-with autorestart. The workloads are brought up by `start` (idempotent) before it starts.
+vMCP, ghostunnel, rclone-s3, and mcp-health-watch (plus caffeinate when enabled)
+run under supervisord with autorestart. The workloads are brought up by `start`
+(idempotent) before it starts.
 
 Tool authorization lives in the cluster (agentgateway allowlist + Cerbos); the
 vMCP config here exposes ALL backend tools and adds no filter/authz.
@@ -30,6 +40,7 @@ vMCP config here exposes ALL backend tools and adds no filter/authz.
 from __future__ import annotations
 
 import argparse
+import configparser
 import contextlib
 import fcntl
 import getpass
@@ -47,6 +58,7 @@ import threading
 import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator, Iterator
 
@@ -97,8 +109,10 @@ KUBECONFIG_CONTAINER_PATH = "/kubeconfig/config"
 AWS_HOME_CONTAINER_PATH = "/app"
 AWS_DIR_CONTAINER_PATH = "/app/.aws"
 
-# Core supervised programs (always run): vMCP, ghostunnel, rclone-s3.
-SUPERVISED_PROGRAMS = ("vmcp", "ghostunnel", "rclone-s3")
+# Core supervised programs (always run): vMCP, ghostunnel, rclone-s3, and
+# mcp-health-watch (watches every enabled workload's own thv status, plus the
+# `aws` backend's credential expiry when that server is enabled).
+SUPERVISED_PROGRAMS = ("vmcp", "ghostunnel", "rclone-s3", "mcp-health-watch")
 # caffeinate (macOS stay-awake) is opt-in per `start`; shown in status/logs regardless.
 ALL_PROGRAMS = ("caffeinate", *SUPERVISED_PROGRAMS)
 
@@ -405,6 +419,300 @@ def list_all_workload_names() -> set[str]:
     except json.JSONDecodeError:
         return set()
     return {w["name"] for w in data if "name" in w}
+
+
+def _notify(title: str, message: str, group: str | None = None) -> None:
+    """Fire one macOS notification via terminal-notifier. Three gotchas, all
+    verified live, are baked in here so every caller inherits them:
+
+    A `group` tags the notification so a later `_notify_clear(group)` can pull
+    it from Notification Center once the underlying issue clears, and so a
+    repost with the same group replaces the prior one instead of stacking.
+
+    - `-contentImage`, not `-appIcon`: macOS (Catalina+) no longer lets any
+      script/CLI override the small sending-app icon badge -- it stays whatever
+      app actually invoked the notification API. -contentImage is the only flag
+      that still shows a custom image, as a larger attached image alongside the
+      notification.
+    - The appended timestamp isn't decorative: macOS treats a repeat
+      notification with byte-identical title+message as a duplicate of any
+      earlier undismissed one and silently drops it -- a fresh process
+      re-detecting the same still-ongoing issue (a restart, `autorestart`,
+      another `start`) needs genuinely different content to actually display.
+    - `launchctl asuser` (not a direct call): a long-lived supervisord (this
+      process's own parent) can lose its connection to the current GUI login
+      session over many hours' uptime, and every process it forks afterward
+      inherits that same stale session regardless of how freshly *they* were
+      spawned -- confirmed live: restarting just this program stayed silent,
+      only fully restarting supervisord itself fixed it. Routing the actual
+      notification through the CURRENT session's bootstrap namespace instead of
+      this process's own (possibly stale) one is the standard fix.
+    """
+    subprocess.run(
+        [
+            "launchctl", "asuser", str(os.getuid()), "terminal-notifier",
+            "-title", title,
+            "-message", f"{message} [{time.strftime('%H:%M:%S')}]",
+            "-contentImage", str(REPO_ROOT / "icon.png"),
+            *(["-group", group] if group else []),
+        ],
+        check=False,
+    )
+
+
+def _notify_clear(group: str) -> None:
+    """Remove any Notification Center entry previously posted under `group`
+    (routed through the current GUI session, same as _notify). A no-op when
+    nothing with that group is showing."""
+    subprocess.run(
+        [
+            "launchctl", "asuser", str(os.getuid()), "terminal-notifier",
+            "-remove", group,
+        ],
+        check=False,
+    )
+
+
+_AWS_CRED_REFRESH_HINT = "Refresh host-side (e.g. aws sso login), then re-run ./vicegerent mcp start."
+_AWS_CRED_GROUP = "vicegerent-aws-cred"
+# botocore has no env override for this; it's always ~/.aws/sso/cache under HOME.
+_AWS_SSO_CACHE_DIR = Path.home() / ".aws" / "sso" / "cache"
+
+
+def _parse_aws_ts(value: str | None) -> datetime | None:
+    """Parse an AWS timestamp (ISO-8601, optionally 'Z'- or 'UTC'-suffixed) to a
+    tz-aware datetime, assuming UTC when it carries no offset. None on anything
+    unparseable."""
+    if not value:
+        return None
+    text = value.strip()
+    if text.endswith("UTC"):  # older botocore wrote the SSO cache this way
+        text = text[:-3].strip()
+    text = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _profile_sso_start_url(profile: str) -> str | None:
+    """The `sso_start_url` configured for `profile` in ~/.aws/config (following an
+    `sso_session` reference to its `[sso-session]` block), or None if the profile
+    isn't SSO-backed or can't be read. Used to scope the SSO-token lookahead to
+    the one login that backs the watched profile -- scanning every cached session
+    would warn on whichever unrelated login (e.g. a stale one in the other AWS
+    partition) happens to expire soonest."""
+    parser = configparser.ConfigParser()
+    try:
+        if not parser.read(Path.home() / ".aws" / "config"):
+            return None
+    except configparser.Error:
+        return None
+    # blank => same profile signal (1) resolves: AWS_PROFILE else [default].
+    name = profile or os.environ.get("AWS_PROFILE") or "default"
+    for section in (name, f"profile {name}"):  # [default] has no prefix; named use "profile "
+        if not parser.has_section(section):
+            continue
+        sec = parser[section]
+        if sec.get("sso_start_url"):
+            return sec.get("sso_start_url")
+        session = sec.get("sso_session")
+        if session and parser.has_section(f"sso-session {session}"):
+            return parser[f"sso-session {session}"].get("sso_start_url")
+        return None
+    return None
+
+
+def _sso_token_expiry(now: datetime, start_url: str) -> datetime | None:
+    """Expiry of the cached AWS SSO login token for `start_url`, or None when
+    there's no live token for it OR the token auto-refreshes.
+
+    For an SSO profile this token -- not the role creds `export-credentials`
+    returns -- is the real "re-auth" deadline: the short-lived role creds
+    auto-refresh from it, so warning on their sub-hour Expiration is cry-wolf.
+    Matching by the file's `startUrl` (not botocore's cache-filename hashing)
+    scopes the check to the watched profile's login and ignores every other
+    cached session. When more than one cached file matches the same `startUrl`
+    (e.g. a legacy inline `sso_start_url` profile and an `sso_session`-based one
+    for the same login, hashed to different filenames), the live token with the
+    LATEST `expiresAt` is the current session -- an expired leftover is skipped
+    rather than allowed to mask it (glob order is arbitrary). Returns None (no
+    actionable lookahead -- rely on signal 1) when no live token matches, or when
+    that current token carries a `refreshToken` (then even its own `expiresAt`
+    silently refreshes). Token-cache files carry an `accessToken`;
+    client-registration files in the same dir don't."""
+    try:
+        cache_files = list(_AWS_SSO_CACHE_DIR.glob("*.json"))
+    except OSError:
+        return None
+    best: datetime | None = None
+    best_refreshes = False
+    for path in cache_files:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict) or "accessToken" not in data:
+            continue
+        if data.get("startUrl") != start_url:
+            continue
+        expires_at = _parse_aws_ts(data.get("expiresAt"))
+        if expires_at is None or expires_at <= now:
+            continue  # expired/unparseable leftover -- never let it mask a live token
+        if best is None or expires_at > best:
+            best = expires_at
+            best_refreshes = bool(data.get("refreshToken"))
+    if best is None or best_refreshes:
+        return None  # no live token, or the current one auto-refreshes
+    return best
+
+
+def _export_cred_expiry(profile_flag: list[str]) -> datetime | None:
+    """The watched profile's own credential `Expiration` via
+    `aws configure export-credentials` (AWS CLI v2.9+). None for static
+    long-lived creds (no `Expiration`) or any export/parse error (e.g. an older
+    CLI) -- the fallback deadline for non-SSO temp-cred sources."""
+    proc = subprocess.run(
+        ["aws", "configure", "export-credentials", *profile_flag],
+        capture_output=True, text=True, check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    try:
+        expiration = json.loads(proc.stdout).get("Expiration")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    return _parse_aws_ts(expiration)
+
+
+def _aws_cred_status(profile: str, warning_secs: int) -> tuple[str, str, str] | None:
+    """Check the credentials backing the `aws` MCP backend. Returns None when
+    they're healthy (valid now and not expiring within warning_secs), else a
+    (key, title, message) triple to notify with. The key distinguishes the
+    "expiring soon" warning from the "already expired" one so a soon->expired
+    transition re-notifies.
+
+    Signal (1), always: `aws sts get-caller-identity` -- fails once the creds are
+    already expired/unresolvable, on any AWS CLI version. The guaranteed
+    "expired now" signal.
+
+    Lookahead (when (1) still succeeds) -- warns BEFORE expiry, source chosen by
+    the watched profile's credential type:
+      * SSO (profile has an `sso_start_url`): that login's own SSO token expiry
+        from ~/.aws/sso/cache (`_sso_token_expiry`, scoped by start URL). For an
+        SSO profile that token is the actionable re-auth deadline -- the role
+        creds `export-credentials` reports auto-refresh from it, so their
+        sub-hour Expiration is cry-wolf.
+      * Non-SSO: the profile's own `export-credentials` `Expiration`
+        (`_export_cred_expiry`) -- the real hard deadline for a non-refreshing
+        temp-cred source. Static long-lived creds have none => no lookahead.
+    """
+    profile_flag = ["--profile", profile] if profile else []
+    if subprocess.run(
+        ["aws", "sts", "get-caller-identity", *profile_flag],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    ).returncode != 0:
+        return ("aws-expired", "AWS credentials expired", _AWS_CRED_REFRESH_HINT)
+
+    now = datetime.now(timezone.utc)
+    start_url = _profile_sso_start_url(profile)
+    if start_url:
+        expires_at, what = _sso_token_expiry(now, start_url), "SSO session"
+    else:
+        expires_at, what = _export_cred_expiry(profile_flag), "credentials"
+    if expires_at is None:
+        return None
+    remaining = (expires_at - now).total_seconds()
+    if remaining > warning_secs:
+        return None
+    mins = max(0, round(remaining / 60))
+    return (
+        "aws-expiring",
+        f"AWS {what} expiring soon",
+        f"Expire at {expires_at.astimezone():%H:%M} (~{mins} min). {_AWS_CRED_REFRESH_HINT}",
+    )
+
+
+def health_watch(
+    runtime_dir: Path = DEFAULT_RUNTIME_DIR,
+    servers_config: Path = DEFAULT_SERVERS_CONFIG,
+    interval: int = 60,
+    cred_warning_mins: int = 60,
+) -> int:
+    """Poll every enabled ToolHive workload's own `thv list` status forever,
+    firing a macOS notification the first time one drops out of "running"
+    (e.g. an OAuth-backed remote losing its token and going
+    unauthenticated/error -- observed live: the workload drops out of vMCP
+    entirely until `start` brings it back), and clearing that notification
+    once it's running again so a since-recovered backend doesn't stay flagged.
+
+    When the `aws` server is enabled it also watches that backend's AWS
+    credentials on the same loop, warning BEFORE they expire and again once
+    they've actually expired (see `_aws_cred_status`).
+
+    Detection-only: it never restarts or refreshes anything. `./vicegerent mcp
+    start` is what brings a dropped workload back (and already recreates/restarts
+    only what's needed); an AWS refresh is host-side and often
+    interactive/MFA-gated, which a headless process can't do anyway.
+    """
+    config = load_servers_config(servers_config)
+    group = group_name(config)
+    warning_secs = cred_warning_mins * 60
+    aws_keys = {"aws-expiring", "aws-expired"}
+    notified: set[str] = set()
+    # One startup line so the log confirms the process is alive and shows its
+    # effective settings -- the poll loop itself is silent while everything is
+    # healthy (it only fires macOS notifications), so this is the sole stdout.
+    start_state = load_server_state(runtime_dir)
+    enabled_at_start = sorted(
+        s["name"] for s in config.get("servers", []) if is_server_enabled(s, start_state)
+    )
+    print(
+        f"mcp-health-watch: polling group '{group}' every {interval}s; "
+        f"aws cred warning {cred_warning_mins}m; "
+        f"{len(enabled_at_start)} enabled: {', '.join(enabled_at_start) or 'none'}",
+        flush=True,
+    )
+    while True:
+        state = load_server_state(runtime_dir)
+        enabled_names = sorted(s["name"] for s in config.get("servers", []) if is_server_enabled(s, state))
+        workloads = list_workloads(group)
+        for name in enabled_names:
+            status = workloads.get(name, "")
+            notify_group = f"vicegerent-mcp-{name}"
+            if status == "running":
+                if name in notified:
+                    _notify_clear(notify_group)  # recovered -- pull the stale alert
+                    notified.discard(name)
+            elif name not in notified:
+                _notify(
+                    f"MCP backend down: {name} ({status or 'missing'})",
+                    "Run ./vicegerent mcp start to bring it back.",
+                    group=notify_group,
+                )
+                notified.add(name)
+
+        # AWS credential watch -- only when the `aws` backend itself is enabled
+        # (nothing else here depends on AWS creds). Profile comes from the `aws`
+        # server's cred_watch_profile param; blank => no --profile flag.
+        if "aws" in enabled_names:
+            cred = _aws_cred_status(server_param(runtime_dir, "aws", "cred_watch_profile", ""), warning_secs)
+            if cred is None:
+                if notified & aws_keys:
+                    _notify_clear(_AWS_CRED_GROUP)  # creds healthy again
+                notified -= aws_keys
+            else:
+                key, title, message = cred
+                notified -= aws_keys - {key}  # a soon->expired change re-notifies
+                if key not in notified:
+                    _notify(title, message, group=_AWS_CRED_GROUP)
+                    notified.add(key)
+        elif notified & aws_keys:
+            _notify_clear(_AWS_CRED_GROUP)
+            notified -= aws_keys
+
+        time.sleep(interval)
 
 
 def _resolve_param_value(server: dict[str, Any], param_name: str, runtime_dir: Path) -> str:
@@ -1156,6 +1464,8 @@ def build_supervisord_conf(
     vmcp_env: dict[str, str],
     rcloneshell: Path,
     rclone_env: dict[str, str],
+    health_watch_command: str,
+    health_watch_env: dict[str, str],
     caffeinate: bool = False,
     preexisting: frozenset[str] = frozenset(),
 ) -> str:
@@ -1239,6 +1549,19 @@ redirect_stderr=true
 stdout_logfile={logs}/rclone-s3.log
 stdout_logfile_maxbytes=5MB
 stdout_logfile_backups=2
+
+[program:mcp-health-watch]
+command={health_watch_command}
+directory={REPO_ROOT}
+environment={_supervisord_env_str(health_watch_env)}
+autostart={autostart("mcp-health-watch")}
+autorestart=true
+startsecs=2
+stopwaitsecs=4
+redirect_stderr=true
+stdout_logfile={logs}/mcp-health-watch.log
+stdout_logfile_maxbytes=1MB
+stdout_logfile_backups=1
 """
 
 
@@ -1498,16 +1821,22 @@ def start_stack(
     caffeinate: bool | None = None,
     always_caffeinate: bool = False,
 ) -> int:
-    """Full bring-up: thv workloads -> vMCP config -> supervisord (vMCP/ghostunnel, opt-in caffeinate)."""
+    """Full bring-up: thv workloads -> vMCP config -> supervisord (vMCP/ghostunnel, opt-in caffeinate).
+
+    Idempotent even while already running: re-running `start` re-checks every
+    ToolHive workload's drift fingerprint (so e.g. a refreshed ~/.aws recreates
+    just the affected backends) and, if supervisord is already up, reconciles
+    it in place via `supervisorctl reread`/`update` instead of refusing to run
+    -- so toggling --caffeinate, or picking up any other conf change, never
+    requires a manual `stop` first.
+    """
     paths = runtime_paths(runtime_dir)
     config = load_servers_config(servers_config)
 
-    if is_supervisor_running(runtime_dir):
-        print("supervisord is already running. Use 'stop' first.")
-        return 1
+    already_running = is_supervisor_running(runtime_dir)
 
-    # caffeinate is opt-in: explicit --caffeinate/--no-caffeinate wins, else the
-    # persisted "always" preference (default off). --always saves the choice.
+    # caffeinate is opt-in: an explicit flag wins, else the persisted "always"
+    # preference (default off). --always saves the choice.
     use_caffeinate = caffeinate if caffeinate is not None else caffeinate_always(runtime_dir)
     if always_caffeinate:
         set_caffeinate_always(runtime_dir, use_caffeinate)
@@ -1563,34 +1892,91 @@ def start_stack(
         "HOME": str(Path.home()),
     }
 
-    # A prior supervisord could have died without stopping its children, leaving
-    # vmcp/ghostunnel/rclone-s3 orphaned but still bound to their ports. Starting a
-    # fresh instance for one of those would just lose the port race and go FATAL, so
-    # leave any already-reachable one alone instead (autostart=false in the conf).
-    probe_addrs = {"vmcp": target, "ghostunnel": effective_listen, "rclone-s3": rclone_addr}
-    preexisting = frozenset(name for name, addr in probe_addrs.items() if _addr_reachable(addr))
-    if preexisting:
-        print(f"Already running outside supervisord, leaving in place: {', '.join(sorted(preexisting))}")
+    if already_running:
+        # supervisord itself is already up (a prior `start`) -- it already
+        # tracks vmcp/ghostunnel/rclone-s3, so there's no orphan-detection
+        # concern here (that's only for *bootstrapping* a fresh instance).
+        # Reconciling in place via reread/update below leaves every unchanged
+        # program alone regardless of autostart, so this can just stay true.
+        preexisting: frozenset[str] = frozenset()
+    else:
+        # A prior supervisord could have died without stopping its children, leaving
+        # vmcp/ghostunnel/rclone-s3 orphaned but still bound to their ports. Starting a
+        # fresh instance for one of those would just lose the port race and go FATAL, so
+        # leave any already-reachable one alone instead (autostart=false in the conf).
+        probe_addrs = {"vmcp": target, "ghostunnel": effective_listen, "rclone-s3": rclone_addr}
+        preexisting = frozenset(name for name, addr in probe_addrs.items() if _addr_reachable(addr))
+        if preexisting:
+            print(f"Already running outside supervisord, leaving in place: {', '.join(sorted(preexisting))}")
+
+    # mcp-health-watch reads the `aws` backend's cred_watch_profile param itself
+    # (blank -> no --profile flag), so nothing AWS-specific is threaded here.
+    # PATH/HOME travel through supervisord's stripped environment so `aws`,
+    # `terminal-notifier`, and `launchctl` resolve. --runtime-dir/--servers-config
+    # are GLOBAL options (defined on the top-level parser, before add_subparsers) --
+    # they must precede the subcommand name or argparse rejects them as
+    # "unrecognized arguments" (verified live).
+    health_watch_command = (
+        f"{sys.executable} {Path(__file__).resolve()} "
+        f"--runtime-dir {runtime_dir} --servers-config {servers_config} mcp-health-watch"
+    )
+    health_watch_env: dict[str, str] = {"PATH": path_env, "HOME": str(Path.home())}
 
     conf_text = build_supervisord_conf(
         paths, effective_ghostshell, tunnel_env, vmcp_command, vmcp_env,
-        DEFAULT_RCLONESHELL, rclone_env, use_caffeinate, preexisting,
+        DEFAULT_RCLONESHELL, rclone_env, health_watch_command, health_watch_env,
+        use_caffeinate, preexisting,
     )
     paths["supervisord_conf"].write_text(conf_text, encoding="utf-8")
 
-    # Remove stale socket so supervisord doesn't refuse to start.
-    sock = paths["supervisord_sock"]
-    if sock.exists():
-        sock.unlink()
+    opt_in = {"caffeinate"} if use_caffeinate else set()
+    expected = tuple(p for p in ALL_PROGRAMS if p in SUPERVISED_PROGRAMS or p in opt_in)
 
-    try:
-        subprocess.run(["supervisord", "-c", str(paths["supervisord_conf"])], check=True)
-    except subprocess.CalledProcessError as exc:
-        raise SystemExit(
-            f"supervisord failed to start (exit {exc.returncode}); check {paths['logs']}/supervisord.log"
-        ) from None
+    if already_running:
+        # Reconcile the already-running instance in place: reread picks up the
+        # rewritten conf, update adds/removes/restarts only the program groups
+        # whose OWN declared command/env actually changed (e.g. caffeinate just
+        # toggled on) and leaves everything else untouched -- no `stop` required.
+        print("supervisord already running — reconciling in place …")
+        reread = supervisorctl("reread", runtime_dir=runtime_dir)
+        if reread.returncode != 0:
+            raise SystemExit(f"supervisorctl reread failed: {reread.stderr.strip()}")
+        update = supervisorctl("update", runtime_dir=runtime_dir)
+        if update.returncode != 0:
+            raise SystemExit(f"supervisorctl update failed: {update.stderr.strip()}")
+        if update.stdout.strip():
+            print(update.stdout.strip())
+        # Every supervised program's command points at a FILE this repo edits
+        # (a .py or .sh path) or, for vmcp, a config file it reads once at its
+        # own startup -- none of that is part of the command/env string
+        # `update` diffs above, so a content-only change (editing
+        # vicegerent_mcp.py for mcp-health-watch, or regenerating vmcp_cfg) is
+        # invisible to it and an already-running process keeps whatever it read
+        # at ITS OWN start forever. Worse, confirmed live: editing a file out
+        # from under an already-running interpreter loop doesn't reliably fail
+        # loudly -- it can keep reporting RUNNING while silently no-opping
+        # instead of picking up the change. Restart every expected program
+        # explicitly, every time, so each one always re-reads its current file
+        # from a clean start -- cheap (a few seconds) and safe for a host dev stack.
+        for prog in expected:
+            if prog in preexisting:
+                continue
+            restart = supervisorctl("restart", prog, runtime_dir=runtime_dir)
+            if restart.returncode != 0:
+                raise SystemExit(f"supervisorctl restart {prog} failed: {restart.stderr.strip()}")
+    else:
+        # Remove stale socket so supervisord doesn't refuse to start.
+        sock = paths["supervisord_sock"]
+        if sock.exists():
+            sock.unlink()
 
-    expected = (("caffeinate", *SUPERVISED_PROGRAMS) if use_caffeinate else SUPERVISED_PROGRAMS)
+        try:
+            subprocess.run(["supervisord", "-c", str(paths["supervisord_conf"])], check=True)
+        except subprocess.CalledProcessError as exc:
+            raise SystemExit(
+                f"supervisord failed to start (exit {exc.returncode}); check {paths['logs']}/supervisord.log"
+            ) from None
+
     # preexisting programs are autostart=false -- supervisord never touches them,
     # so only wait on the ones it's actually meant to bring up.
     managed = [p for p in expected if p not in preexisting]
@@ -1685,7 +2071,7 @@ def stop_stack(
     return rc
 
 
-_LOG_NAMES = ("ghostunnel", "vmcp", "rclone-s3", "supervisord", "caffeinate")
+_LOG_NAMES = ("ghostunnel", "vmcp", "rclone-s3", "mcp-health-watch", "supervisord", "caffeinate")
 
 
 def tail_log(
@@ -1715,10 +2101,18 @@ def doctor(
     ok = True
 
     print("binaries:")
-    for binary in ("thv", "ghostunnel", "rclone", "supervisord", "supervisorctl", "caffeinate", "kind"):
+    for binary in (
+        "thv", "ghostunnel", "rclone", "supervisord", "supervisorctl",
+        "caffeinate", "kind", "aws", "terminal-notifier",
+    ):
         found = shutil.which(binary)
         print(f"  {binary}: {found or 'MISSING'}")
-        if not found and binary != "kind":
+        # kind is only needed for the local Kind cluster's kubeconfig; aws is only
+        # needed for mcp-health-watch's AWS credential check (when `aws` is
+        # enabled); terminal-notifier is only needed for mcp-health-watch's own
+        # notifications -- none are fatal here (detection still works without it,
+        # notifications just silently don't fire).
+        if not found and binary not in ("kind", "aws", "terminal-notifier"):
             ok = False
 
     print("thv secrets provider:")
@@ -2022,6 +2416,10 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return tail_log(args.process, args.runtime_dir, args.lines)
 
 
+def cmd_health_watch(args: argparse.Namespace) -> int:
+    return health_watch(args.runtime_dir, args.servers_config, args.interval, args.cred_warning_mins)
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     return doctor(args.servers_config)
 
@@ -2041,19 +2439,29 @@ vicegerent-mcp — host-side ToolHive stack controller
 Owns the local ToolHive stack behind the cluster's MCP access:
   ToolHive workloads (group 'vicegerent') -> vMCP aggregator on :4483
   -> ghostunnel (mTLS from the cluster), optionally kept awake by caffeinate.
-Also runs rclone-s3 on :9899, the S3 backend for the cluster's Velero backups.
-vMCP, ghostunnel, and rclone-s3 run under supervisord; the workloads run under
-ToolHive's own daemon and persist across stack restarts.
+Also runs rclone-s3 on :9899 (the S3 backend for the cluster's Velero backups)
+and mcp-health-watch, which notifies (macOS) the moment any enabled workload
+drops out of "running" -- e.g. an OAuth-backed remote (Notion, Linear, ...)
+losing its token -- and, when the `aws` server is enabled, warns before that
+backend's AWS credentials expire. vMCP, ghostunnel, rclone-s3, and
+mcp-health-watch run under supervisord; the workloads run under ToolHive's own
+daemon and persist across stack restarts.
 
 Commands:
   configure              interactively enable/skip each MCP server + set secrets
   enable KEY             enable a server (persists; brought up on next start)
   disable KEY            disable a server (stops it; ToolHive won't run it)
   start [--caffeinate]   bring up enabled workloads + vMCP + ghostunnel (idempotent);
-                         --caffeinate keeps macOS awake, --always to make it the default
+                         --caffeinate keeps macOS awake, --always to make it the default.
+                         mcp-health-watch always runs (no flag): macOS notification
+                         when an enabled workload drops, plus an AWS credential-expiry
+                         warning whenever the `aws` server is enabled
   stop                   stop the supervised stack + ToolHive workloads (--keep-workloads to leave them)
   status                 workload + supervised-process state (rich table)
-  logs PROC              tail logs  (ghostunnel | vmcp | rclone-s3 | supervisord | caffeinate)
+  logs PROC              tail logs  (ghostunnel | vmcp | rclone-s3 | mcp-health-watch |
+                         supervisord | caffeinate)
+  mcp-health-watch       (internal, run under supervisord) poll enabled workloads' thv
+                         status + aws creds, notify on drop/expiry
   doctor                 check binaries, thv secrets provider + secrets, kind
   tui                    interactive dashboard (textual)
 
@@ -2148,6 +2556,20 @@ def build_parser() -> argparse.ArgumentParser:
     logs.add_argument("process", choices=list(_LOG_NAMES), help="which process log to tail")
     logs.add_argument("-n", "--lines", type=int, default=50, metavar="N", help="initial lines to show (default: 50)")
     logs.set_defaults(func=cmd_logs)
+
+    health_watch_p = sub.add_parser(
+        "mcp-health-watch",
+        help="(internal, run under supervisord) poll enabled workloads' thv status + aws creds, notify on drop/expiry",
+    )
+    health_watch_p.add_argument(
+        "--interval", type=int, default=60, metavar="SECONDS",
+        help="poll interval (default: 60)",
+    )
+    health_watch_p.add_argument(
+        "--cred-warning-mins", type=int, default=60, metavar="MINUTES",
+        help="warn this many minutes before AWS credentials expire (default: 60)",
+    )
+    health_watch_p.set_defaults(func=cmd_health_watch)
 
     sub.add_parser("doctor", help="check host prerequisites").set_defaults(func=cmd_doctor)
 
