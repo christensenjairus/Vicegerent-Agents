@@ -7,7 +7,8 @@ description: Jira reads are allowed against any project; Jira writes targeting a
   or an epicKey/parent smuggled inside additional_fields/fields JSON) are denied,
   while writes confined to an allowed project are allowed. Writes setting a disallowed
   issue type (top-level on create, or smuggled into update's fields/additional_fields
-  JSON) are denied.
+  JSON) are denied. A write whose assignee was live-resolved (assigneeVerified=true)
+  and came back genuinely unassigned is denied.
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
@@ -200,6 +201,34 @@ resources:
       extraEpicKey: ''
       extraParentKey: ''
       assignee: ''
+      issueType: ''
+  update_verified_unassigned:
+    id: CHANGE-2
+    kind: jira_project
+    attr:
+      projectKey: ''
+      issueKey: CHANGE-2
+      inwardKey: ''
+      outwardKey: ''
+      epicKey: ''
+      extraEpicKey: ''
+      extraParentKey: ''
+      assignee: ''
+      assigneeVerified: true
+      issueType: ''
+  update_verified_with_allowed_assignee:
+    id: CHANGE-2
+    kind: jira_project
+    attr:
+      projectKey: ''
+      issueKey: CHANGE-2
+      inwardKey: ''
+      outwardKey: ''
+      epicKey: ''
+      extraEpicKey: ''
+      extraParentKey: ''
+      assignee: jchristensen@moveworks.ai
+      assigneeVerified: true
       issueType: ''
   create_with_allowed_issue_type:
     # Deploy Service Specific/Service Restart/Environment Change are this
@@ -400,6 +429,24 @@ tests:
         actions: {write: EFFECT_DENY}
       - principal: hermes
         resource: update_with_no_assignee
+        actions: {write: EFFECT_ALLOW}
+  - name: a live-verified unassigned issue (assigneeVerified=true, assignee empty
+      -- the shim's ticket-assignee resolution gate actually ran and confirmed no
+      current assignee) is denied on write, unlike the unverified update_with_no_assignee
+      case above where the gate never ran at all; a verified issue with an allowed
+      assignee is unaffected
+    input:
+      principals: [hermes]
+      resources:
+        - update_verified_unassigned
+        - update_verified_with_allowed_assignee
+      actions: [write]
+    expected:
+      - principal: hermes
+        resource: update_verified_unassigned
+        actions: {write: EFFECT_DENY}
+      - principal: hermes
+        resource: update_verified_with_allowed_assignee
         actions: {write: EFFECT_ALLOW}
   - name: issue-type scoping (jiraAllowedIssueTypes is Environment Change/Deploy Service
       Specific/Service Restart on this cluster, matching validate.sh's work cluster-vars.yaml)

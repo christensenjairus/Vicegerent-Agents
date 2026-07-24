@@ -46,7 +46,14 @@
 # allow -- the mismatch attr is only ever present and true, never present and
 # false. See mcp-cerbos-shim's PageAuthoredByOperator doc comment for why
 # this is a semantic search match (fail-closed-safe on a false negative, never
-# a false positive) rather than an exact field comparison.
+# a false positive) rather than an exact field comparison. PageAuthoredByOperator
+# also checks the page's own "Owner"-named property (case-insensitive; a
+# database row's person-type column) BEFORE the creator search, ORing that
+# match in -- a page the operator didn't CREATE but is nonetheless the
+# current Owner of (e.g. reassigned after creation) still resolves as
+# operator-authored, so pageAuthorMismatch never gets set for it. This is
+# purely additional signal into the same single boolean Cerbos already
+# consumes -- no separate attr or rule needed here for the fallback itself.
 apiVersion: api.cerbos.dev/v1
 resourcePolicy:
   version: default

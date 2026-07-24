@@ -56,6 +56,21 @@
 # the operator opts in, since there was no pre-existing issue-type
 # restriction to preserve.
 #
+# deny-write-unassigned-issue: closes a real enforcement gap in
+# deny-assignee-outside-allowed above -- that rule only fires when
+# attr.assignee is non-empty, so an update_issue/add_comment/transition_issue
+# against a genuinely UNASSIGNED issue left the assignee attr empty and fell
+# through to allow-all regardless of ${jiraAllowedAssignees}, since there was
+# no non-"" value to compare. server.go's ticket-assignee resolution gate now
+# also sets an assigneeVerified=true marker whenever it runs the live lookup
+# and gets a definitive answer (including "no assignee") -- this rule denies
+# specifically when that marker is true and the resolved assignee still came
+# back empty. Scoped to actions:[write] like every other rule here; the "*"
+# bypass is honored too, matching the disable-the-whole-check semantics.
+# create_issue is unaffected (this gate never runs for it -- jiraAssigneeGatedTools
+# only covers update/comment/transition on an EXISTING issue; create's own
+# missing-assignee case is deny-create-missing-assignee's job).
+#
 # Do NOT add tools here to permit them; that belongs in the vMCP tools
 # allowlist.
 apiVersion: api.cerbos.dev/v1
@@ -140,6 +155,24 @@ resourcePolicy:
           ruleActivated: >-
             "This agent may only create/update Jira issues of an allowed"
             + " issue type. The requested issue type is outside that scope."
+    - name: deny-write-unassigned-issue
+      actions: [write]
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.assigneeVerified) &&
+            request.resource.attr.assigneeVerified == true &&
+            (!has(request.resource.attr.assignee) || request.resource.attr.assignee
+            == "")
+            && !("*" in [${jiraAllowedAssignees}])
+      output:
+        when:
+          ruleActivated: >-
+            "This agent may only update/comment/transition a Jira issue that"
+            + " has an assignee. This issue currently has no assignee --"
+            + " assign it to an allowed user first."
     - name: allow-all
       actions: ['*']
       effect: EFFECT_ALLOW

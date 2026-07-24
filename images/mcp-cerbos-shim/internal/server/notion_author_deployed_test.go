@@ -34,6 +34,19 @@ const notionAuthorFetchWithTitle = `<page url="https://app.notion.com/p/abc123de
 const notionAuthorSearchMatch = `{"results":[{"id":"abc123def456abc123def456abc123d","title":"Leaf"}]}` // pragma: allowlist secret
 const notionAuthorSearchNoMatch = `{"results":[{"id":"someotherpageid00000000000000000","title":"Leaf"}]}`
 
+// notionAuthorFetchWithOwnerProperty is a database-row page whose <properties>
+// block carries an "Owner" person property mentioning newNotionAuthorServer's
+// wired operator ("operator-user-id") -- see notion_author.go's
+// ownerPropertyMentionsOperator doc comment for the live-verified rendering.
+const notionAuthorFetchWithOwnerProperty = `<page url="https://app.notion.com/p/abc123def456abc123def456abc123d">
+<ancestor-path>
+<parent-page url="https://app.notion.com/p/393de8859710809c9f5ec57a91d2c81a" title="Scratchpad"/>
+</ancestor-path>
+<properties>
+{"title":"Leaf","Owner":["<mention-user url=\"user://operator-user-id\"></mention-user>"]}
+</properties>
+</page>`
+
 // notionAuthorFakeUpstream is a server-package ToolCaller stub for the
 // author gate's two-call sequence (fetch then creator-filtered search) --
 // distinct from permissiveNotionAuthorUpstream (notion_ancestry_deployed_test.go),
@@ -131,6 +144,33 @@ func TestDeployedNotionMapping_CreateCommentNotAuthoredByOperatorForwardsMismatc
 	}
 	if mismatch, _ := d.gotAttr["pageAuthorMismatch"].(bool); !mismatch {
 		t.Errorf("Cerbos saw pageAuthorMismatch=%v, want true", d.gotAttr["pageAuthorMismatch"])
+	}
+}
+
+// TestDeployedNotionMapping_UpdatePageOwnerPropertyMatchPassesWithoutSearchCall
+// proves the Owner-property OR-fallback is wired end-to-end at the shim
+// level: a page the operator didn't create but whose own Owner property
+// names them passes with no pageAuthorMismatch attr, and -- since the check
+// runs against the already-fetched properties block -- never makes the
+// creator-filtered search call at all.
+func TestDeployedNotionMapping_UpdatePageOwnerPropertyMatchPassesWithoutSearchCall(t *testing.T) {
+	d := &stubDecider{allow: true}
+	up := &notionAuthorFakeUpstream{fetchText: notionAuthorFetchWithOwnerProperty}
+	s := newNotionAuthorServer(t, d, up)
+	res, err := s.CheckRequest(context.Background(),
+		mcpReq("vmcp", "tools/call", toolCall("notion_notion-update-page",
+			map[string]any{"page_id": authorTestPageID, "command": "update_content"})))
+	if err != nil {
+		t.Fatalf("CheckRequest: %v", err)
+	}
+	if !isPass(res) {
+		t.Fatalf("expected pass: page's own Owner property names the operator")
+	}
+	if up.fetchCalls != 1 || up.searchCalls != 0 {
+		t.Errorf("expected one fetch and no search call (Owner property match short-circuits), got fetch=%d search=%d", up.fetchCalls, up.searchCalls)
+	}
+	if _, ok := d.gotAttr["pageAuthorMismatch"]; ok {
+		t.Errorf("expected no pageAuthorMismatch attr for an Owner-property-matched page, got %v", d.gotAttr["pageAuthorMismatch"])
 	}
 }
 

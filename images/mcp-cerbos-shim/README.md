@@ -56,9 +56,9 @@ every other gate in this file:
 | Backend | Gated tools | Resolves | Cerbos rule |
 | --- | --- | --- | --- |
 | GitHub | `update_pull_request`, `update_pull_request_branch`, `request_copilot_review` | the PR's real author login, via `pull_request_read` | `deny-not-own-pr` (`defs/resource_github.yaml`) vs. `${githubUsername}` |
-| Jira | `jira_jira_update_issue`, `jira_jira_add_comment`, `jira_jira_transition_issue` (only when the call itself carries no assignee) | the issue's CURRENT assignee, via `jira_jira_get_issue` | the existing `deny-assignee-outside-allowed` (`defs/resource_jira.yaml`) vs. `${jiraAllowedAssignees}` |
-| Linear | `save_issue` updates and `save_comment` (only when the call itself carries no team/assignee) | the issue's team AND current assignee, via ONE `linear_get_issue` call | the existing `deny-*-outside-allowed` rules (`defs/resource_linear.yaml`) vs. `${linearAllowedTeams}`/`${linearAllowedAssignees}` |
-| Notion | `notion-update-page`, `notion-create-comment` | whether the page was created by `${notionUserId}`, via `notion-fetch` + a `notion-search` creator-filtered query | `deny-not-own-page` (`defs/resource_notion.yaml`), boolean `pageAuthorMismatch` attr |
+| Jira | `jira_jira_update_issue`, `jira_jira_add_comment`, `jira_jira_transition_issue` (only when the call itself carries no assignee) | the issue's CURRENT assignee, via `jira_jira_get_issue` | `deny-assignee-outside-allowed` vs. `${jiraAllowedAssignees}`, plus `deny-write-unassigned-issue` when the lookup resolves no assignee at all (`defs/resource_jira.yaml`) |
+| Linear | `save_issue` updates and `save_comment` (only when the call itself carries no team/assignee) | the issue's team AND current assignee, via ONE `linear_get_issue` call | the existing `deny-*-outside-allowed` rules plus `deny-write-unassigned-issue` when the lookup resolves no assignee at all (`defs/resource_linear.yaml`) vs. `${linearAllowedTeams}`/`${linearAllowedAssignees}` |
+| Notion | `notion-update-page`, `notion-create-comment` | whether the page was created by `${notionUserId}` (via `notion-fetch` + a `notion-search` creator-filtered query), OR-ed with the page's own `Owner`-named property (if any) mentioning the operator, read straight off the same `notion-fetch` result | `deny-not-own-page` (`defs/resource_notion.yaml`), boolean `pageAuthorMismatch` attr |
 | Alertmanager | `deleteSilence` | the target silence's real `createdBy`, via a `getSilences` list-then-filter lookup (no single-silence-get tool exists) | `deny-not-own-silence` (`defs/resource_alertmanager.yaml`) vs. `${alertmanagerCreatedBy}` |
 
 `create_pull_request`/`notion-create-pages`/Linear+Jira issue `create`/Alertmanager
@@ -72,20 +72,35 @@ too — nothing to protect on a read.
 All five share the same **fail-closed** contract: an unconfigured gate or a lookup
 error (timeout, malformed response, upstream error) denies the call outright rather
 than silently skipping the check — the same posture as the Notion ancestry gate.
-Fail-closed applies to the LOOKUP, not to a legitimately-absent property: a real
-Jira/Linear issue can have no assignee at all, and that resolves to an empty string
-with no error (the existing `has()`-guarded Cerbos rules already treat an absent/empty
-attr as allow). A GitHub PR always has an author, so that gate has no such
-legitimately-empty case; Alertmanager's `createdBy` is the same shape once the
+Fail-closed applies to the LOOKUP itself, not to a legitimately-resolved-empty
+property -- but for Jira/Linear, "legitimately empty" no longer means "unchecked":
+a real issue can have no assignee at all, and the live lookup resolves that as a
+definitive empty string with no error, rather than failing the lookup outright.
+The gate marks this case with a separate `assigneeVerified=true` attr
+(`internal/server/server.go`), set only when the lookup actually ran and returned
+a definitive answer (a call that already supplies its own directly-verifiable
+assignee never triggers the lookup, so it never gets this attr either). Cerbos's
+`deny-write-unassigned-issue` rule (`defs/resource_jira.yaml`/`defs/resource_linear.yaml`)
+fires specifically on `assigneeVerified=true` with a still-empty assignee, denying
+a write to a genuinely-unassigned ticket instead of the older behavior of silently
+allowing anything whose assignee attr was merely absent or empty. A GitHub PR
+always has an author, so that gate has no such legitimately-empty case;
+Alertmanager's `createdBy` is the same shape once the
 `createSilence` force is in place, though silences created before this gate shipped
 still carry the old default `createdBy` value and so are undeletable via MCP until
 they expire naturally (non-security-relevant — it fails closed, never open). Notion's
-signal is a semantic search match rather than an exact field comparison
+creator-search signal is a semantic search match rather than an exact field comparison
 (`notion-fetch`'s output carries no author field at all — see
 `PageAuthoredByOperator`'s doc comment in `internal/upstream/notion_author.go`), so a
 false negative (a legitimately-authored page the search doesn't match) is possible;
 this is deliberately fail-closed-**safe** — it denies a legitimate write rather than
-ever falsely allowing a non-owner's edit.
+ever falsely allowing a non-owner's edit. `PageAuthoredByOperator` checks a second,
+cheaper signal FIRST (no extra network call): the page's own `Owner`-named property
+(case-insensitive; a database row's person-type column), read straight out of the
+already-fetched `notion-fetch` result — this closes a real gap the creator search
+alone can't (a page the operator didn't *create* but is the current *Owner* of, e.g.
+reassigned after creation), and only ever ADDS an allow-path via a specific-UUID
+substring match, so it can't introduce a false positive.
 
 Per-cluster configuration: `githubUsername` and `notionUserId` are each a single
 per-machine identity value (a personal PAT/workspace account, not a shared bot

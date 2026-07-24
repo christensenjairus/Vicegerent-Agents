@@ -19,7 +19,9 @@ description: >-
   assignee is denied; an ordinary update that doesn't touch assignee is
   unaffected; any call that sets assignee to someone outside
   linearAllowedAssignees is denied, but the literal value me is always
-  allowed regardless of the allowlist.
+  allowed regardless of the allowlist. A write whose assignee was
+  live-resolved (assigneeVerified=true) and came back genuinely unassigned
+  is denied.
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
@@ -85,6 +87,14 @@ resources:
     id: LIN-123
     kind: linear_team
     attr: {isCreate: 'false', assignee: someone-else@example.com}
+  update_verified_unassigned:
+    id: LIN-124
+    kind: linear_team
+    attr: {isCreate: 'false', assignee: '', assigneeVerified: true}
+  update_verified_with_allowed_assignee:
+    id: LIN-124
+    kind: linear_team
+    attr: {isCreate: 'false', assignee: jchristensen@moveworks.ai, assigneeVerified: true}
   # create_issue_label -- a team-scoped label's teamId is checked
   # exactly like save_issue/save_project's team(s); a workspace-scoped label
   # (no teamId arg at all) has nothing to verify and is allowed.
@@ -190,6 +200,24 @@ tests:
       - principal: hermes
         resource: update_with_disallowed_assignee
         actions: {access: EFFECT_DENY}
+  - name: a live-verified unassigned issue (assigneeVerified=true, assignee empty
+      -- the shim's team/assignee-resolution gate actually ran and confirmed no current
+      assignee) is denied, unlike the unverified update_with_no_assignee case above
+      where the gate never resolved an assignee at all; a verified issue with an allowed
+      assignee is unaffected
+    input:
+      principals: [hermes]
+      resources:
+        - update_verified_unassigned
+        - update_verified_with_allowed_assignee
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: update_verified_unassigned
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_verified_with_allowed_assignee
+        actions: {access: EFFECT_ALLOW}
   - name: create_issue_label confined to DEVOPS, or workspace-scoped (no teamId),
       is allowed; targeting another team is denied
     input:
