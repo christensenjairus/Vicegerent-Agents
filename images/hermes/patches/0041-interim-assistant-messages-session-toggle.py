@@ -106,7 +106,7 @@ patched still correctly applies just the missing ones.
 import importlib.util
 import sys
 
-APPLIED_MARKER = "Vicegerent patch 0040"
+APPLIED_MARKER = "Vicegerent patch 0041"
 
 # --- 1. hermes_cli/commands.py: COMMAND_REGISTRY entry ---------------------
 
@@ -118,7 +118,7 @@ ANCHOR_COMMAND_DEF = (
 REPLACEMENT_COMMAND_DEF = (
     "    CommandDef(\"yolo\", \"Toggle YOLO mode (skip all dangerous command approvals)\",\n"
     "               \"Configuration\"),\n"
-    "    # Vicegerent patch 0040: gateway_only=True because only the gateway\n"
+    "    # Vicegerent patch 0041: gateway_only=True because only the gateway\n"
     "    # (gateway/slash_commands.py::_handle_chatter_command) implements this\n"
     "    # command today -- unlike /yolo, /reasoning, /footer, and /verbose, there\n"
     "    # is no matching `elif canonical == \"chatter\":` arm in cli.py yet. Flip\n"
@@ -140,7 +140,7 @@ REPLACEMENT_INIT_DICT = (
     "        # Per-session fast-mode overrides from /fast.\n"
     "        # Key: session_key, Value: \"priority\" or None (explicit normal).\n"
     "        self._session_service_tier_overrides: Dict[str, Optional[str]] = {}\n"
-    "        # Vicegerent patch 0040: per-session interim_assistant_messages\n"
+    "        # Vicegerent patch 0041: per-session interim_assistant_messages\n"
     "        # override from /chatter. In-memory only (never persisted to\n"
     "        # config.yaml, no --global option). Listed in\n"
     "        # _CONVERSATION_SCOPED_STATE below so it resets at every\n"
@@ -209,7 +209,7 @@ REPLACEMENT_READ_SITE = (
     "            default=True,\n"
     "            require_platform_override_for={Platform.MATTERMOST},\n"
     "        )\n"
-    "        # Vicegerent patch 0040: a session-scoped /chatter override (set by\n"
+    "        # Vicegerent patch 0041: a session-scoped /chatter override (set by\n"
     "        # _handle_chatter_command in gateway/slash_commands.py) takes\n"
     "        # precedence over the resolved config/platform value above, mirroring\n"
     "        # every other session-override precedence layer in this file (see\n"
@@ -287,7 +287,7 @@ REPLACEMENT_HANDLER_INSERT = (
     "    async def _handle_verbose_command(self, event: MessageEvent) -> str:\n"
 )
 
-FIX_SLASH_COMMANDS_MARKER = "Vicegerent patch 0040 (slash_commands.py)"
+FIX_SLASH_COMMANDS_MARKER = "Vicegerent patch 0041 (slash_commands.py)"
 
 # --- 7. locales/en.yaml: gateway.chatter.* block ---------------------------
 

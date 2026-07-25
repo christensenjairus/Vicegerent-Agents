@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Textual TUI dashboard for the vicegerent host ToolHive stack.
 
-Read-mostly dashboard over vicegerent_mcp: shows the 6 ToolHive workloads plus
+Read-mostly dashboard over vicegerent_mcp: shows every enabled ToolHive workload plus
 the supervised processes (vMCP, ghostunnel, rclone-s3, mcp-health-watch,
 caffeinate), tails their logs, and offers start / stop / restart of the
 supervised stack.
@@ -274,7 +274,9 @@ class HostMCPApp(App):
     def action_stop_stack(self) -> None:
         self.call_from_thread(self.notify, "Stopping supervised stack…")
         try:
-            stop_stack(self.runtime_dir, self.servers_config)
+            # stop_workloads defaults True; the TUI only ever stops the supervised
+            # processes, so the ToolHive containers keep their OAuth tokens.
+            stop_stack(self.runtime_dir, self.servers_config, stop_workloads=False)
             self.call_from_thread(self.notify, "Supervised stack stopped (workloads left running)")
         except SystemExit as exc:
             self.call_from_thread(self.notify, str(exc), severity="error")
@@ -284,7 +286,7 @@ class HostMCPApp(App):
     def action_restart_stack(self) -> None:
         self.call_from_thread(self.notify, "Restarting supervised stack…")
         try:
-            stop_stack(self.runtime_dir, self.servers_config)
+            stop_stack(self.runtime_dir, self.servers_config, stop_workloads=False)
             rc = start_stack(self.runtime_dir, self.servers_config)
             msg = "Stack restarted" if rc == 0 else "Restarted with warnings — check logs"
             self.call_from_thread(self.notify, msg, severity="information" if rc == 0 else "warning")

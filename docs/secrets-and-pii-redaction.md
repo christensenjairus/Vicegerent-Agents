@@ -6,7 +6,7 @@ Where credential-shaped strings and PII get scrubbed on this platform, in code a
 
 There is no single central scrubber because there is no single pipe to tap. Three genuinely different processes make outbound calls that carry agent-controlled content, and each call leaves from a different place; a fourth point covers log ingestion, which carries agent-controlled content by a completely different mechanism (stdout, not a network call) and would otherwise bypass all three of the others entirely:
 
-- **The Hermes sandbox** makes its own HTTP(S) calls (curl, git-over-HTTP, MCP and model calls to agentgateway, searxng). Every one is forced through the egress-proxy by the `http_proxy`/`https_proxy` env vars set on the sandbox container (`charts/agent/templates/_sandbox.tpl`). That env var only binds the sandbox's own processes — it does nothing for any other pod.
+- **The agent sandbox** makes its own HTTP(S) calls (curl, git-over-HTTP, MCP and model calls to agentgateway, searxng). Every one is forced through the egress-proxy by the `http_proxy`/`https_proxy` env vars set on the sandbox container (`charts/agent/templates/_sandbox.tpl`). That env var only binds the sandbox's own processes — it does nothing for any other pod.
 - **agentgateway** makes a gRPC ExtProc call to `mcp-cerbos-shim` for every `tools/call` (the guardrail). This call originates from agentgateway, so it never touches the egress-proxy.
 - **agentgateway** makes its own HTTPS call to the model provider (Anthropic/OpenAI). Also from agentgateway, also never through the egress-proxy.
 - **Every pod** writes stdout/stderr, which Vector (the `victoria-logs` chart's log agent, a cluster-wide DaemonSet) scrapes unconditionally via a `kubernetes_logs` source with no namespace/pod filter. This is the one leg that isn't a network call at all — Tetragon's `PROCESS_EXEC`/`PROCESS_KPROBE` events (full command-line arguments for every process executed in `agent-sandbox`) land here via Tetragon's own stdout, and any component that logs a secret-shaped string at any log level lands here too.
@@ -17,11 +17,11 @@ The two agentgateway legs are provably disjoint from the sandbox's egress path: 
 
 ### 1. egress-proxy (mitmproxy, Python)
 
-- **Covers:** all outbound HTTP(S) the Hermes sandbox itself makes — internet (FQDN allowlist), searxng, and the sandbox's own calls to agentgateway.
+- **Covers:** all outbound HTTP(S) the agent sandbox itself makes — internet (FQDN allowlist), searxng, and the sandbox's own calls to agentgateway.
 - **Catches:** the regex registry (`REDACT_PATTERNS` in `charts/egress-proxy/templates/addon-configmap.yaml`) — the 16 secret shapes plus the SSN/card/phone PII regexes. The patterns are not hand-written into the ConfigMap: they are compiled at render time from the canonical `images/mcp-cerbos-shim/internal/server/secret-patterns.json`, injected by the installer/validator via `helm --set-file secretPatterns=…`. Each match is replaced with `<masked>`.
 - **Where the patterns live:** the canonical `secret-patterns.json`; `REDACT_PATTERNS` in `addon-configmap.yaml` is compiled from it at render time.
-- **Action:** redact-and-forward. A matched secret/PII pattern is *never* a block — it is replaced with `<masked>` and the request/response proceeds. The proxy's 403s are for policy, not pattern matches: SSRF (private-address destination), non-GET/HEAD method to an external host, URL over 2048 chars, a body on a GET/HEAD, a WebSocket upgrade, or an FQDN not on the allowlist.
-- **What is external-only:** SSRF block, URL-length limit, URL path/query scrub, GET/HEAD-body block, `Authorization`/`Basic`/`x-api-key` header scrub, method enforcement, and the FQDN allowlist all apply only to external destinations. Hosts ending in `.cluster.local`/`.svc` (agentgateway, searxng) are classified internal and skip those. **Body scrubbing and non-`Authorization` header scrubbing, however, run on internal traffic too** — so the sandbox→agentgateway leg is redacted here as well as at the shim. Only agentgateway's own legitimate auth header is deliberately left intact.
+- **Action:** redact-and-forward. A matched secret/PII pattern is *never* a block — it is replaced with `<masked>` and the request/response proceeds. The proxy's 403s are for policy, not pattern matches: SSRF (private-address destination), non-GET/HEAD method to an external host, URL over 2048 chars, a body on a GET/HEAD, a WebSocket upgrade, an FQDN not on the allowlist, or a path outside that host's `EXTERNAL_PATH_SCOPES` entry.
+- **What is external-only:** the SSRF block, URL-length limit, GET/HEAD-body block, method enforcement, FQDN allowlist, and path-scope check all apply only to external destinations. Hosts ending in `.cluster.local`/`.svc` (agentgateway, searxng) are classified internal and skip those. **Every scrub, by contrast, runs on internal traffic too** — the URL path/query, the `Authorization`/`Basic`/`x-api-key` headers, all other headers, and the body are redacted on every destination, so the sandbox→agentgateway leg is scrubbed here as well as at the shim. That includes an agent-supplied auth header on an MCP or model call: agentgateway injects the real upstream provider key on its own outbound leg, so an `Authorization` value arriving from the sandbox is only ever a secret to mask.
 - **Known limits:** pattern-based only — no encoded-form detection (base64, hex, rot13), no Luhn check on card numbers, space/dash-grouped cards not matched. The FQDN allowlist is the primary external control, not this scrub. Streaming responses (SSE / `Transfer-Encoding: chunked`) are skipped to avoid buffering. git-over-SSH (port 22) and Slack bypass the proxy entirely and are not scrubbed (accepted risk, documented in `scrub.py`).
 
 ### 2. mcp-cerbos-shim (Go, agentgateway ExtProc guardrail)
@@ -53,7 +53,7 @@ The two agentgateway legs are provably disjoint from the sandbox's egress path: 
 
 ```mermaid
 flowchart LR
-    H[Hermes sandbox]
+    H[agent sandbox]
     EP["egress-proxy<br/>(mitmproxy)"]
     AGW[agentgateway]
     SHIM[mcp-cerbos-shim]

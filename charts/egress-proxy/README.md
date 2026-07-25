@@ -1,8 +1,8 @@
 # Egress Proxy — Security Model
 
-The egress proxy is an mitmproxy instance that sits between the **hermes agent sandbox** and all outbound HTTP(S) traffic. It provides scrubbing, method enforcement, and an audit log. It is **not** a complete security boundary on its own — it works alongside Cilium network policy and the Sandbox CRD's inherent isolation.
+The egress proxy is an mitmproxy instance that sits between **every agent sandbox** and all outbound HTTP(S) traffic. It provides scrubbing, method enforcement, and an audit log. It is **not** a complete security boundary on its own — it works alongside Cilium network policy and the Sandbox CRD's inherent isolation.
 
-> **Scope**: this proxy guards only sandbox containers (hermes). Platform services — searxng, tavily, firecrawl, agentgateway itself — are not routed through it. Those services have their own network policies and are not in scope for this scrubbing layer.
+> **Scope**: this proxy guards every pod in the `agent-sandbox` namespace, whichever harness the sandbox runs (Hermes, Claude Code, Codex, OpenCode) — the ingress rule selects the namespace, not one agent. Platform services — searxng, agentgateway itself — are not routed through it, and the MCP backends are not in the cluster at all (they run host-side under ToolHive; the sandbox reaches them through agentgateway, which *is* scrubbed as an internal destination). Those services have their own network policies and are not in scope for this scrubbing layer.
 
 ---
 
@@ -15,11 +15,13 @@ Applied to every request — headers and body — before forwarding to any desti
 |---|---|
 | `-----BEGIN ... PRIVATE KEY-----` | SSH private keys — RSA, EC, Ed25519, OpenSSH, PKCS#8 encrypted |
 | `xox[bpraescd]-...` / `xapp-...` | Slack tokens — bot, app-level, user, refresh, socket, client, app-config |
-| `Bearer <token>` / `Basic <creds>` | auth values in URL/body; the `Authorization` header itself is stripped on every request |
-| `x-api-key` / `api-key` headers | API-key headers redacted on every request |
+| `Bearer <token>` / `Basic <creds>` | auth values wherever they appear in the URL or body |
 | AWS / GitHub / GitLab / Google | `AKIA…`, `gh?_…`, `glpat-…`, `AIza…` |
 | OpenAI / Anthropic / Stripe | `sk-…` / `sk-proj-…`, `sk-ant-…`, `sk_live_…` / `rk_test_…` |
 | Notion / Twilio / npm / JWT | `ntn_…`, `SK<32 hex>`, `npm_…`, `eyJ….eyJ….…` |
+| PII | US SSN, Visa/Mastercard/Amex/Discover card numbers, US phone numbers |
+
+Header stripping is separate from the registry and unconditional — no regex has to match. The `Authorization` header is scrubbed on every request regardless of destination (agentgateway injects the real upstream provider key on its own outbound leg, so an auth header on an agent request is only ever a secret), and so are the `x-api-key` and `api-key` headers.
 
 The request **URL path and query** are also scrubbed on every request, and response bodies are scrubbed (non-streaming only) to guard against echo attacks — both through the same `_redact()`.
 
@@ -60,9 +62,9 @@ MCP tool calls (`tools/call` through vmcp) get a dedicated pair of lines instead
 ## What the proxy does NOT enforce
 
 ### Destination content policy
-The proxy checks the HTTP *method*, not the *URL path* or *response content*. A GET to any allowed FQDN succeeds regardless of path. This is intentional — path-based policy requires constant maintenance and breaks legitimate use cases.
+The proxy checks the HTTP *method*, not the *response content*, and it path-scopes only the hosts that need it. A GET to an allowed FQDN succeeds regardless of path unless that host has an `EXTERNAL_PATH_SCOPES` entry in the addon — a per-host prefix allowlist for multi-tenant destinations, where Cilium's host-only `toFQDNs` entry would otherwise grant access to every path any tenant could serve (currently just `storage.googleapis.com`, scoped to `/proxy-golang-org-prod/` for the Go module proxy's zip redirect). Hosts with no entry stay unrestricted, deliberately — blanket path policy needs constant maintenance and breaks legitimate use.
 
-**Mitigation**: The Cilium FQDN allowlist (rendered into `charts/egress-proxy/templates/networkpolicy.yaml`) is the destination gate. Only explicitly listed FQDNs are reachable. Add FQDNs in `values.yaml`'s `egress:` block, not URL path rules — see [Adding a new external service](#adding-a-new-external-service).
+**Mitigation**: The Cilium FQDN allowlist (rendered into `charts/egress-proxy/templates/networkpolicy.yaml`) is the destination gate. Only explicitly listed FQDNs are reachable. Add FQDNs in `values.yaml`'s `egress:` block, not URL path rules — see [Adding a new external service](#adding-a-new-external-service). Add an `EXTERNAL_PATH_SCOPES` entry only when the new host is multi-tenant.
 
 ### Sophisticated GET exfiltration
 A URL within the 2048-char limit can still carry meaningful data in query strings or path segments. Encoding (base64, hex, split-chunking) bypasses pattern scrubbing. This is a fundamental limitation of HTTP-layer inspection.
@@ -77,10 +79,10 @@ The regex registry covers the named provider shapes in the table above. A creden
 **To scrub a literal secret value**: there is currently no mechanism to inject runtime secret values into the proxy for scrubbing. Adding this requires mounting the secret into the proxy pod and loading it at startup — a future improvement.
 
 ### SSH traffic
-Port 22 egress to `github.com` and `gitlab.hahomelabs.com` is direct — bypasses the proxy entirely. `git push` content is not inspectable at the HTTP layer. The SSH deploy key's scope (read-only vs read-write, per-repo vs org-wide) is the control here.
+Port 22 egress is direct — it bypasses the proxy entirely. `github.com` is always allowed; your own git host is whatever you set in the agent's `networkAllowlist.cnameChainedFQDN` (plus every name in its `cnameChain`), so the reachable set is machine-specific. `git push` content is not inspectable at the HTTP layer. The SSH deploy key's scope (read-only vs read-write, per-repo vs org-wide) is the control here.
 
 ### Slack traffic
-Four specific Slack FQDNs are allowed direct (bypassing the proxy) via the **hermes** Cilium policy (`charts/agent/templates/networkpolicy.yaml`, FQDNs set through the agent's `networkAllowlist.slackFQDNs` in `values.yaml`) and `no_proxy` in `charts/agent/templates/_sandbox.tpl`. Slack Socket Mode requires POST and WebSocket — both blocked by the proxy — so Slack must go direct. (`no_proxy` alone is not enough: `slack_sdk` ignores `NO_PROXY` and auto-loads `HTTPS_PROXY`, so the hermes image also carries build patch `0007-slack-bypass-egress-proxy.py` to force the bypass.)
+Slack FQDNs are allowed direct (bypassing the proxy) through the per-agent Cilium policy (`charts/agent/templates/networkpolicy.yaml`, FQDNs set through the agent's `networkAllowlist.slackFQDNs` in `values.yaml`) and `no_proxy` in `charts/agent/templates/_sandbox.tpl`. The list defaults to empty in `values.defaults.yaml` — Slack is opt-in per agent — and `values.example.yaml` ships these four. Slack Socket Mode requires POST and WebSocket — both blocked by the proxy — so Slack must go direct. (`no_proxy` alone is not enough: `slack_sdk` ignores `NO_PROXY` and auto-loads `HTTPS_PROXY`, so the hermes image also carries build patch `0007-slack-bypass-egress-proxy.py` to force the bypass.)
 
 | FQDN | Purpose |
 |---|---|
@@ -89,7 +91,7 @@ Four specific Slack FQDNs are allowed direct (bypassing the proxy) via the **her
 | `wss-backup.slack.com` | Socket Mode WebSocket (failover endpoint) |
 | `files.slack.com` | File/image downloads for attachment handling |
 
-The former `*.slack.com` wildcard is removed. If Slack rotates the WSS hostname, Socket Mode reconnections will fail — add the new hostname to the agent's `networkAllowlist.slackFQDNs` in `values.yaml` and `no_proxy` in `charts/agent/templates/_sandbox.tpl`. Slack traffic carries no sandbox secrets by design.
+The former `*.slack.com` wildcard is removed from the Cilium policy. If Slack rotates the WSS hostname, Socket Mode reconnections will fail — add the new hostname to the agent's `networkAllowlist.slackFQDNs` in `values.yaml`. `no_proxy` needs no edit for a `*.slack.com` name: it carries the suffix form `.slack.com`, which already covers any new subdomain. Slack traffic carries no sandbox secrets by design.
 
 ### Streaming responses
 SSE (`text/event-stream`) and chunked transfer responses skip response body scrubbing to avoid buffering the LLM stream. An echo attack via streaming is theoretically possible but requires the external server to actively reflect back injected content.
@@ -110,7 +112,7 @@ SSE (`text/event-stream`) and chunked transfer responses skip response body scru
 ### Residual risks
 - **DNS rebinding** — `_is_private()` in the addon only checks literal IP addresses; hostname-based requests bypass it (intentional — Cilium enforces the destination boundary). Cilium FQDN policy caches DNS results with a TTL; within that window a rebinding attack (attacker-controlled FQDN, TTL 0, rebind to RFC1918) could reach a private IP via an allowed FQDN. The `egressDeny` CiliumNetworkPolicy rules are the actual guard here — they operate at the packet level and block the private-IP egress regardless of what DNS returned. Short exploitation window; requires attacker-controlled DNS infrastructure.
 - **`no_proxy` override in subprocesses** — a subprocess could set `NO_PROXY=*`, causing it to attempt direct egress which Cilium then drops. Fails noisily rather than silently exfiltrating.
-- **IPv6** — the hermes pod has no IPv6-specific FQDN allowlist. However, the `egressDeny` CiliumNetworkPolicy includes `::1/128`, `fc00::/7`, and `fe80::/10` to block private IPv6 ranges. Direct IPv6 internet egress from tools that ignore `http_proxy` would need a non-private IPv6 destination; the Cilium default deny covers the rest.
+- **IPv6** — the sandbox pod has no IPv6-specific FQDN allowlist. However, the `egressDeny` CiliumNetworkPolicy includes `::1/128`, `fc00::/7`, and `fe80::/10` to block private IPv6 ranges. Direct IPv6 internet egress from tools that ignore `http_proxy` would need a non-private IPv6 destination; the Cilium default deny covers the rest.
 
 ---
 
@@ -121,7 +123,8 @@ There are two CiliumNetworkPolicies; pick by how the sandbox reaches the service
 For a service the **proxy fetches** (GET/HEAD through the egress proxy):
 1. Add the FQDN to `values.yaml`'s `egress:` block — one edit, single source of truth. `apexWildcardDomains` if the service also needs subdomains (an exact match plus a `*.<domain>` wildcard); `exactOnlyDomains` for an exact host only. Both are comma-joined bare hostnames, machine-scoped (same laptop implies the same network requirements, unlike the per-agent direct-egress bypass FQDNs below). The installer feeds them into `charts/egress-proxy`, which renders the **same** list into both the Cilium `toFQDNs` policy (the kernel-level gate) and `scrub.py`'s allowlist (the mitmproxy application-layer gate) — so the two can no longer drift.
 2. If the service needs POST it cannot go through the proxy (external POST → 403) — route it direct instead (below)
-3. If the service holds credentials, add a `REDACT_PATTERNS` entry for its token format.
+3. If the service holds credentials, add its token format to `images/mcp-cerbos-shim/internal/server/secret-patterns.json` — see [Adding a new secret pattern](#adding-a-new-secret-pattern).
+4. If the service is multi-tenant (object storage, a CDN), add an `EXTERNAL_PATH_SCOPES` entry so the host-only FQDN allowlist doesn't grant every tenant's path.
 
 For a service the sandbox reaches **direct** (bypassing the proxy, e.g. Slack):
 1. Add the FQDN to the agent's `networkAllowlist.slackFQDNs` in `values.yaml` (rendered by `charts/agent/templates/networkpolicy.yaml`)

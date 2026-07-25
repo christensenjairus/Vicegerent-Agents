@@ -1,10 +1,10 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/agentgateway
-# Tag matches the upstream version it is built from, so the docker datasource on
-# the gateway image ref (apps/.../gateway.yaml) tracks it as clean semver and
-# Renovate auto-detects the next build. The registry path (vicegerent vs
-# ghcr.io/agentgateway) is what marks this as the patched build.
+# <upstream-version>-rev<N>, same scheme as hermes-agent: the base tracks the
+# AGW_VERSION it was built from and -rev<N> increments on every rebuild that
+# changes what the image contains (patches/, Dockerfile, builder base), resetting
+# to -rev1 when AGW_VERSION bumps. Renovate reads it under `versioning: loose`.
 AGW_VERSION ?= v1.3.1
-TAG         ?= $(AGW_VERSION)
+TAG         ?= $(AGW_VERSION)-rev1
 REF         := $(IMAGE):$(TAG)
 
 DOCKER    ?= docker

@@ -123,7 +123,7 @@ RUN case "${TARGETARCH}" in \
     && tar -xz -C /usr/local/bin -f /tmp/cerbos.tar.gz cerbos \
     && rm /tmp/cerbos.tar.gz
 
-# Bake helm so scripts/validate.sh and pre-commit validate-flux-manifests can run offline.
+# Bake helm so scripts/validate.sh and the validate-manifests pre-commit hook can run offline.
 # renovate: datasource=github-releases depName=helm/helm
 ARG HELM_VERSION=v4.2.3
 RUN case "${TARGETARCH}" in \
@@ -730,15 +730,6 @@ COPY patches/0039-runtime-footer-cost-field.py /tmp/0039-runtime-footer-cost-fie
 RUN /opt/hermes/.venv/bin/python /tmp/0039-runtime-footer-cost-field.py
 RUN rm -f /tmp/0039-runtime-footer-cost-field.py
 
-# Add a native /chatter command (Slack bang-alias !chatter) that toggles
-# display.interim_assistant_messages for the current session only --
-# in-memory, never persisted to config.yaml, resets at conversation
-# boundaries like /reasoning's session override. Adds wholly new
-# functionality with no upstream equivalent; no removal condition.
-COPY patches/0040-interim-assistant-messages-session-toggle.py /tmp/0040-interim-assistant-messages-session-toggle.py
-RUN /opt/hermes/.venv/bin/python /tmp/0040-interim-assistant-messages-session-toggle.py
-RUN rm -f /tmp/0040-interim-assistant-messages-session-toggle.py
-
 # The custom provider profile (Ollama/vLLM/llama.cpp/GLM-ARK/gpt-5.4-via-
 # agentgateway -- anything registered as provider: custom) unconditionally
 # emitted extra_body.think=False whenever reasoning was disabled. The
@@ -756,3 +747,12 @@ RUN rm -f /tmp/0040-interim-assistant-messages-session-toggle.py
 COPY patches/0040-custom-provider-drop-unconditional-think-field.py /tmp/0040-custom-provider-drop-unconditional-think-field.py
 RUN /opt/hermes/.venv/bin/python /tmp/0040-custom-provider-drop-unconditional-think-field.py
 RUN rm -f /tmp/0040-custom-provider-drop-unconditional-think-field.py
+
+# Add a native /chatter command (Slack bang-alias !chatter) that toggles
+# display.interim_assistant_messages for the current session only --
+# in-memory, never persisted to config.yaml, resets at conversation
+# boundaries like /reasoning's session override. Adds wholly new
+# functionality with no upstream equivalent; no removal condition.
+COPY patches/0041-interim-assistant-messages-session-toggle.py /tmp/0041-interim-assistant-messages-session-toggle.py
+RUN /opt/hermes/.venv/bin/python /tmp/0041-interim-assistant-messages-session-toggle.py
+RUN rm -f /tmp/0041-interim-assistant-messages-session-toggle.py

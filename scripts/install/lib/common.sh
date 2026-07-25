@@ -75,20 +75,41 @@ require_secret() {
     || die "missing Secret ${ns}/${name} — run: ${hint}"
 }
 
+preflight_controller_secrets() {
+  local hint="./vicegerent setup secrets platform"
+  require_secret cerbos mcp-cerbos-shim-self-token "$hint"
+  info "Controller secrets present."
+}
+
 preflight_platform_secrets() {
   local hint="./vicegerent setup secrets platform"
   require_secret agentgateway-system vicegerent-mcp-client "$hint"
   require_secret agentgateway-system ghostunnel-server "$hint"
   require_secret egress-proxy       egress-proxy-ca      "$hint"
   require_secret agent-sandbox      egress-proxy-ca-cert "$hint"
+  require_secret searxng            searxng-secret       "$hint"
   info "Platform secrets present."
+}
+
+# Every agent entry names its own Helm release, Secret, and every resource in it.
+# An omitted name reaches helm as the literal string "null" (yq's rendering of the
+# missing key) and installs a release called `null`; the documented `''` default
+# reaches it as empty and fails with helm's own opaque name check. Checked once up
+# front so a bad machine file fails before any stage runs, not at the last one.
+require_agent_names() {
+  local count i n
+  count="$(yq '.agents | length' "$VALUES_FILE")"
+  for ((i = 0; i < count; i++)); do
+    n="$(yq -r ".agents[$i].name // \"\"" "$VALUES_FILE")"
+    [[ -n "$n" && "$n" != "null" ]] \
+      || die "agents[$i].name is required in $VALUES_FILE (it names the Helm release and every resource)"
+  done
 }
 
 preflight_agent_secrets() {
   local n
   while IFS= read -r n; do
-    [[ -n "$n" ]] || continue
     require_secret agent-sandbox "${n}-secrets" "./vicegerent setup secrets agent ${n}"
-  done < <(yq '.agents[].name' "$VALUES_FILE")
+  done < <(yq -r '.agents[].name' "$VALUES_FILE")
   info "Agent secrets present."
 }

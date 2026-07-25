@@ -1,8 +1,9 @@
 ---
 # elastic policy: deny any data-access call whose target index/datastream
 # matches a denied token (${elasticDeniedIndexPatterns}, from
-# values.yaml (clusterVars) — lowercased substrings, CEL-list-ready same as
-# grafanaDeniedDatasourceNames); allow everything else. The shim's
+# values.yaml (clusterVars) — substrings, CEL-list-ready same as
+# grafanaDeniedDatasourceNames, lowercased at match time so a mixed-case entry
+# still matches); allow everything else. The shim's
 # elasticTargetsAttr helper (mapping.yaml) surfaces every index-bearing arg
 # (index / indices[] / pattern / indexPattern / stream name) plus the
 # execute_esql query text as one lowercased `targets` list. A substring match
@@ -32,7 +33,7 @@ resourcePolicy:
           expr: >-
             has(request.resource.attr.targets)
             && request.resource.attr.targets.exists(t,
-            [{{ include "cerbos-policies.celList" .Values.clusterVars.elasticDeniedIndexPatterns }}].exists(p, t.contains(p)))
+            [{{ include "cerbos-policies.celList" .Values.clusterVars.elasticDeniedIndexPatterns }}].exists(p, t.contains(p.lowerAscii())))
       output:
         when:
           ruleActivated: >-

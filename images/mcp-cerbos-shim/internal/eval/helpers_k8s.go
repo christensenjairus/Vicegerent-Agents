@@ -28,11 +28,9 @@ func canonicalK8sOption() []cel.EnvOption {
 						lookupCI(m, "Kind", ""),
 					)
 					kind, apiResource := canonicalizeKind(raw)
-					ns := lookupCI(m, "namespace", "")
 					return types.NewStringStringMap(types.DefaultTypeAdapter, map[string]string{
 						"kind":        kind,
 						"apiResource": apiResource,
-						"namespace":   ns,
 					})
 				}),
 			),

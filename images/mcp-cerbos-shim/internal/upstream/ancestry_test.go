@@ -120,7 +120,7 @@ const underDatabaseParent = `<page url="https://app.notion.com/p/395588d8909f809
 
 const databaseParentID = "1de588d8909f80458ad6c0a831284768" // pragma: allowlist secret
 
-func TestPageIsUnderAncestor(t *testing.T) {
+func TestPageIsUnderAnyAncestor(t *testing.T) {
 	cases := []struct {
 		name    string
 		text    string
@@ -141,7 +141,7 @@ func TestPageIsUnderAncestor(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fakeCaller{text: tc.text, err: tc.callErr}
-			got, err := PageIsUnderAncestor(context.Background(), f, "leaf-page-id", scratchpadID)
+			got, err := PageIsUnderAnyAncestor(context.Background(), f, "leaf-page-id", []string{scratchpadID})
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil (result=%v)", got)
@@ -152,18 +152,18 @@ func TestPageIsUnderAncestor(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if got != tc.want {
-				t.Errorf("PageIsUnderAncestor = %v, want %v", got, tc.want)
+				t.Errorf("PageIsUnderAnyAncestor = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-// TestPageIsUnderAncestor_CallsFetchOnce guards the "single fetch is
+// TestPageIsUnderAnyAncestor_CallsFetchOnce guards the "single fetch is
 // authoritative" invariant: exactly one notion_notion-fetch call, on the leaf
 // page id, no parent-walk loop.
-func TestPageIsUnderAncestor_CallsFetchOnce(t *testing.T) {
+func TestPageIsUnderAnyAncestor_CallsFetchOnce(t *testing.T) {
 	f := &fakeCaller{text: realFormatUnderScratchpad}
-	if _, err := PageIsUnderAncestor(context.Background(), f, "leaf-page-id", scratchpadID); err != nil {
+	if _, err := PageIsUnderAnyAncestor(context.Background(), f, "leaf-page-id", []string{scratchpadID}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if f.callCount != 1 {
@@ -177,12 +177,12 @@ func TestPageIsUnderAncestor_CallsFetchOnce(t *testing.T) {
 	}
 }
 
-// TestPageIsUnderAncestor_NormalizesDashes proves a dashed ancestor id from the
+// TestPageIsUnderAnyAncestor_NormalizesDashes proves a dashed ancestor id from the
 // caller matches an undashed id in the fetched ancestor-path (and vice versa).
-func TestPageIsUnderAncestor_NormalizesDashes(t *testing.T) {
+func TestPageIsUnderAnyAncestor_NormalizesDashes(t *testing.T) {
 	dashedTarget := "393de885-9710-809c-9f5e-c57a91d2c81a" // same id as scratchpadID, dashed
 	f := &fakeCaller{text: realFormatUnderScratchpad}
-	got, err := PageIsUnderAncestor(context.Background(), f, "leaf", dashedTarget)
+	got, err := PageIsUnderAnyAncestor(context.Background(), f, "leaf", []string{dashedTarget})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -191,22 +191,22 @@ func TestPageIsUnderAncestor_NormalizesDashes(t *testing.T) {
 	}
 }
 
-// TestPageIsUnderAncestor_EmptyTargetErrors: an empty ancestor id is a
+// TestPageIsUnderAnyAncestor_EmptyTargetErrors: an empty ancestor id is a
 // misconfiguration, not a valid "match nothing"; fail closed.
-func TestPageIsUnderAncestor_EmptyTargetErrors(t *testing.T) {
+func TestPageIsUnderAnyAncestor_EmptyTargetErrors(t *testing.T) {
 	f := &fakeCaller{text: realFormatUnderScratchpad}
-	if _, err := PageIsUnderAncestor(context.Background(), f, "leaf", ""); err == nil {
+	if _, err := PageIsUnderAnyAncestor(context.Background(), f, "leaf", []string{""}); err == nil {
 		t.Fatal("expected error for empty ancestor page id")
 	}
 }
 
-// TestPageIsUnderAncestor_DatabaseParentTag proves a page whose immediate
+// TestPageIsUnderAnyAncestor_DatabaseParentTag proves a page whose immediate
 // parent is a wiki database (<parent-database>, not <parent-page>) still
 // matches against that database's own id -- MR !390 post-merge validation
 // found the original page-only regex silently denied this real shape.
-func TestPageIsUnderAncestor_DatabaseParentTag(t *testing.T) {
+func TestPageIsUnderAnyAncestor_DatabaseParentTag(t *testing.T) {
 	f := &fakeCaller{text: underDatabaseParent}
-	got, err := PageIsUnderAncestor(context.Background(), f, "leaf-page-id", databaseParentID)
+	got, err := PageIsUnderAnyAncestor(context.Background(), f, "leaf-page-id", []string{databaseParentID})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

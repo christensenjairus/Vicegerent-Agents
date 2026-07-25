@@ -10,8 +10,8 @@
 # With no keyword, enumerate the reachable tools per backend. With a keyword,
 # search find_tool for matching tools (e.g. 'kubernetes', 'context', 'notion').
 #
-# Override API key (default is the kustomize-generated literal "hermes"):
-#   MYKEY=myval bash scripts/test-mcp-gateway.sh
+# Override the bearer token agentgateway expects (default "hermes"):
+#   API_KEY=myval bash scripts/test-mcp-gateway.sh
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

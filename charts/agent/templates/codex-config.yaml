@@ -1,4 +1,28 @@
 ---
+{{/*
+Codex speaks the OpenAI wire protocol, so it follows openai -> deepseek -> zai
+(the OpenAI-compatible providers, in that order) rather than the deepseek-first
+order opencode-config.yaml uses; deepseek and zai serve chat completions, not the
+responses API. An agent with openai disabled but a compatible provider enabled
+used to get a config pointed at the /openai route the platform chart never
+rendered. An anthropic-only agent still does -- codex cannot speak that wire
+protocol at all, and _sandbox.tpl mounts this ConfigMap unconditionally, so there
+is nothing truthful to render for it.
+*/}}
+{{- $route := "openai/v1" }}
+{{- $model := .Values.harnesses.codex }}
+{{- $wireAPI := "responses" }}
+{{- if not .Values.providers.openai.enabled }}
+{{-   if .Values.providers.deepseek.enabled }}
+{{-     $route = "deepseek/v1" }}
+{{-     $model = .Values.providers.deepseek.model }}
+{{-     $wireAPI = "chat" }}
+{{-   else if .Values.providers.zai.enabled }}
+{{-     $route = "zai/api/paas/v4" }}
+{{-     $model = .Values.providers.zai.model }}
+{{-     $wireAPI = "chat" }}
+{{-   end }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,7 +30,7 @@ metadata:
   namespace: agent-sandbox
 data:
   config.toml: |-
-    model = "{{ .Values.harnesses.codex }}"
+    model = "{{ $model }}"
     model_provider = "vicegerent"
     web_search = "disabled"
     developer_instructions = "{{ printf "%s %s %s" (include "vicegerent-agent.webSearchInstructions" . | trim) (include "vicegerent-agent.vmcpToolDiscovery" . | trim) (include "vicegerent-agent.worktreeDiscipline" . | trim) | replace "\"" "\\\"" }}"
@@ -15,11 +39,11 @@ data:
     approval_policy = "never"
     [model_providers.vicegerent]
     name = "Vicegerent agentgateway"
-    base_url = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1"
+    base_url = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/{{ $route }}"
     # Placeholder: agentgateway injects the real upstream key; the client only
     # needs a non-empty value, and the egress proxy scrubs it in transit.
     experimental_bearer_token = "none"
-    wire_api = "responses"
+    wire_api = "{{ $wireAPI }}"
     [mcp_servers.mnemosyne]
     command = "/opt/hermes/.venv/bin/mnemosyne"
     args = ["mcp"]

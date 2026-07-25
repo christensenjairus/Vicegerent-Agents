@@ -14,41 +14,35 @@ resources:
     attr:
       kind: Secret
       apiResource: secrets
-      namespace: kube-system
   secret_via_list:
     id: secret_via_list
     kind: k8s_resource
     attr:
       apiResource: secrets
-      namespace: default
   pod_in_default:
     id: pod_in_default
     kind: k8s_resource
     attr:
       kind: Pod
       apiResource: pods
-      namespace: default
   configmap_in_default:
     id: configmap_in_default
     kind: k8s_resource
     attr:
       kind: ConfigMap
       apiResource: configmaps
-      namespace: default
   crd_in_default:
     id: crd_in_default
     kind: k8s_resource
     attr:
       kind: PrometheusRule
       apiResource: prometheusrules
-      namespace: default
   no_kind:
     id: '*'
     kind: k8s_resource
     attr:
       kind: ''
       apiResource: ''
-      namespace: default
 tests:
   - name: getResource on a Secret is denied
     input:

@@ -63,7 +63,9 @@ setup_usage() {
 ${B}vicegerent setup${N} — one-time provisioning steps
 
   ${C}cluster${N}                create the Kind cluster and install Cilium as the CNI
-                         (overridable env: KIND_CONFIG CILIUM_VERSION KIND_DOCKER_NETWORK)
+                         (overridable env: KIND_CONFIG CILIUM_VERSION KIND_DOCKER_NETWORK
+                          VICEGERENT_HOST_IP — the host address CoreDNS resolves
+                          host.docker.internal to; set it if autodetection fails)
   ${C}secrets platform${N}       provision platform-wide Kubernetes Secrets + host ghostunnel material
   ${C}secrets agent <name>${N}   provision a named agent's Kubernetes Secrets
   ${C}mcp${N}                    install host MCP prerequisites (brew pkgs, venv, secrets provider)
@@ -87,10 +89,27 @@ patch_coredns() {
     return
   fi
 
-  local host_ip
-  host_ip="$(docker run --rm --network "$docker_network" alpine \
-    sh -c 'getent hosts host.docker.internal 2>/dev/null | awk "{print \$1; exit}"' 2>/dev/null || true)"
-  [[ -n "$host_ip" ]] || host_ip="192.168.65.254"
+  # The probe resolves host.docker.internal from inside the network (Docker Desktop
+  # provides it). Native Linux Docker does not, so fall back to the network's own
+  # gateway address rather than Desktop's hardcoded 192.168.65.254, which would
+  # bake a wrong IP into CoreDNS and break agentgateway -> host ghostunnel silently.
+  local host_ip="${VICEGERENT_HOST_IP:-}"
+  if [[ -z "$host_ip" ]]; then
+    host_ip="$(docker run --rm --network "$docker_network" alpine \
+      sh -c 'getent hosts host.docker.internal 2>/dev/null | awk "{print \$1; exit}"' 2>/dev/null || true)"
+  fi
+  if [[ -z "$host_ip" ]]; then
+    # println: kind's network is dual-stack, and range with no separator would glue
+    # the IPv4 and IPv6 gateways into one unparseable token. Take the IPv4 one.
+    host_ip="$(docker network inspect "$docker_network" \
+      -f '{{ range .IPAM.Config }}{{ println .Gateway }}{{ end }}' 2>/dev/null \
+      | awk '/^([0-9]+\.){3}[0-9]+$/ {print; exit}')"
+  fi
+  [[ -n "$host_ip" ]] || {
+    echo "ERROR: could not determine the host IP reachable from docker network '${docker_network}'." >&2
+    echo "  Set it explicitly and re-run: VICEGERENT_HOST_IP=<ip> ./vicegerent setup cluster" >&2
+    exit 1
+  }
   echo "${B}CoreDNS: resolve host.docker.internal → ${host_ip}${N}"
   new="$(awk -v ip="$host_ip" '{print} /^\.:53 \{/ && !d {
     print "    hosts {"; print "        " ip " host.docker.internal"; print "        fallthrough"; print "    }"; d=1}' <<<"$corefile")"
@@ -108,7 +127,16 @@ cluster_setup() {
   # read a context from); every command below pins --context kind-vicegerent explicitly.
   local cluster_name="vicegerent"
   local kind_config="${KIND_CONFIG:-$REPO_ROOT/scripts/install/kind-config.yaml}"
-  local cilium_version="${CILIUM_VERSION:-1.19.6}"
+  # Read from the same pin the `cni` stage installs, so a Renovate bump to
+  # stages.yaml can't leave the bootstrap on an older Cilium than the install.
+  local cilium_version="${CILIUM_VERSION:-}"
+  if [[ -z "$cilium_version" ]]; then
+    command -v yq >/dev/null 2>&1 || { echo "ERROR: yq is not installed or not on PATH" >&2; exit 1; }
+    cilium_version="$(yq -r '.stages[].actions[] | select(.name == "cilium") | .version' \
+      "$REPO_ROOT/stages/stages.yaml")"
+    [[ -n "$cilium_version" && "$cilium_version" != "null" ]] \
+      || { echo "ERROR: no cilium version in stages/stages.yaml" >&2; exit 1; }
+  fi
   # Dedicated docker network so this cluster's node containers are isolated from the
   # default shared `kind` network and any other kind clusters.
   local docker_network="${KIND_DOCKER_NETWORK:-vicegerent}"
@@ -144,8 +172,10 @@ cluster_setup() {
 run_with_portforward() {
   local script="$1"; shift
 
-  # Check the host MCP stack is running
-  if ! mcp_py status >/dev/null 2>&1; then
+  # Only stdout is swallowed: mcp_py's own "venv not found" goes to stderr and
+  # exits before this `if` can run, so redirecting stderr too would make the
+  # missing-venv case exit 1 printing nothing at all.
+  if ! mcp_py status >/dev/null; then
     echo "ERROR: host MCP stack is not running. Start it first: ./vicegerent mcp start" >&2
     exit 1
   fi
@@ -187,13 +217,13 @@ case "${1:-}" in
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
       echo "vicegerent start — start the Kind cluster, then bring up the host ToolHive stack"
       echo "  1. docker start vicegerent-control-plane   (start the Kind node container)"
-      echo "  2. ./vicegerent mcp start                   (ToolHive workloads + vMCP + ghostunnel; add --caffeinate to keep macOS awake)"
+      echo "  2. ./vicegerent mcp start                   (ToolHive workloads + vMCP + ghostunnel + rclone-s3 + health-watch; add --caffeinate to keep macOS awake)"
       echo "  Extra args pass through to 'vicegerent mcp start' (e.g. --caffeinate)."
       exit 0
     fi
     require_kind_context
     echo "${B}Starting Kind cluster…${N}"
-    docker start "$(kind_node_container)" >/dev/null 2>&1 || true
+    docker start "$(kind_node_container)" >/dev/null
     echo "${B}Starting host MCP stack…${N}"
     mcp_py start "$@"
     ;;
@@ -201,7 +231,7 @@ case "${1:-}" in
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
       echo "vicegerent stop — stop the host ToolHive stack, then stop the Kind cluster"
-      echo "  1. ./vicegerent mcp stop                    (tears down the supervised vMCP + ghostunnel + caffeinate, and stops the ToolHive workloads)"
+      echo "  1. ./vicegerent mcp stop                    (tears down every supervised process — vMCP, ghostunnel, rclone-s3, health-watch, caffeinate — and stops the ToolHive workloads)"
       echo "  2. docker stop vicegerent-control-plane     (stop the Kind node container to free CPU)"
       exit 0
     fi
@@ -217,7 +247,10 @@ case "${1:-}" in
       cluster)
         shift
         [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && { setup_usage; exit 0; }
-        cluster_setup "$@"
+        # cluster_setup is configured entirely by env; a positional arg here is a
+        # mistake (a cluster name, most likely) and was previously ignored.
+        [[ $# -eq 0 ]] || { echo "vicegerent setup cluster takes no arguments (configure it via env: KIND_CONFIG CILIUM_VERSION KIND_DOCKER_NETWORK VICEGERENT_HOST_IP)" >&2; exit 2; }
+        cluster_setup
         ;;
       secrets)
         shift
@@ -246,8 +279,8 @@ case "${1:-}" in
         shift
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
           echo "vicegerent setup mcp — set up all host-side MCP prerequisites, then configure servers"
-          echo "  Installs Homebrew packages (thv, ghostunnel, supervisor), the Python venv,"
-          echo "  and the thv secrets provider, then walks you through enabling/skipping each"
+          echo "  Installs Homebrew packages (thv, ghostunnel, supervisor, rclone, terminal-notifier),"
+          echo "  the Python venv, and the thv secrets provider, then walks you through enabling/skipping each"
           echo "  MCP server and setting its secrets."
           echo "  Flags: -y/--yes (auto-approves the prerequisite installs; the per-server"
           echo "         configure step stays interactive)"
@@ -274,7 +307,7 @@ case "${1:-}" in
       echo "  and runs helm upgrade --install --wait per stage. Copy values.example.yaml to"
       echo "  values.yaml first, and seed secrets with 'vicegerent setup secrets platform'."
       echo "  Flags: -y/--yes, --values <file>, --stage <name>, --from <name>."
-      echo "  Env: RECREATE=1 (helm --force-replace), HELM_TIMEOUT."
+      echo "  Env: RECREATE=1 (helm --force-replace), HELM_TIMEOUT, VALUES_FILE, DEFAULTS_FILE."
       exit 0
     fi
     exec "$REPO_ROOT/scripts/install/install.sh" "$@"
@@ -352,13 +385,14 @@ case "${1:-}" in
         cat <<EOF
 ${B}vicegerent mcp${N} — host-side ToolHive/vMCP stack controller
 
+  ${C}configure${N}             interactively enable/skip each server + set its secrets
   ${C}enable${N} KEY            enable a server (persists; started on next start)
   ${C}disable${N} KEY           disable a server (stops it; ToolHive won't run it)
-  ${C}start${N} [--caffeinate]  bring up enabled workloads + vMCP + ghostunnel
+  ${C}start${N} [--caffeinate]  bring up enabled workloads + vMCP + ghostunnel + rclone-s3 + health-watch
   ${C}stop${N}                  stop the supervised stack + ToolHive workloads
   ${C}status${N}                workload + supervised-process state
   ${C}logs${N} PROC             tail a supervised process log
-  ${C}doctor${N}                check host prerequisites
+  ${C}doctor${N}                check binaries, thv secrets provider + the enabled servers' secrets, kind
 
 Prerequisites and per-server configuration are set up once with 'vicegerent setup mcp'.
 The interactive dashboard is 'vicegerent tui'.

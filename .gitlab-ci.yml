@@ -34,6 +34,10 @@ validate:pre-commit:
     KUBECONFORM_VERSION: v0.8.0
     # renovate: datasource=github-releases depName=cerbos/cerbos
     CERBOS_VERSION: v0.54.0
+    # renovate: datasource=pypi depName=pre-commit
+    PRE_COMMIT_VERSION: 4.5.0
+    # renovate: datasource=pypi depName=detect-secrets
+    DETECT_SECRETS_VERSION: 1.5.0
   cache:
     key:
       prefix: validation-cache-yq${YQ_VERSION}-kubeconform${KUBECONFORM_VERSION}-cerbos${CERBOS_VERSION}
@@ -69,7 +73,7 @@ validate:pre-commit:
       fi
     - cp "$TOOLS_CACHE_DIR"/{yq,kubeconform,cerbos} /usr/local/bin/
     - chmod +x /usr/local/bin/{yq,kubeconform,cerbos}
-    - pip install pre-commit==4.5.0 detect-secrets==1.5.0 --break-system-packages --quiet
+    - pip install "pre-commit==$PRE_COMMIT_VERSION" "detect-secrets==$DETECT_SECRETS_VERSION" --break-system-packages --quiet
   script:
     - pre-commit run --all-files --show-diff-on-failure
 
@@ -106,10 +110,17 @@ validate:agentgateway-crds:
   stage: validate
   image: harbor.hahomelabs.com/docker.io/alpine/k8s:1.36.2
   interruptible: true
+  variables:
+    # renovate: datasource=pypi depName=jsonschema
+    JSONSCHEMA_VERSION: 4.26.0
+    # renovate: datasource=pypi depName=PyYAML
+    PYYAML_VERSION: 6.0.3
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
         - charts/platform/**/*
+        - values.defaults.yaml
+        - values.example.yaml
         - stages/stages.yaml
         - scripts/validate-agentgateway*.{sh,py}
       when: on_success
@@ -118,9 +129,27 @@ validate:agentgateway-crds:
     - when: never
   before_script:
     - apk add --no-cache python3 py3-pip 2>/dev/null || true
-    - pip install jsonschema --break-system-packages --quiet
+    - pip install "jsonschema==$JSONSCHEMA_VERSION" "PyYAML==$PYYAML_VERSION" --break-system-packages --quiet
   script:
     - bash scripts/validate-agentgateway.sh
+
+validate:image-tag-bump:
+  stage: validate
+  image: harbor.hahomelabs.com/docker.io/alpine/k8s:1.36.2
+  interruptible: true
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - images/**/*
+      when: on_success
+    - when: never
+  before_script:
+    - apk add --no-cache git python3 2>/dev/null || true
+  script:
+    - git fetch --no-tags origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+    - python3 scripts/validate-image-tags.py --since "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
 
 validate:renovate-config:
   stage: validate

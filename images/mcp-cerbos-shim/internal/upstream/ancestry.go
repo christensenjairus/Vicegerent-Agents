@@ -61,28 +61,20 @@ func normalizeID(id string) string {
 	return strings.ToLower(strings.ReplaceAll(id, "-", ""))
 }
 
-// PageIsUnderAncestor reports whether pageID descends from ancestorPageID in
-// Notion's page tree. It makes ONE notion_notion-fetch call on pageID and
-// inspects the returned <ancestor-path> block, which already carries the full
-// flattened ancestor chain to root (no parent-walk loop needed).
+// PageIsUnderAnyAncestor reports whether pageID descends from ANY of
+// ancestorPageIDs (a caller-scoped allowlist of parent folders, e.g. the
+// Scratchpad page plus a set of team-folder pages) in Notion's page tree. It
+// makes ONE notion_notion-fetch call on pageID and inspects the returned
+// <ancestor-path> block, which already carries the full flattened ancestor
+// chain to root (no parent-walk loop needed).
 //
 // Fail-closed contract for the caller: it returns a non-nil error ONLY on an
 // actual lookup failure (timeout, non-200, malformed/absent ancestor-path,
 // tool-reported error) so the caller can deny on error. A genuine "not under"
 // result -- an empty ancestor-path (root page) or a populated one with no
-// matching id -- returns (false, nil). It returns (true, nil) only when some
-// ancestor's id matches ancestorPageID.
-func PageIsUnderAncestor(ctx context.Context, client ToolCaller, pageID, ancestorPageID string) (bool, error) {
-	return PageIsUnderAnyAncestor(ctx, client, pageID, []string{ancestorPageID})
-}
-
-// PageIsUnderAnyAncestor reports whether pageID descends from ANY of
-// ancestorPageIDs (a caller-scoped allowlist of parent folders, e.g. the
-// Scratchpad page plus a set of team-folder pages -- HAH's multi-parent
-// scoping). Same single-fetch/fail-closed contract as PageIsUnderAncestor;
-// this just checks the flattened ancestor chain against a set instead of one
-// id. An empty ancestorPageIDs is a caller bug (misconfiguration, not "no
-// restriction") and errors rather than silently allowing everything.
+// matching id -- returns (false, nil). An empty ancestorPageIDs is a caller
+// bug (misconfiguration, not "no restriction") and errors rather than
+// silently allowing everything.
 func PageIsUnderAnyAncestor(ctx context.Context, client ToolCaller, pageID string, ancestorPageIDs []string) (bool, error) {
 	if len(ancestorPageIDs) == 0 {
 		return false, fmt.Errorf("no allowed ancestor page ids configured")

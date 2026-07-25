@@ -17,9 +17,10 @@ import (
 // lookup failure fails closed. The Notion destructive-command deny decision
 // itself is proven separately by defs/notion_test.yaml.
 //
-// The deployed mapping ships an unsubstituted ${notionScratchpadPageId} (Flux
-// fills it at apply time), so these tests inject their own scratchpad id via
-// WithNotionAncestry rather than reading it out of the mapping.
+// The in-repo mapping ships an unsubstituted ${notionScratchpadPageId} (the
+// chart substitutes it at render time from the machine values.yaml), so these
+// tests inject their own scratchpad id via WithNotionAncestry rather than
+// reading it out of the mapping.
 
 const testScratchpadID = "393de8859710809c9f5ec57a91d2c81a" // pragma: allowlist secret
 

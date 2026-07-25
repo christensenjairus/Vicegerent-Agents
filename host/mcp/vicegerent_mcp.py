@@ -3,9 +3,10 @@
 
 Owns the full local ToolHive stack that backs the cluster's MCP access:
 
-  ToolHive workloads   12 MCP backends (kubernetes, gitlab, github, tavily,
-                       firecrawl, notion, linear, jira, grafana, alertmanager,
-                       pagerduty, elastic) run by `thv run` into
+  ToolHive workloads   17 MCP backends (kubernetes, gitlab, github, tavily,
+                       firecrawl, notion, linear, jira, grafana, grafana_gov,
+                       alertmanager, alertmanager_gov, pagerduty, pagerduty_gov,
+                       elastic, aws, aws_profiles) run by `thv run` into
                        the group `vicegerent`.
                        Managed by ToolHive's own daemon (Docker containers),
                        NOT by supervisord — they persist across stack restarts
@@ -33,8 +34,12 @@ vMCP, ghostunnel, rclone-s3, and mcp-health-watch (plus caffeinate when enabled)
 run under supervisord with autorestart. The workloads are brought up by `start`
 (idempotent) before it starts.
 
-Tool authorization lives in the cluster (agentgateway allowlist + Cerbos); the
-vMCP config here exposes ALL backend tools and adds no filter/authz.
+Two authorization concerns split across the host and the cluster. Tool SELECTION
+is here: `generate_vmcp_config` emits an `aggregation.tools` allowlist from each
+server's `tools` key in toolhive-servers.json, so a backend's surface is narrowed
+by editing that file and restarting the stack. ARGUMENT-level authz is in the
+cluster (agentgateway's guardrail -> mcp-cerbos-shim -> Cerbos) and nothing here
+duplicates it.
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ import json
 import os
 import base64
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -107,6 +113,13 @@ KUBECONFIG_CONTAINER_PATH = "/kubeconfig/config"
 # pinned to /app (see apply:aws_config).
 AWS_HOME_CONTAINER_PATH = "/app"
 AWS_DIR_CONTAINER_PATH = "/app/.aws"
+
+# Wall-clock ceilings for the two external CLIs. Sized for their slowest legitimate
+# call (`thv restart`/`stop` drive Docker; the AWS CLI reaches a remote endpoint) and
+# reported as a non-zero returncode, the shell convention for a timeout.
+THV_TIMEOUT_SECS = 120.0
+AWS_CLI_TIMEOUT_SECS = 20.0
+_TIMEOUT_RC = 124
 
 # Core supervised programs (always run): vMCP, ghostunnel, rclone-s3, and
 # mcp-health-watch (watches every enabled workload's own thv status, plus the
@@ -379,10 +392,27 @@ def _kill_stray_supervisord(paths: dict[str, Path], timeout: float = 10.0) -> li
 # ---------------------------------------------------------------------------
 
 
-def thv(*args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [_thv_path(), *args], capture_output=True, text=True, check=check,
-    )
+def thv(
+    *args: str, check: bool = False, timeout: float = THV_TIMEOUT_SECS
+) -> subprocess.CompletedProcess[str]:
+    """Run `thv` with a bounded wall clock.
+
+    Every caller branches on returncode, so a timeout is reported as a normal
+    non-zero result rather than an exception. Without this, `health_watch` --
+    which loops over `thv list` forever -- blocks indefinitely when the daemon
+    or a remote backend hangs, and supervisord's autorestart never fires because
+    the process is still alive: exactly the outage the watcher exists to catch.
+    """
+    try:
+        return subprocess.run(
+            [_thv_path(), *args], capture_output=True, text=True,
+            check=check, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            [_thv_path(), *args], _TIMEOUT_RC, stdout="",
+            stderr=f"thv {' '.join(args)} timed out after {timeout}s",
+        )
 
 
 def list_workloads(group: str) -> dict[str, str]:
@@ -562,10 +592,13 @@ def _export_cred_expiry(profile_flag: list[str]) -> datetime | None:
     `aws configure export-credentials` (AWS CLI v2.9+). None for static
     long-lived creds (no `Expiration`) or any export/parse error (e.g. an older
     CLI) -- the fallback deadline for non-SSO temp-cred sources."""
-    proc = subprocess.run(
-        ["aws", "configure", "export-credentials", *profile_flag],
-        capture_output=True, text=True, check=False,
-    )
+    try:
+        proc = subprocess.run(
+            ["aws", "configure", "export-credentials", *profile_flag],
+            capture_output=True, text=True, check=False, timeout=AWS_CLI_TIMEOUT_SECS,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if proc.returncode != 0:
         return None
     try:
@@ -598,10 +631,17 @@ def _aws_cred_status(profile: str, warning_secs: int) -> tuple[str, str, str] | 
         temp-cred source. Static long-lived creds have none => no lookahead.
     """
     profile_flag = ["--profile", profile] if profile else []
-    if subprocess.run(
-        ["aws", "sts", "get-caller-identity", *profile_flag],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-    ).returncode != 0:
+    try:
+        identity_rc = subprocess.run(
+            ["aws", "sts", "get-caller-identity", *profile_flag],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            check=False, timeout=AWS_CLI_TIMEOUT_SECS,
+        ).returncode
+    except subprocess.TimeoutExpired:
+        # No network (dropped VPN, captive portal) is not an expiry claim, and the
+        # watcher must not block: skip this round and re-check on the next tick.
+        return None
+    if identity_rc != 0:
         return ("aws-expired", "AWS credentials expired", _AWS_CRED_REFRESH_HINT)
 
     now = datetime.now(timezone.utc)
@@ -1445,6 +1485,17 @@ def _supervisord_env_str(env: dict[str, str]) -> str:
     return ",".join(parts)
 
 
+def _supervisord_arg(value: str | Path) -> str:
+    """Quote one argv word for a supervisord `command=` line.
+
+    Supervisord %-expands the value and then shlex-splits it, so an interpolated
+    path needs both escapes: a space (a checkout under `~/My Drive`, a macOS
+    account with a space in its name) would otherwise split into two arguments,
+    and a literal % would be read as a malformed %(...)s expansion.
+    """
+    return shlex.quote(str(value).replace("%", "%%"))
+
+
 def build_supervisord_conf(
     paths: dict[str, Path],
     ghostshell: Path,
@@ -1514,7 +1565,7 @@ stdout_logfile_maxbytes=5MB
 stdout_logfile_backups=2
 
 [program:ghostunnel]
-command={ghostshell}
+command={_supervisord_arg(ghostshell)}
 directory={REPO_ROOT}
 environment={_supervisord_env_str(tunnel_env)}
 autostart={autostart("ghostunnel")}
@@ -1527,7 +1578,7 @@ stdout_logfile_maxbytes=5MB
 stdout_logfile_backups=2
 
 [program:rclone-s3]
-command={rcloneshell}
+command={_supervisord_arg(rcloneshell)}
 directory={REPO_ROOT}
 environment={_supervisord_env_str(rclone_env)}
 autostart={autostart("rclone-s3")}
@@ -1764,7 +1815,7 @@ def ensure_ghostunnel_material() -> None:
         if result.returncode != 0 or not result.stdout.strip():
             print(
                 f"  could not recover {fname} from kind ({result.stderr.strip() or 'secret/key absent'}).\n"
-                "  Run `./vicegerent secrets setup platform` to (re)generate the ghostunnel material.",
+                "  Run `./vicegerent setup secrets platform` to (re)generate the ghostunnel material.",
                 file=sys.stderr,
             )
             return  # leave it missing; ghostshell.sh will fail with a clear message
@@ -1799,7 +1850,7 @@ def ensure_rclone_material() -> None:
     if result.returncode != 0 or not result.stdout.strip():
         print(
             f"  could not recover the auth-key from kind ({result.stderr.strip() or 'secret/key absent'}).\n"
-            "  Run `./vicegerent secrets setup platform` to (re)generate the Velero credentials.",
+            "  Run `./vicegerent setup secrets platform` to (re)generate the Velero credentials.",
             file=sys.stderr,
         )
         return
@@ -1869,7 +1920,10 @@ def start_stack(
     # see server.go callToolMeta) or Cerbos-guarded tools would silently bypass
     # authorization. Set VMCP_OPTIMIZER=0 to fall back to exposing all tools raw.
     optimizer_flag = "" if os.environ.get("VMCP_OPTIMIZER", "1") == "0" else " --optimizer"
-    vmcp_command = f'{thv_bin} vmcp serve --config {vmcp_cfg} --port {port}{optimizer_flag}'
+    vmcp_command = (
+        f"{_supervisord_arg(thv_bin)} vmcp serve "
+        f"--config {_supervisord_arg(vmcp_cfg)} --port {port}{optimizer_flag}"
+    )
     # Ensure thv's dir (and Homebrew) are on PATH for the supervised process.
     path_env = os.pathsep.join(
         dict.fromkeys([str(Path(thv_bin).parent), "/opt/homebrew/bin", os.environ.get("PATH", "")])
@@ -1922,8 +1976,9 @@ def start_stack(
     # they must precede the subcommand name or argparse rejects them as
     # "unrecognized arguments" (verified live).
     health_watch_command = (
-        f"{sys.executable} {Path(__file__).resolve()} "
-        f"--runtime-dir {runtime_dir} --servers-config {servers_config} mcp-health-watch"
+        f"{_supervisord_arg(sys.executable)} {_supervisord_arg(Path(__file__).resolve())} "
+        f"--runtime-dir {_supervisord_arg(runtime_dir)} "
+        f"--servers-config {_supervisord_arg(servers_config)} mcp-health-watch"
     )
     health_watch_env: dict[str, str] = {"PATH": path_env, "HOME": str(Path.home())}
 
@@ -2099,10 +2154,18 @@ def tail_log(
 
 def doctor(
     servers_config: Path = DEFAULT_SERVERS_CONFIG,
+    runtime_dir: Path = DEFAULT_RUNTIME_DIR,
 ) -> int:
-    """Check host prerequisites for the ToolHive + vMCP + ghostunnel stack."""
+    """Check host prerequisites for the ToolHive + vMCP + ghostunnel stack.
+
+    Scoped to the servers that are actually enabled. Every server in the tracked
+    config ships `"enabled": false` and the user opts in via `configure`, so
+    checking all of them would report every secret of every backend the user
+    deliberately skipped as MISSING and could never pass on a normal install.
+    """
     config = load_servers_config(servers_config)
     group = group_name(config)
+    servers = enabled_servers(config, runtime_dir)
     ok = True
 
     print("binaries:")
@@ -2128,10 +2191,12 @@ def doctor(
         print("  NOT configured — run `thv secret setup` (choose 'encrypted')")
         ok = False
 
-    print("required thv secrets:")
-    needed = sorted({sec["name"] for s in config.get("servers", []) for sec in s.get("secrets", [])}
+    print(f"required thv secrets ({len(servers)} enabled server(s)):")
+    needed = sorted({sec["name"] for s in servers for sec in s.get("secrets", [])}
                      | {param_secret_name(s["name"], p["name"])
-                        for s in config.get("servers", []) for p in s.get("params", []) if p.get("secret")})
+                        for s in servers for p in s.get("params", []) if p.get("secret")})
+    if not needed:
+        print("  (none — no server enabled yet; run `vicegerent mcp configure`)")
     for name in needed:
         present = thv("secret", "get", name).returncode == 0
         print(f"  {name}: {'present' if present else 'MISSING (thv secret set ' + name + ')'}")
@@ -2139,7 +2204,7 @@ def doctor(
             ok = False
 
     print("kind cluster:")
-    clusters = {s.get("kind_cluster") for s in config.get("servers", []) if s.get("kind_cluster")}
+    clusters = {s.get("kind_cluster") for s in servers if s.get("kind_cluster")}
     for cluster in sorted(c for c in clusters if c):
         reachable = subprocess.run(
             ["kind", "get", "kubeconfig", "--name", cluster, "--internal"],
@@ -2426,7 +2491,7 @@ def cmd_health_watch(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    return doctor(args.servers_config)
+    return doctor(args.servers_config, args.runtime_dir)
 
 
 def cmd_tui(args: argparse.Namespace) -> int:
@@ -2453,6 +2518,7 @@ mcp-health-watch run under supervisord; the workloads run under ToolHive's own
 daemon and persist across stack restarts.
 
 Commands:
+  configure              interactively enable/skip each server + set its secrets
   enable KEY             enable a server (persists; brought up on next start)
   disable KEY            disable a server (stops it; ToolHive won't run it)
   start [--caffeinate]   bring up enabled workloads + vMCP + ghostunnel (idempotent);
@@ -2466,7 +2532,8 @@ Commands:
                          supervisord | caffeinate)
   mcp-health-watch       (internal, run under supervisord) poll enabled workloads' thv
                          status + aws creds, notify on drop/expiry
-  doctor                 check binaries, thv secrets provider + secrets, kind
+  doctor                 check binaries, thv secrets provider + the enabled servers'
+                         secrets, kind
   tui                    interactive dashboard (textual)
 
 MCP servers are OFF by default; run `./vicegerent setup mcp` (or `enable KEY`) to opt in.

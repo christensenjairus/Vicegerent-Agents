@@ -2,8 +2,9 @@
 # The denied op sets are fixed AWS facts hardcoded in resource_aws.yaml (no
 # token), so these fixtures need no test-values.yaml sync.
 name: aws_command_block_test
-description: Credential/access-minting ops and secret-value reads via call_aws are
-  denied; metadata/inventory reads and other services are allowed.
+description: Credential/access-minting ops, secret-value reads, and commands the shim
+  could not parse are denied via call_aws; metadata/inventory reads and other services
+  are allowed.
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
@@ -109,10 +110,18 @@ resources:
     kind: aws_command
     attr:
       awsOps: [s3/list-buckets]
-  no_ops:
+  # --- unparseable (deny): the helper emits the sentinel so a command it can't
+  # split into service+operation can't dodge the two denies above ---
+  unparsed:
     id: call_aws
     kind: aws_command
-    attr: {}
+    attr:
+      awsOps: [<unparsed>]
+  batch_with_an_unparsed:
+    id: call_aws
+    kind: aws_command
+    attr:
+      awsOps: [s3/list-buckets, <unparsed>]
 tests:
   - name: credential/access-minting ops are denied (incl. inside a batch)
     input:
@@ -154,7 +163,15 @@ tests:
       - {principal: hermes, resource: get_secret_value, actions: {execute: EFFECT_DENY}}
       - {principal: hermes, resource: batch_get_secret_value, actions: {execute: EFFECT_DENY}}
       - {principal: hermes, resource: ssm_get_parameter, actions: {execute: EFFECT_DENY}}
-  - name: metadata / inventory / recon reads and unparseable commands are allowed
+  - name: unparseable commands are denied (incl. inside a batch)
+    input:
+      principals: [hermes]
+      resources: [unparsed, batch_with_an_unparsed]
+      actions: [execute]
+    expected:
+      - {principal: hermes, resource: unparsed, actions: {execute: EFFECT_DENY}}
+      - {principal: hermes, resource: batch_with_an_unparsed, actions: {execute: EFFECT_DENY}}
+  - name: metadata / inventory / recon reads are allowed
     input:
       principals: [hermes]
       resources:
@@ -163,7 +180,6 @@ tests:
         - describe_secret
         - ssm_describe_parameters
         - unrelated_read
-        - no_ops
       actions: [execute]
     expected:
       - {principal: hermes, resource: get_caller_identity, actions: {execute: EFFECT_ALLOW}}
@@ -171,4 +187,3 @@ tests:
       - {principal: hermes, resource: describe_secret, actions: {execute: EFFECT_ALLOW}}
       - {principal: hermes, resource: ssm_describe_parameters, actions: {execute: EFFECT_ALLOW}}
       - {principal: hermes, resource: unrelated_read, actions: {execute: EFFECT_ALLOW}}
-      - {principal: hermes, resource: no_ops, actions: {execute: EFFECT_ALLOW}}

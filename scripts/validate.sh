@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Static validation for the Helm-based install (no live cluster, no Flux):
+# Static validation for the Helm-based install (no live cluster):
 #   - YAML syntax over the repo (excluding Helm template/policy sources)
 #   - helm lint every chart (values.defaults.yaml layered under values.example.yaml)
 #   - helm template each chart against values.defaults.yaml + values.example.yaml | kubeconform -strict
@@ -122,13 +122,14 @@ require_tools
 mkdir -p "$KUBECONFORM_CACHE"
 
 echo "INFO - Validating YAML syntax"
-find . \
-  -path './.git' -prune -o \
-  -path './charts/*/templates/*' -prune -o \
-  -path './charts/*/policies/*' -prune -o \
-  -path './charts/*/files/*' -prune -o \
-  -path './docs/available-mcp-tools/*' -prune -o \
-  -type f -name '*.yaml' -print0 \
+# Tracked files only: a `find` walk also descends into .worktrees/ and any other
+# untracked scratch dir, so an unrelated in-progress branch could fail this run.
+# Excluded paths are Helm/Cerbos template sources and generated tool dumps.
+git ls-files -z -- '*.yaml' \
+  ':(exclude)charts/*/templates/*' \
+  ':(exclude)charts/*/policies/*' \
+  ':(exclude)charts/*/files/*' \
+  ':(exclude)docs/available-mcp-tools/*' \
 | while IFS= read -r -d $'\0' file; do
   yq e 'true' "$file" >/dev/null
 done
@@ -174,6 +175,11 @@ if command -v cerbos >/dev/null 2>&1; then
   defs_example="$(mktemp_d)"
   render_cerbos_defs "$EXAMPLE_VALUES" "$defs_example"
   cerbos compile --skip-tests "$defs_example"
+elif [[ -n "${CI:-}" ]]; then
+  # Locally a missing cerbos is a convenience skip; in CI it would silently turn
+  # the only test of the authorization rules into a no-op that still reports green.
+  echo "ERROR - cerbos is not installed; the Cerbos policy compile cannot be skipped in CI" >&2
+  exit 1
 else
   echo "WARN - cerbos not installed; skipping Cerbos policy compile"
 fi
@@ -220,8 +226,28 @@ echo "INFO - Asserting the victoria-logs Vector redactor is in sync with secret-
 # GENERATED from the canonical JSON and committed; this fails closed on any drift.
 python3 scripts/gen-vector-redactor.py --check
 
+echo "INFO - Asserting every image we build is deployed on the tag its Makefile defaults to"
+python3 scripts/validate-image-tags.py
+
+platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
+
 echo "INFO - Asserting the vMCP Cerbos guardrail is well-formed"
-vmcp_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE" --show-only templates/vmcp.yaml)"
-assert_guardrail_well_formed "$vmcp_rendered"
+assert_guardrail_well_formed "$platform_rendered"
+
+echo "INFO - Asserting every HTTPRoute pins one Gateway listener via sectionName"
+# The Gateway has two listeners: `http` (:80, agent-facing, guardrail phase Full)
+# and `internal` (:81, the shim's own re-entrant lookups, phase Request only). A
+# parentRef with no sectionName attaches to BOTH, which would expose every route
+# on the listener carrying the weaker phase.
+unpinned="$(echo "$platform_rendered" | yq ea '
+  [ select(.kind == "HTTPRoute")
+    | select(.spec.parentRefs[] | has("sectionName") | not)
+    | .metadata.name ] | join(" ")' -)"
+if [[ -n "$unpinned" ]]; then
+  echo "ERROR - HTTPRoute(s) with a parentRef missing sectionName: ${unpinned}." \
+       "A parentRef with no sectionName attaches to every Gateway listener," \
+       "including the internal one." >&2
+  exit 1
+fi
 
 echo "INFO - All validations passed"
