@@ -23,7 +23,7 @@ Built on a machine with internet (your laptop), then pushed to Harbor. The egres
 docker login harbor.hahomelabs.com
 make image PLATFORM=linux/arm64      # Kind on Apple Silicon
 make push
-# or: make release PLATFORM=linux/arm64 TAG=v2026.7.20-rev6
+# or: make release PLATFORM=linux/arm64 TAG=v2026.7.20-rev7
 ```
 
 `make help` lists targets. `TAG` is `<upstream-version>-rev<N>` (e.g. `v2026.7.20-rev1`): keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
@@ -47,7 +47,9 @@ make push
 
 ## Patches
 
-Upstream Hermes is also customized at build time by numbered Python scripts in `patches/`, each `COPY`d in, run against `/opt/hermes/.venv`, then deleted. They edit installed package files in place and self-verify where feasible; remove one once the fix lands upstream. Numbering is sparse and non-contiguous — a patch is dropped once its fix lands upstream and new ones are appended, so the sequence has gaps; `patches/` itself is the authoritative list. The entries below cover a curated subset of the notable patches, not every file in the directory.
+Upstream Hermes is also customized at build time by numbered Python scripts in `patches/`, applied in one build layer by `patches/apply-patches.sh` against `/opt/hermes/.venv` (the directory is bind-mounted, so it never enters an image layer). They edit installed package files in place and self-verify where feasible; remove one once the fix lands upstream.
+
+`patches/order.txt` is the apply order, and it is **not** plain numeric order: `0019` runs first because it deletes the stray `site-packages/tools/` namespace-package directory that would otherwise shadow Hermes' real `tools` package for every later patch that resolves its target via `find_spec("tools.<mod>")`; `0016`/`0020` follow `0014` (they import its helpers) and `0039` follows `0028`/`0036` (it rewrites their shared call site). Adding a patch means adding a line to `order.txt` — `apply-patches.sh` fails the build if any `patches/[0-9]*.py` is unlisted, so a new patch cannot be silently skipped. Numbering is sparse and non-contiguous — a patch is dropped once its fix lands upstream and new ones are appended, so the sequence has gaps; `patches/` itself is the authoritative list. The entries below cover a curated subset of the notable patches, not every file in the directory.
 
 - `0004-agentburn.py` — `HERMES_HOME` support for the agentburn adapter and missing Anthropic/OpenAI model prices.
 - `0007-slack-bypass-egress-proxy.py` — patch `slack_sdk`'s env proxy loader to return `None` so Slack bypasses the GET-only egress MITM proxy (`slack_sdk` ignores `NO_PROXY`, which would otherwise force every Slack call through the proxy and fail).
