@@ -26,7 +26,9 @@
 # make), injecting it as this createdBy attr. has()-guarded to match
 # deny-not-own-pr's posture, though in practice the shim's lookup gate fails
 # closed before Cerbos on any unresolvable createdBy, so this rule should
-# never actually see it absent.
+# never actually see it absent. An unset ${alertmanagerCreatedBy} denies every
+# delete outright -- with no identity there is nothing to verify against, and a
+# bare `createdBy != ""` would only fail closed by accident.
 apiVersion: api.cerbos.dev/v1
 resourcePolicy:
   version: default
@@ -54,8 +56,9 @@ resourcePolicy:
       condition:
         match:
           expr: >-
-            has(request.resource.attr.createdBy) && request.resource.attr.createdBy
-            != "{{ .Values.clusterVars.alertmanagerCreatedBy }}"
+            {{ .Values.clusterVars.alertmanagerCreatedBy | quote }} == "" ||
+            (has(request.resource.attr.createdBy) && request.resource.attr.createdBy
+            != {{ .Values.clusterVars.alertmanagerCreatedBy | quote }})
       output:
         when:
           ruleActivated: >-

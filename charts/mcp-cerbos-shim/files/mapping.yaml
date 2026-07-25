@@ -411,7 +411,7 @@ backends:
         id: get(args,'alertName','')
         attrFrom: alertmanagerAttr(args)
         force:
-          createdBy: {{ .Values.clusterVars.alertmanagerCreatedBy }}
+          createdBy: {{ .Values.clusterVars.alertmanagerCreatedBy | quote }}
       # alertmanager_gov backend (toolhive-servers.json): same duration cap
       # and forced createdBy, reused verbatim -- neither depends on which
       # Alertmanager instance the silence is created on.
