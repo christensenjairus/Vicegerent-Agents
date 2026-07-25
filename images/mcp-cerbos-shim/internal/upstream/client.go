@@ -18,7 +18,7 @@
 // policy or mapping.yaml entry ever adds a deny rule (or any check requiring
 // another lookup) for notion_notion-fetch, this call could start getting
 // denied, silently breaking every ancestry check that depends on it (they
-// fail closed -- see PageIsUnderAncestor -- so the failure mode is "always
+// fail closed -- see PageIsUnderAnyAncestor -- so the failure mode is "always
 // deny", not silent-allow, but it will look like an unrelated regression).
 // Keep notion_notion-fetch unmapped, or if it ever needs a policy, make sure
 // this package's calls are exempted or the ancestry check is redesigned.

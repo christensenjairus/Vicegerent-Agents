@@ -85,14 +85,34 @@ func TestAwsSecretReadAttrEval(t *testing.T) {
 			want: []string{"secretsmanager/describe-secret"},
 		},
 		{
-			name: "non-aws command with only one positional yields no ops",
-			args: map[string]any{"cli_command": "aws help"},
-			want: nil,
+			name: "boolean --cli-auto-prompt does not eat the service positional",
+			args: map[string]any{"cli_command": "aws --cli-auto-prompt eks get-token --cluster-name prod"},
+			want: []string{"eks/get-token"},
 		},
 		{
-			name: "no cli_command falls through (no awsOps key)",
+			name: "--no- form of a boolean global is skipped too",
+			args: map[string]any{"cli_command": "aws --no-cli-auto-prompt eks get-token"},
+			want: []string{"eks/get-token"},
+		},
+		{
+			name: "command with only one positional is unparsed, not absent",
+			args: map[string]any{"cli_command": "aws"},
+			want: []string{"<unparsed>"},
+		},
+		{
+			name: "unknown boolean flag and quoted-empty token are both skipped",
+			args: map[string]any{"cli_command": "aws --cli-pager '' eks get-token"},
+			want: []string{"eks/get-token"},
+		},
+		{
+			name: "batch with one unparseable command surfaces the sentinel",
+			args: map[string]any{"cli_command": []any{"aws s3api list-buckets", "aws"}},
+			want: []string{"s3api/list-buckets", "<unparsed>"},
+		},
+		{
+			name: "no cli_command is unverifiable, so it is unparsed",
 			args: map[string]any{"other": "x"},
-			want: nil,
+			want: []string{"<unparsed>"},
 		},
 	}
 

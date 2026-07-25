@@ -168,10 +168,25 @@ ensure_velero_credentials() {
   info "Applied velero/velero-credentials Secret + host auth-key ($hostfile)."
 }
 
+# Every cert/key generation runs through here so a failure names itself. Bare
+# `openssl ... >/dev/null 2>&1` under `set -e` aborted the script silently.
+ossl() {
+  local err; err="$(mktemp)"
+  if ! openssl "$@" >/dev/null 2>"$err"; then
+    local msg; msg="$(tr '\n' ' ' < "$err")"
+    rm -f "$err"
+    die "openssl $1 failed: ${msg:-no output}"
+  fi
+  rm -f "$err"
+}
+
 # --- prerequisites ---------------------------------------------------------
 for cmd in kubectl openssl jq; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not on PATH"
 done
+# macOS ships LibreSSL as `openssl`, which has no -addext; every CA below needs it.
+openssl req -help 2>&1 | grep -q -- -addext \
+  || die "this openssl has no 'req -addext' (LibreSSL?); install OpenSSL 3 (brew install openssl@3) and put it ahead of /usr/bin on PATH"
 require_kind_context
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vicegerent-setup.XXXXXX")"
@@ -209,33 +224,33 @@ else
 fi
 
 if [[ $new_ca -eq 1 ]]; then
-  openssl genrsa -out "$HD/ca.key" 4096 >/dev/null 2>&1
+  ossl genrsa -out "$HD/ca.key" 4096
   # keyUsage=keyCertSign is required: OpenSSL 3 / Python reject a CA without it.
-  openssl req -x509 -new -nodes -key "$HD/ca.key" -sha256 -days 3650 \
+  ossl req -x509 -new -nodes -key "$HD/ca.key" -sha256 -days 3650 \
     -subj "/CN=vicegerent-ghostunnel-ca" \
     -addext "basicConstraints=critical,CA:TRUE" \
     -addext "keyUsage=critical,keyCertSign,cRLSign" \
-    -out "$HD/ca.cert" >/dev/null 2>&1
+    -out "$HD/ca.cert"
   info "Generated a new ghostunnel CA."
 fi
 
 if [[ $new_ca -eq 1 || ! -s "$HD/server.crt" || ! -s "$HD/server.key" ]]; then
-  openssl genrsa -out "$HD/server.key" 2048 >/dev/null 2>&1
-  openssl req -new -key "$HD/server.key" -subj "/CN=${SERVER_CN}" -out "$WORK/server.csr" >/dev/null 2>&1
+  ossl genrsa -out "$HD/server.key" 2048
+  ossl req -new -key "$HD/server.key" -subj "/CN=${SERVER_CN}" -out "$WORK/server.csr"
   printf 'subjectAltName=DNS:%s,IP:%s\nextendedKeyUsage=serverAuth\n' "$SERVER_CN" "$SERVER_IP" > "$WORK/server.ext"
-  openssl x509 -req -in "$WORK/server.csr" -CA "$HD/ca.cert" -CAkey "$HD/ca.key" \
-    -CAcreateserial -days 825 -sha256 -extfile "$WORK/server.ext" -out "$HD/server.crt" >/dev/null 2>&1
+  ossl x509 -req -in "$WORK/server.csr" -CA "$HD/ca.cert" -CAkey "$HD/ca.key" \
+    -CAcreateserial -days 825 -sha256 -extfile "$WORK/server.ext" -out "$HD/server.crt"
   info "Issued ghostunnel server certificate (host-only)."
 else
   info "Ghostunnel server certificate already present; reusing."
 fi
 
 if [[ $new_ca -eq 1 || ! -s "$HD/client.crt" || ! -s "$HD/client.key" ]]; then
-  openssl genrsa -out "$HD/client.key" 2048 >/dev/null 2>&1
-  openssl req -new -key "$HD/client.key" -subj "/CN=${CLIENT_CN}" -out "$WORK/client.csr" >/dev/null 2>&1
+  ossl genrsa -out "$HD/client.key" 2048
+  ossl req -new -key "$HD/client.key" -subj "/CN=${CLIENT_CN}" -out "$WORK/client.csr"
   printf 'extendedKeyUsage=clientAuth\n' > "$WORK/client.ext"
-  openssl x509 -req -in "$WORK/client.csr" -CA "$HD/ca.cert" -CAkey "$HD/ca.key" \
-    -CAcreateserial -days 825 -sha256 -extfile "$WORK/client.ext" -out "$HD/client.crt" >/dev/null 2>&1
+  ossl x509 -req -in "$WORK/client.csr" -CA "$HD/ca.cert" -CAkey "$HD/ca.key" \
+    -CAcreateserial -days 825 -sha256 -extfile "$WORK/client.ext" -out "$HD/client.crt"
   info "Issued ghostunnel client certificate."
 else
   info "Ghostunnel client certificate already present; reusing."
@@ -309,18 +324,24 @@ fi
 # Dedicated CA for the MITM egress proxy (generate-once). The private key lives
 # only in the egress-proxy Secret; agent-sandbox gets the cert only.
 step "Egress proxy CA"
-if secret_has egress-proxy-ca egress-proxy ca.key && [[ "$FORCE" != "1" ]]; then
+# Both keys are checked: reusing on ca.key alone would write a 0-byte proxy-ca.crt
+# and apply it as the agent trust bundle, which the install pre-flight (existence
+# only) would happily pass.
+if secret_has egress-proxy-ca egress-proxy ca.key \
+   && secret_has egress-proxy-ca egress-proxy ca.crt && [[ "$FORCE" != "1" ]]; then
   info "egress-proxy/egress-proxy-ca already present; reusing."
   secret_b64 egress-proxy-ca egress-proxy ca.crt | base64 -d > "$WORK/proxy-ca.crt"
+  [[ -s "$WORK/proxy-ca.crt" ]] \
+    || die "egress-proxy/egress-proxy-ca has an empty ca.crt; re-run with FORCE=1 to regenerate the CA"
 else
   confirm "Generate a new CA for the egress MITM proxy (egress-proxy/egress-proxy-ca)." \
     || die "Egress proxy CA is required for sandbox outbound HTTPS; aborting."
-  openssl genrsa -out "$WORK/proxy-ca.key" 4096 >/dev/null 2>&1
-  openssl req -x509 -new -nodes -key "$WORK/proxy-ca.key" -sha256 -days 3650 \
+  ossl genrsa -out "$WORK/proxy-ca.key" 4096
+  ossl req -x509 -new -nodes -key "$WORK/proxy-ca.key" -sha256 -days 3650 \
     -subj "/CN=vicegerent-egress-proxy-ca" \
     -addext "basicConstraints=critical,CA:TRUE" \
     -addext "keyUsage=critical,keyCertSign,cRLSign" \
-    -out "$WORK/proxy-ca.crt" >/dev/null 2>&1
+    -out "$WORK/proxy-ca.crt"
   apply_secret egress-proxy-ca egress-proxy \
     --from-file=ca.crt="$WORK/proxy-ca.crt" --from-file=ca.key="$WORK/proxy-ca.key"
   info "Generated egress proxy CA (egress-proxy/egress-proxy-ca)."
@@ -351,7 +372,7 @@ check vicegerent-mcp-client agentgateway-system tls.crt
 check vicegerent-mcp-client agentgateway-system tls.key
 check ghostunnel-server agentgateway-system server.crt
 check ghostunnel-server agentgateway-system server.key
-check_optional vicegerent-anthropic-secrets agentgateway-system Authorization
+check vicegerent-anthropic-secrets agentgateway-system Authorization
 check searxng-secret searxng secret_key
 check mcp-cerbos-shim-self-token cerbos token
 check egress-proxy-ca egress-proxy ca.crt

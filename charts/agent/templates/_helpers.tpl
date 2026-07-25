@@ -1,5 +1,5 @@
 {{- define "vicegerent-agent.name" -}}
-{{- .Values.name | default .Release.Name -}}
+{{- .Release.Name -}}
 {{- end -}}
 
 {{- /* Shared coding-agent instruction: web_search/WebSearch/WebFetch are disabled

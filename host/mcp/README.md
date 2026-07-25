@@ -5,7 +5,7 @@ This directory owns the host-side ToolHive stack that backs the cluster's MCP ac
 Stack shape:
 
 ```text
-Hermes sandbox
+agent sandbox
   -> agentgateway
   -> ghostunnel (mTLS, listen 127.0.0.1:8453, reached via host.docker.internal:8453)
   -> ToolHive vMCP (loopback 127.0.0.1:4483, prefixes each backend's tools with {workload}_)
@@ -26,7 +26,7 @@ The workload name is the vMCP tool prefix, and the Cerbos policy keys off it —
 
 | Workload | Run | Auth |
 |---|---|---|
-| `kubernetes` | custom `harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server` (adds AWS CLI to upstream's `kubernetes-mcp-server`, `--read-only`) | kind `--internal` kubeconfig or a user kubeconfig, plus a mandatory read-only `~/.aws` mount (blank = `~/.aws`) for EKS exec auth |
+| `kubernetes` | custom `harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server` (adds AWS CLI to upstream's `kubernetes-mcp-server`, `--read-only --toolsets=config,core,helm`) | kind `--internal` kubeconfig or a user kubeconfig, plus a mandatory read-only `~/.aws` mount (blank = `~/.aws`) for EKS exec auth |
 | `gitlab` | npx `@zereight/mcp-gitlab` | `gitlab_token` secret |
 | `github` | registry `ghcr.io/github/github-mcp-server:v1.5.0` (container — deliberately held below v1.6.0, see "Version pinning" below) | `github_token` secret |
 | `tavily` | npx `tavily-mcp` | `tavily_api_key` secret |
@@ -34,7 +34,7 @@ The workload name is the vMCP tool prefix, and the Cerbos policy keys off it —
 | `notion` | registry remote `notion-remote` | OAuth (browser, first run) |
 | `linear` | registry remote `linear` | OAuth (browser, first run) |
 | `jira` | registry `ghcr.io/sooperset/mcp-atlassian:0.22.1` (container) | `jira_url` + `jira_username` + `jira_api_token` secrets |
-| `grafana` | registry `docker.io/grafana/mcp-grafana:0.17.2` (container) | `grafana_url` + `grafana_service_account_token` secrets |
+| `grafana` | registry `docker.io/grafana/mcp-grafana:0.17.2` (container, `--disable-write --disable-proxied`) | `grafana_url` + `grafana_service_account_token` secrets |
 | `alertmanager` | npx `mcp-alertmanager` | `url` param (`--url`), no secret |
 | `pagerduty` | registry `ghcr.io/stacklok/dockyard/uvx/pagerduty-mcp:1.1.0` (container) | `pagerduty_user_api_key` secret |
 | `elastic` | remote transport to Kibana Agent Builder (URL param) | `elastic_kibana_url` + `elastic_api_key` secrets |
@@ -43,16 +43,19 @@ The workload name is the vMCP tool prefix, and the Cerbos policy keys off it —
 
 Three `_gov` variants — `grafana_gov`, `alertmanager_gov`, `pagerduty_gov` — are GovCloud/gov-endpoint twins of `grafana`/`alertmanager`/`pagerduty` (same run/auth, different host param) and complete the count of 17.
 
-Tool scoping uses the vMCP's native `aggregation.tools` primitive: a server with a `tools` allowlist in `toolhive-servers.json` emits a `{workload, filter}` entry so the vMCP exposes only those tools (raw, unprefixed names). This is deliberately the ONLY place tool selection narrows anything — a backend's own native flags/env vars are reserved for forcing read-only/non-destructive mode (`kubernetes`'s `--read-only`, `grafana`'s `--disable-write`) or for *expanding* its own tool surface so more is available to allowlist from (`pagerduty`'s `--enable-write-tools`, `gitlab`'s `USE_PIPELINE`, `github`'s `GITHUB_TOOLSETS=all`, `jira`'s `TOOLSETS=all`), never for narrowing it. Narrowing at the source would also hide tools from a raw probe (`scripts/probe-mcp-tools.py` talks to each backend's own endpoint directly, ahead of any vMCP filtering) even though they're already uncallable via the allowlist below — costing visibility into what a backend *could* offer with no corresponding safety benefit. Every backend now carries a `tools` allowlist — for `tavily`/`firecrawl` it's the full live tool set pinned explicitly (nothing to restrict — tavily/firecrawl have no write capability against anything this platform owns; pinning just stops a future package bump from silently adding to what's exposed), for `alertmanager` it's the full 12-tool set including `createSilence`/`deleteSilence` (an explicit choice, not an oversight — the operator wants the agent able to manage silences), and for `elastic` it's the 24 read/analysis tools (the 3 write tools are excluded). The rest genuinely restrict:
+Tool scoping uses the vMCP's native `aggregation.tools` primitive: a server with a `tools` allowlist in `toolhive-servers.json` emits a `{workload, filter}` entry so the vMCP exposes only those tools (raw, unprefixed names). This is deliberately the ONLY place tool selection narrows anything — a backend's own native flags/env vars are reserved for forcing read-only/non-destructive mode (`kubernetes`'s `--read-only`, `grafana`/`grafana_gov`'s `--disable-write`) or for *expanding* its own tool surface so more is available to allowlist from (`pagerduty`/`pagerduty_gov`'s `--enable-write-tools`, `gitlab`'s `USE_PIPELINE`, `github`'s `GITHUB_TOOLSETS=all`, `jira`'s `TOOLSETS=all`). Narrowing at the source also hides tools from a raw probe (`scripts/probe-mcp-tools.py` talks to each backend's own endpoint directly, ahead of any vMCP filtering) even though they're already uncallable via the allowlist below — costing visibility into what a backend *could* offer with no corresponding safety benefit. Two flags are exceptions:
 
-- `kubernetes` — read-only at the source (`--read-only` makes writes impossible regardless of allowlist), and the allowlist additionally excludes `configuration_view`: despite being `readOnlyHint=true`, it returns the full kubeconfig including `client-certificate-data`/`client-key-data` in plaintext — a live cluster credential handed straight into agent context and transcripts. `configuration_contexts_list` (names + server URLs only, no key material) covers "what clusters/contexts exist" instead.
+- `grafana`/`grafana_gov`'s `--disable-proxied` drops *proxied* tools — ones mcp-grafana re-exports from MCP servers embedded in the target Grafana's own datasources (Tempo, etc.). That set is discovered at startup from whatever the remote instance happens to have enabled, so it can't be pinned in a static allowlist or a committed probe at all; refusing it at the source is the only stable option.
+- `kubernetes`'s `--toolsets=config,core,helm` is a genuine violation, not an exception: it narrows at the source and is why `docs/available-mcp-tools/kubernetes.yaml` lists 16 tools instead of the server's full surface. The equivalent scoping belongs in this backend's `tools` allowlist; moving it needs a re-probe without the flag first, so the inventory reflects what the image can actually do. Every backend now carries a `tools` allowlist — for `tavily`/`firecrawl` it's the full live tool set pinned explicitly (nothing to restrict — tavily/firecrawl have no write capability against anything this platform owns; pinning just stops a future package bump from silently adding to what's exposed), for `alertmanager` it's the full 12-tool set including `createSilence`/`deleteSilence` (an explicit choice, not an oversight — the operator wants the agent able to manage silences), and for `elastic` it's the 24 read/analysis tools (the 3 write tools are excluded). The rest genuinely restrict:
+
+- `kubernetes` — read-only at the source (`--read-only` makes writes impossible regardless of allowlist), and the allowlist drops 2 of the 16 tools `--toolsets=config,core,helm` leaves. `configuration_view` is the security-relevant one: despite being `readOnlyHint=true`, it returns the full kubeconfig including `client-certificate-data`/`client-key-data` in plaintext — a live cluster credential handed straight into agent context and transcripts. `configuration_contexts_list` (names + server URLs only, no key material) covers "what clusters/contexts exist" instead. `projects_list` is dropped as noise: it lists OpenShift `Project` objects, which neither the kind cluster nor EKS has.
 - `pagerduty` — incidents R/W + read-only schedules (v2 and v3)/services/teams/users/escalation policies/analytics metrics.
 - `grafana` — read-only search/datasource/dashboard/prometheus/asserts/annotations/rendering.
 - `jira` — read+write only, Confluence disabled (no Confluence creds — mcp-atlassian gates that by service-credential availability regardless of any toolset setting), deletes excluded, confined to the CHANGE project via `JIRA_PROJECTS_FILTER`.
 - `github` — the PR lifecycle short of merging or leaving any comment/review text; no issue tools (this operator doesn't use GitHub issues at work) and no generic git file/branch-write tools (SSH access to github.com covers routine git instead).
-- `gitlab` — issues + the full MR lifecycle short of merging; read-only pipeline status/logs plus retrying an existing failed/canceled job (`retry_pipeline_job`). `create_pipeline` (starts a brand-new run), all CI/CD variable tools, create_repository/ create_group/fork_repository/merge_merge_request, `execute_graphql` (an arbitrary API-access escape hatch that would make every other exclusion here meaningless), and wiki/release/tag/ milestone/webhook management are excluded.
-- `linear` — Linear's real surface has grown to 52 tools, including 4 destructive deletes and several newer feature categories (attachments, releases, milestones, status updates, and an 8-tool diff/code-review category — get_diff/list_diffs/get_diff_threads/save_diff_comment/resolve_diff_thread/delete_diff_comment/submit_diff_review/merge_diff); this allowlist keeps the original functional scope (issues/comments/projects/labels/statuses/teams/users/docs, read+write, no deletes) via the renamed save_issue/save_comment/save_project tools, and excludes the rest pending a deliberate follow-up. The Cerbos guardrail below confines save_issue's team to one team instead.
-- `notion` — 7 read tools plus create-pages/update-page/create-comment.
+- `gitlab` — issues + the full MR lifecycle short of merging or approving; read-only pipeline status/logs plus retrying an existing failed/canceled job (`retry_pipeline_job`). 54 of the pinned build's 134 tools. What the exclusions actually buy, in rough order of how much it matters: every git-object write (`push_files`, `create_or_update_file`, `create_branch`, `delete_branch`, `protect_branch`, `unprotect_branch`, `update_default_branch`) — the bot has SSH access to the instance, so git itself does this; namespace-level creation (`create_repository`, `create_group`, `fork_repository`, `update_project`); the two decisions a human owns (`merge_merge_request`, `approve_merge_request`/`unapprove_merge_request`); starting or aborting pipeline work rather than retrying a failed job (`create_pipeline`, `retry_pipeline`, `cancel_pipeline`, `cancel_pipeline_job`, `play_pipeline_job`); the deletes (`delete_issue`, `delete_issue_link`, `delete_label`); and repo-content reads that git over SSH already covers (`get_file_contents`, `get_repository_tree`, `list_commits`, `search_repositories`). The 12 emoji-reaction tools are dropped as pure noise. There is no GraphQL, wiki, release, tag, milestone, webhook, or CI/CD-variable tool to exclude — `@zereight/mcp-gitlab@2.1.42` gates those behind env toggles this config does not set, so they never reach the vMCP.
+- `linear` — Linear's real surface has grown to 52 tools, including 4 destructive deletes and several newer feature categories (attachments, releases, milestones, status updates, and an 8-tool diff/code-review category — get_diff/list_diffs/get_diff_threads/save_diff_comment/resolve_diff_thread/delete_diff_comment/submit_diff_review/merge_diff); this allowlist keeps 21 tools — the original functional scope of issues/comments/projects/labels/statuses/teams/users, read+write, no deletes, via the renamed save_issue/save_comment/save_project — and excludes the rest pending a deliberate follow-up. Documents are **read-only** here: `get_document`/`list_documents`/`search_documentation` are allowlisted, `save_document` is not. The Cerbos guardrail below confines a write's team to `${linearAllowedTeams}` instead.
+- `notion` — 5 read tools (notion-search, notion-fetch, notion-get-comments, notion-get-teams, notion-get-users) plus notion-create-pages/notion-update-page/notion-create-comment.
 - `elastic` — the 24 read/analysis tools (streams, core search/ES|QL/index, security, observability); the 3 write tools (create-visualization, create-detection-rule, resume-workflow-execution) are excluded. The Cerbos guardrail below additionally denies any data-access call targeting a blocked index/datastream token.
 
 Doing tool selection here (rather than as a per-tool allowlist in agentgateway, which it also supports) keeps it a quick host-side edit for developers; a centralized corporate deployment would more likely enforce that allowlist at the gateway.
@@ -79,14 +82,12 @@ Every server's `registry`/`package` value must resolve to an exact, reproducible
 
 Orthogonal argument-level authorization still lives in the cluster (the Cerbos guardrail on the `vmcp` backend); no Cedar/authz runs in the vMCP.
 
-- **GitHub** (`charts/cerbos-policies/policies/resource_github.yaml`) hard-enforces an owner/repo allowlist and a protected-branch block (main/master/production) on every mapped tool — independent of the source-side scoping above, and unaffected by however broad the underlying PAT's own access actually is. `create_pull_request`/ `update_pull_request` also carry a shim-side `force: {draft: true}` — every PR the agent opens, or tries to un-draft via update, is rewritten to stay a draft before it's forwarded (a mutation, applied only once Cerbos has already allowed the call).
-- **GitLab** has no Cerbos-mapped tools and no `resource_gitlab.yaml` policy at all. `push_files`/`create_or_update_file`/`create_branch` (its only branch-writing tools) were removed from the tool allowlist entirely — the bot has direct SSH access to gitlab.hahomelabs.com, so routine git operations go through git itself, not a GitLab-API tool. The operator owns this GitLab instance and isn't picky about its remaining tools (issues, MR object/comments/discussions/notes/labels/todos/pipelines), which stay unmapped and allow-all.
-- **Linear** (`charts/cerbos-policies/policies/resource_linear.yaml`) denies a `save_issue` call that supplies a `team` other than DEVOPS (matched by uuid, display name, or issue-key prefix). `save_issue` merges Linear's old create_issue/update_issue into one tool (an `id` arg picks update vs create); `team` is required on create and optional on update, so an ordinary update that omits it isn't checked — the enforced boundary is "new issues land in DEVOPS, and no issue can be reassigned off it," not "every call touches only DEVOPS." `save_comment`/`save_project` target an existing comment/project by id and carry no verifiable team of their own, so they're unmapped and pass.
-- **Notion** (`charts/cerbos-policies/policies/resource_notion.yaml`) folder-pins `create-pages` via a shim-side `force` override — it rewrites `parent` to the Scratchpad page on every call rather than denying an off-folder parent, so the agent never sees an error or retries and every new page lands under Scratchpad; `update-page`/`create-comment` target an existing page by id and are left unconstrained (a hard read-broad/write-narrow split via a separate folder-scoped integration was infeasible — the org blocks creating Notion internal-integration tokens).
+Thirteen Cerbos policies cover kubernetes, grafana, elastic, aws, jira, github, linear, alertmanager (silences and alert queries), pagerduty, notion, and firecrawl/tavily crawling. `images/mcp-cerbos-shim/README.md` ("Authorization Layers") has the per-resource deny table; don't duplicate it here. Two things about that split are specific to this file:
 
-`kubernetes`'s Secret-read block (`charts/cerbos-policies/policies/resource_k8s.yaml`) and `grafana`'s OpenSearch-datasource block (`charts/cerbos-policies/policies/resource_grafana.yaml`) are the other two guardrails.
+- **GitLab** is the one enabled backend with no Cerbos-mapped tools and no `resource_gitlab.yaml` policy. Its branch-writing tools were dropped from the allowlist above instead — the bot has direct SSH access to gitlab.hahomelabs.com, so routine git operations go through git itself. The operator owns this instance and isn't picky about the remaining tools (issues, MR object/comments/discussions/notes/labels/todos/pipelines), which stay unmapped and allow-all. Nothing in the cluster re-checks them, so this backend's blast radius is exactly the allowlist above.
+- **Notion**'s `create-pages` is *denied* on any parent other than the Scratchpad page, with a message naming the correct `page_id`. It used to be force-rewritten to Scratchpad instead; that silently discarded whatever parent the agent intended and taught it nothing, so it kept guessing on every future call. The only surviving `force` blocks are GitHub's `draft: true` on `create_pull_request`/`update_pull_request` and Alertmanager's `createdBy` stamp on `createSilence`.
 
-One field-name assumption in the GitLab mapping isn't verified against a live call yet (unlike GitHub/Jira, where a real schema dump was available): GitLab's `branch` field on push_files/create_or_update_file/create_branch is inferred from GitLab's own REST API convention (which this wrapper mirrors directly). Confirm it once the server is enabled. Linear's `save_issue` schema (`team`, not `teamId`) was confirmed against a live `tools/list` call.
+Linear's `save_issue` schema (`team`, not `teamId`) was confirmed against a live `tools/list` call.
 
 ### Tool discovery optimizer
 
@@ -138,39 +139,50 @@ The host side of this stack trusts the host. Two exposures are inherent to how D
 ## Prerequisites
 
 ```bash
-./vicegerent setup mcp      # brew: thv, ghostunnel, supervisor, terminal-notifier + Python venv
+./vicegerent setup mcp      # brew: thv, ghostunnel, supervisor, rclone, terminal-notifier + Python venv
 ```
 
-Then configure ToolHive secrets (once):
+`setup mcp` ends by running `configure`, which prompts for each backend you enable and stores its credentials for you — so the list below is a reference, not a checklist to work through by hand. `./vicegerent mcp doctor` reports what's still missing, scoped to the servers you actually enabled.
 
 ```bash
 thv secret setup                    # choose 'encrypted' (persists OAuth tokens too)
-thv secret set gitlab_token         # GitLab PAT (api scope)
-thv secret set github_token         # GitHub PAT (repo scope)
-thv secret set tavily_api_key
-thv secret set firecrawl_api_key
-thv secret set grafana_url                       # e.g. https://grafana.example.com
-thv secret set grafana_service_account_token     # Grafana service-account token
-thv secret set jira_url                          # e.g. https://your-domain.atlassian.net
-thv secret set jira_username                      # Jira account email (Cloud)
-thv secret set jira_api_token                     # Jira API token (id.atlassian.com/manage-profile/security/api-tokens)
-thv secret set elastic_kibana_url    # Kibana Agent Builder MCP URL, e.g. https://<your-kibana-host>/api/agent_builder/mcp
-thv secret set elastic_api_key       # read-only Elastic API key (Stack Management > Security > API keys)
 ```
 
-`notion` `create-pages` is pinned to the **Scratchpad** page by the shim's `force` override in `charts/mcp-cerbos-shim/files/mapping.yaml`: every create is rewritten to land under that page (no error, no retry). Change the forced `parent.page_id` there (32 hex, dashes stripped, lowercase) to retarget.
+| Backend | thv secrets |
+|---|---|
+| `kubernetes` | `kubernetes_kubeconfig` (blank at the prompt = auto-generate from the kind cluster) |
+| `gitlab` | `gitlab_token` (PAT, api scope), `gitlab_api_url` (e.g. `https://gitlab.example.com/api/v4`) |
+| `github` | `github_token` (PAT, repo scope) |
+| `tavily` | `tavily_api_key` |
+| `firecrawl` | `firecrawl_api_key` |
+| `jira` | `jira_url` (e.g. `https://your-domain.atlassian.net`), `jira_username` (account email), `jira_api_token` |
+| `grafana` / `grafana_gov` | `grafana_url` + `grafana_service_account_token`, `grafana_gov_url` + `grafana_gov_service_account_token` |
+| `alertmanager` / `alertmanager_gov` | `alertmanager_url`, `alertmanager_gov_url` |
+| `pagerduty` / `pagerduty_gov` | `pagerduty_user_api_key`, `pagerduty_gov_user_api_key` |
+| `elastic` | `elastic_kibana_url` (Agent Builder MCP URL, `https://<kibana-host>/api/agent_builder/mcp`), `elastic_api_key` (read-only, Stack Management > Security > API keys) |
+| `notion`, `linear` | none — OAuth in the browser on first run |
+| `aws`, `aws_profiles` | none — the read-only `~/.aws` mount |
+
+A `<server>_<param>` name (`gitlab_api_url`, `kubernetes_kubeconfig`, `alertmanager_url`) is a `params[]` entry marked `"secret": true`: params normally live in the disposable `servers-state.json`, and one that's a pain to re-enter opts into the durable `thv` store instead.
+
+`notion` `create-pages` is confined to the **Scratchpad** page by `charts/cerbos-policies/policies/resource_notion.yaml`: a create naming any other parent is denied, with the correct `page_id` in the message. Retarget it via `clusterVars.notionScratchpadPageId` in your machine `values.yaml` (32 hex, dashes stripped, lowercase), not here.
 
 `./vicegerent setup secrets platform` writes the host ghostunnel mTLS material to `~/.vicegerent/ghostunnel`.
 
 ## Subcommands
 
 ```
-start         bring up workloads + vMCP + ghostunnel (idempotent)
-stop          shut down the supervised stack (workloads left running; --workloads to stop them too)
+configure     interactively enable/skip each backend and set its secrets
+enable KEY    enable one backend (persists; brought up on the next start)
+disable KEY   disable one backend (stops it; ToolHive won't run it)
+start         bring up enabled workloads + vMCP + ghostunnel (idempotent); --caffeinate keeps macOS awake
+stop          shut down the supervised stack AND thv-stop the workloads; --keep-workloads leaves them running
 status        workload + supervised-process state (rich table)
 logs PROC     tail logs for ghostunnel|vmcp|rclone-s3|mcp-health-watch|supervisord|caffeinate (Ctrl-C to exit)
-doctor        check binaries, thv secrets provider + secrets, kind cluster
+doctor        check binaries, thv secrets provider + the enabled servers' secrets, kind cluster
 ```
+
+`stop` stops the workloads by default; the containers survive either way, so OAuth tokens are not re-prompted. `--keep-workloads` only skips the `thv stop`, for when you want the backends reachable while the supervised stack is down. There is one more subcommand, `mcp-health-watch` — supervisord runs it as the fourth supervised process; don't invoke it by hand.
 
 The interactive dashboard (textual) is the top-level `./vicegerent tui`.
 
@@ -188,17 +200,28 @@ For the full machine lifecycle use the top-level wrapper: `./vicegerent start` r
 `toolhive-servers.json` declares the group, the vMCP port, and the 17 servers (name, run type, package/registry, run flags, env, and thv secret mappings). Overridable env:
 
 ```text
+THV                     thv binary (default: thv, resolved on PATH)
 THV_GROUP               ToolHive group name (default: vicegerent)
 VMCP_HOST / VMCP_PORT   vMCP loopback target (default 127.0.0.1:4483)
+VMCP_OPTIMIZER          0 disables --optimizer, exposing every tool raw (default: on)
 LISTEN                  ghostunnel listen address (default 127.0.0.1:8453)
+GHOSTUNNEL_HOST_DIR     host mTLS material (default ~/.vicegerent/ghostunnel)
+RCLONE_ADDR             rclone serve s3 listen address (default 127.0.0.1:9899)
+RCLONE_S3_HOST_DIR      rclone auth-key material (default ~/.vicegerent/rclone-s3)
+RCLONE_SERVE_DIR        directory rclone serves as the Velero bucket (default <repo>/velero-backups)
 ```
 
 ## Runtime state files
 
 ```text
 ~/.vicegerent/mcp/supervisord.conf        # generated supervisord config
+~/.vicegerent/mcp/supervisord.pid         # supervisord pid (stale-process detection)
 ~/.vicegerent/mcp/supervisor.sock         # supervisord control socket
 ~/.vicegerent/mcp/vmcp-config.json        # generated + validated vMCP config
+~/.vicegerent/mcp/vmcp-init.yaml          # raw `thv vmcp init` output, post-processed into vmcp-config.json
+~/.vicegerent/mcp/servers-state.json      # which backends are enabled + their non-secret params
 ~/.vicegerent/mcp/kubeconfig-vicegerent.yaml  # kind --internal kubeconfig (mounted into the k8s workload)
 ~/.vicegerent/mcp/logs/                   # per-process logs
 ```
+
+All of it is disposable — delete the directory and the next `start` regenerates everything except `servers-state.json`, which is what `configure`/`enable`/`disable` write and is the one file worth not losing.

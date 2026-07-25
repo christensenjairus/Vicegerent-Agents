@@ -404,14 +404,19 @@ backends:
       # external identity behind it unless the shim establishes one at
       # creation time, so this force is what makes deleteSilence's ownership
       # check (below) meaningful at all: whatever this stamps is exactly what
-      # that check later verifies against.
+      # that check later verifies against. Rendered only when the machine set
+      # an identity -- an unquoted empty default would force a YAML null and
+      # stamp createdBy: nil onto every silence, which no later deleteSilence
+      # check could ever match.
       alertmanager_createSilence: &alertmanager_create_silence
         resourceType: alertmanager_silence
         action: create
         id: get(args,'alertName','')
         attrFrom: alertmanagerAttr(args)
+{{- if .Values.clusterVars.alertmanagerCreatedBy }}
         force:
           createdBy: {{ .Values.clusterVars.alertmanagerCreatedBy | quote }}
+{{- end }}
       # alertmanager_gov backend (toolhive-servers.json): same duration cap
       # and forced createdBy, reused verbatim -- neither depends on which
       # Alertmanager instance the silence is created on.
@@ -490,6 +495,8 @@ backends:
         resourceType: pagerduty_incident
         action: annotate
         id: get(args,'incident_id','')
+        # The mapping loader requires attr or attrFrom on every tool; there is
+        # nothing to check here beyond the id, so it just restates it.
         attr:
           incidentId: get(args,'incident_id','')
       # pagerduty_gov backend (toolhive-servers.json): same ack/resolve-only
@@ -523,9 +530,10 @@ backends:
       # page by id (any page the integration can reach, not just Scratchpad). TWO
       # complementary gates apply: the shim first runs a live ancestry check
       # (it calls notion-fetch back through vMCP to resolve the page's ancestor chain)
-      # and denies any page not under NOTION_SCRATCHPAD_PAGE_ID (deployment.yaml env
-      # var, same ${notionScratchpadPageId} cluster-var create-pages's Cerbos rule
-      # checks) — a check Cerbos can't do (no I/O); then Cerbos denies the destructive
+      # and denies any page not under one of NOTION_ALLOWED_PARENT_PAGE_IDS
+      # (deployment.yaml env var: ${notionScratchpadPageId} -- the same cluster var
+      # create-pages's Cerbos rule checks -- prepended to ${notionAllowedParentPageIds})
+      # — a check Cerbos can't do (no I/O); then Cerbos denies the destructive
       # commands (replace_content, allow_deleting_content) on the pages that DO pass,
       # allowing the rest (update_properties/update_content/insert_content/
       # apply_template/update_verification) — see
@@ -544,8 +552,8 @@ backends:
       # server.go's notionAncestryGatedActions). No destructive-command surface like
       # update-page's replace_content/allow_deleting_content, so Cerbos's own
       # allow-all rule is the only policy outcome here; the shim's ancestry check
-      # (which runs before Cerbos) is the real gate for this tool. attr carries
-      # pageId only so the resource is inspectable if a future policy needs it.
+      # (which runs before Cerbos) is the real gate for this tool. The mapping
+      # loader requires attr or attrFrom on every tool, so attr just restates the id.
       notion_notion-create-comment:
         resourceType: notion_page
         action: comment

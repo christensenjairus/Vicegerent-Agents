@@ -5,9 +5,11 @@ agentgateway CRD openAPIV3Schema.
 Why this exists: kubeconform runs with -ignore-missing-schemas, so
 AgentgatewayPolicy/AgentgatewayBackend resources are otherwise NOT validated.
 A malformed `backend.mcp.guardrails` block silently fails to load, leaving only
-the tool-name allowlist active and secret reads ALLOWED. This gate fails closed:
-if a target resource's (group, version, kind) has no matching CRD schema, that
-is an ERROR (not a skip), so a structural drift can't slip through unvalidated.
+the tool-name allowlist active and secret reads ALLOWED. This gate fails closed
+on the resources it owns: a rendered resource in one of the CRD chart's own API
+groups whose (group, version, kind) has no matching schema is an ERROR, not a
+skip, so a renamed kind or a bumped apiVersion can't slip through unvalidated.
+Resources in every other group are skipped -- kubeconform validates those.
 
 Limits (documented, not silent): JSON-schema cannot evaluate the CRD's
 x-kubernetes-validations CEL rules, and the upstream schema does not set
@@ -51,6 +53,7 @@ def main() -> int:
         print(f"ERROR - no CRD schemas loaded from {crd_glob}", file=sys.stderr)
         return 3
     print(f"INFO - loaded {len(schemas)} CRD version schema(s)")
+    owned_groups = {group for group, _, _ in schemas}
 
     errors = 0
     checked = 0
@@ -66,7 +69,16 @@ def main() -> int:
                 group, version = av.split("/", 1)
                 key = (group, version, kind)
                 if key not in schemas:
-                    continue  # not an agentgateway CRD; other tooling validates it
+                    if group in owned_groups:
+                        errors += 1
+                        print(
+                            f"FAIL - {tf}: {kind} {av} is in the agentgateway-managed "
+                            f"group '{group}' but the pinned CRD chart ships no schema "
+                            "for that version/kind; the resource would deploy "
+                            "unvalidated",
+                            file=sys.stderr,
+                        )
+                    continue  # other groups: kubeconform validates those
                 checked += 1
                 try:
                     jsonschema.validate(doc, schemas[key])

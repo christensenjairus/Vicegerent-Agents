@@ -9,7 +9,7 @@
 #   helm      remote HTTP chart      -> repo + chart + version
 #   helm-oci  OCI chart              -> chart (full oci ref incl. chart name) + version
 #   helm-git  chart inside a git repo-> gitRepo + ref + chartPath
-#   local     in-repo chart          -> chart (repo-relative path); fed from values.yaml
+#   local     in-repo chart          -> charts/<name>; fed from values.defaults.yaml + values.yaml
 #   kubectl-k `kubectl apply -k`     -> path (a stages/kustomize/* overlay)
 #
 # Fields:
@@ -116,7 +116,6 @@ stages:
         values: agentgateway.yaml
       - name: cerbos-policies
         type: local
-        chart: charts/cerbos-policies
         namespace: cerbos
         machineValues: full
       - name: cerbos
@@ -127,25 +126,21 @@ stages:
         values: cerbos.yaml
       - name: mcp-cerbos-shim
         type: local
-        chart: charts/mcp-cerbos-shim
         namespace: cerbos
         machineValues: full
   - name: platform
     actions:
       - name: platform
         type: local
-        chart: charts/platform
         namespace: agentgateway-system
         machineValues: full
       - name: egress-proxy
         type: local
-        chart: charts/egress-proxy
         namespace: egress-proxy
         machineValues: egress
   - name: agents
     actions:
       - name: agent
         type: local
-        chart: charts/agent
         namespace: agent-sandbox
         forEach: agents

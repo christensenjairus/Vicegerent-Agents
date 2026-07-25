@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Staged, idempotent (re-)install of the vicegerent platform onto a local Kind
-# cluster. Replaces the former `flux bootstrap`: the control plane (stage order,
-# chart coords, pinned versions, image tags) lives in stages/stages.yaml, and the
-# machine plane (clusterVars/agents/egress/models) in a gitignored values.yaml
+# cluster. The control plane (stage order, chart coords, pinned versions, image
+# tags) lives in stages/stages.yaml, and the machine plane
+# (clusterVars/agents/egress/models) in a gitignored values.yaml
 # copied from values.example.yaml. Every stage runs its actions in order and
 # health-gates (helm --wait / kubectl wait) before the next, so a `git pull` +
 # re-run delivers upgrades with no gaps.
@@ -18,8 +18,10 @@
 #       --from <name>    run this stage and every stage after it
 #   -h, --help           show this help
 #
-# Env: RECREATE=1  add `helm --force-replace` (delete/recreate on immutable-field conflict)
-#      HELM_TIMEOUT  per-release --wait timeout (default 10m)
+# Env: RECREATE=1     add `helm --force-replace` (delete/recreate on immutable-field conflict)
+#      HELM_TIMEOUT   per-release --wait timeout (default 10m)
+#      VALUES_FILE    machine plane values (same as --values; the flag wins)
+#      DEFAULTS_FILE  default layer laid under it (default: <repo>/values.defaults.yaml)
 
 set -euo pipefail
 
@@ -35,11 +37,16 @@ ASSUME_YES=0
 ONLY_STAGE=""
 FROM_STAGE=""
 
-# Scratch dir for lib-helper temp files; removed whole on EXIT. A single dir the
-# parent owns survives the $(...) subshells those helpers run in -- an array
-# appended to inside a subshell would never reach this scope -- and never leaks.
+# Scratch dir for lib-helper temp files. A single dir the parent owns survives the
+# $(...) subshells those helpers run in -- an array appended to inside a subshell
+# would never reach this scope -- and never leaks. INT/TERM need their own handler
+# because a bare EXIT trap does not run when bash is killed by a signal, and they
+# exit rather than return so the stage loop can't resume without its scratch dir.
 WORKDIR="$(mktemp -d)"
-trap 'rm -rf "$WORKDIR"' EXIT
+cleanup() { rm -rf "$WORKDIR"; }
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 LOC=()
 VALS=()
 
@@ -54,17 +61,22 @@ source "$SCRIPT_DIR/lib/kubectl.sh"
 # shellcheck source=lib/reconcile.sh
 source "$SCRIPT_DIR/lib/reconcile.sh"
 
+need_arg() { [[ $# -ge 2 && "$2" != -* ]] || die "$1 requires an argument"; }
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -y|--yes)   ASSUME_YES=1 ;;
-    --values)   VALUES_FILE="$2"; shift ;;
-    --stage)    ONLY_STAGE="$2"; shift ;;
-    --from)     FROM_STAGE="$2"; shift ;;
-    -h|--help)  sed -n '2,22p' "$0"; exit 0 ;;
+    --values)   need_arg "$@"; VALUES_FILE="$2"; shift ;;
+    --stage)    need_arg "$@"; ONLY_STAGE="$2"; shift ;;
+    --from)     need_arg "$@"; FROM_STAGE="$2"; shift ;;
+    -h|--help)  sed -n '2,24p' "$0"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
   shift
 done
+
+[[ -z "$ONLY_STAGE" || -z "$FROM_STAGE" ]] \
+  || die "--stage and --from are mutually exclusive (--stage filters first, so the pair always runs nothing)"
 
 if [[ "$RECREATE" == "1" ]]; then
   HELM_UPGRADE_FLAGS=(--wait --force-replace)
@@ -91,6 +103,7 @@ require_kind_context
 [[ -f "$VALUES_FILE" ]] \
   || die "machine values not found: $VALUES_FILE — copy values.example.yaml to values.yaml and edit it"
 kc cluster-info >/dev/null || die "cannot reach cluster on context '$KUBE_CONTEXT'"
+require_agent_names
 info "Tools present; context '$KUBE_CONTEXT' reachable; using $VALUES_FILE"
 
 # --- dispatch one action ---------------------------------------------------
@@ -144,6 +157,17 @@ run_action() {
 }
 
 # --- stage loop ------------------------------------------------------------
+# A misspelled --stage/--from would otherwise match nothing, run zero stages, and
+# still print "Install complete." -- which reads as a successful restore on the
+# disaster-recovery path docs/setup.md points at.
+stage_names="$(yq -r '.stages[].name' "$STAGES_FILE")"
+for flag_name in ONLY_STAGE FROM_STAGE; do
+  want="${!flag_name}"
+  [[ -z "$want" ]] && continue
+  grep -qxF "$want" <<<"$stage_names" \
+    || die "no such stage '$want'; stages are: $(tr '\n' ' ' <<<"$stage_names")"
+done
+
 stage_count="$(yq '.stages | length' "$STAGES_FILE")"
 reached=0
 [[ -z "$FROM_STAGE" ]] && reached=1
@@ -158,8 +182,9 @@ for ((si = 0; si < stage_count; si++)); do
 
   step "STAGE: $sname"
   case "$sname" in
-    platform) preflight_platform_secrets ;;
-    agents)   preflight_agent_secrets ;;
+    controllers) preflight_controller_secrets ;;
+    platform)    preflight_platform_secrets ;;
+    agents)      preflight_agent_secrets ;;
   esac
 
   action_count="$(yq ".stages[$si].actions | length" "$STAGES_FILE")"

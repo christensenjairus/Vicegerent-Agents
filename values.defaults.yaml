@@ -19,9 +19,8 @@
 #   egress       -> charts/egress-proxy
 #   models       -> charts/platform (backend/route rendering)
 #
-# Helm merge semantics: maps deep-merge, LISTS REPLACE. Every list-valued
-# default below is empty ([]) so a machine list replaces it wholesale, exactly
-# as if this file weren't here.
+# Helm merge semantics: maps deep-merge, LISTS REPLACE — a machine list
+# replaces the default below wholesale rather than appending to it.
 # ============================================================================
 # ----------------------------------------------------------------------------
 # clusterVars — machine identity/scoping tokens spliced into the Cerbos policies
@@ -109,12 +108,13 @@ clusterVars:
 # host-reachable dashboard, so the installer refuses more than 10.
 # ----------------------------------------------------------------------------
 agents:
-    # Empty falls back to the Helm release name; the machine values.yaml sets this per agent.
+    # Required in the machine values.yaml -- the installer names each agent's Helm
+    # release from it, so it has no default to fall back to.
   - name: ''
     image:
       # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/hermes-agent
       repository: harbor.hahomelabs.com/vicegerent/hermes-agent
-      tag: v2026.7.20-rev5
+      tag: v2026.7.20-rev6
     storage:
       data: 10Gi
       gitrepos: 50Gi
@@ -200,7 +200,6 @@ agents:
       # Model context window advertised to Hermes's compaction logic (model.context_length and
       # auxiliary.compression.context_length — single-sourced). We standardize on 1M-context models.
       contextLength: 1000000
-      # Fraction of context that triggers compression.
       compressionThreshold: 0.5
       # Prompt-cache TTL (Go duration string).
       cacheTtl: 1h
@@ -208,14 +207,12 @@ agents:
       gatewayTimeout: 900
       apiMaxRetries: 5
       reasoningEffort: medium
-      # Max recursive sub-agent spawn depth.
       maxSpawnDepth: 2
       # Seconds Hermes waits on a clarify prompt before proceeding.
       clarifyTimeout: 300
       vmcp:
         timeout: 90
         connectTimeout: 5
-      # Repeated-failure thresholds that warn then hard-stop a tool loop.
       toolLoopGuardrails:
         hardStopEnabled: true
         warnAfterExactFailure: 4

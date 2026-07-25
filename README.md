@@ -45,7 +45,7 @@ Every extension point has a working example already in the repo to copy, not jus
 - **A new agent** — add an entry to the `agents:` list in your `values.yaml` (copy the example one); each entry becomes one `charts/agent` release. **A new model route** — copy a model template under `charts/platform/templates/models/` and toggle it in `values.yaml`; see [`AGENTS.md` § Repo Conventions](AGENTS.md#repo-conventions) ("the layout is the documentation").
 - **A new machine** — a second machine is a second clone with its own gitignored `values.yaml` and its own `kind-vicegerent` cluster; see [`docs/setup.md`](docs/setup.md).
 - **A new MCP server** — add an entry to `host/mcp/toolhive-servers.json` alongside the 17 already there (kubernetes, github, gitlab, jira, grafana, notion, linear, etc.); see [`host/mcp/README.md`](host/mcp/README.md) for the workload shape, tool-scoping via `aggregation.tools`, and how secrets/OAuth are wired per server.
-- **A new argument-authorization rule** — add a tool mapping to `charts/mcp-cerbos-shim/files/mapping.yaml` (CEL expressions; `images/mcp-cerbos-shim/mapping.example.yaml` is a minimal worked example) and a matching Cerbos policy under `charts/cerbos-policies/policies/`; the existing `resource_github.yaml`, `resource_linear.yaml`, etc. are working deny-by-resource examples; most carry a paired `*_test.yaml` under `charts/cerbos-policies/tests/` you can copy for the new rule. See [`images/mcp-cerbos-shim/README.md`](images/mcp-cerbos-shim/README.md) for the CEL helper mechanism if the new resource needs one (e.g. normalizing a field name across spellings).
+- **A new argument-authorization rule** — add a tool mapping to `charts/mcp-cerbos-shim/files/mapping.yaml` (CEL expressions; the ~80 entries already there are the reference, and `images/mcp-cerbos-shim/mapping.example.yaml` is a two-tool schema sketch) and a matching Cerbos policy under `charts/cerbos-policies/policies/`; the existing `resource_github.yaml`, `resource_linear.yaml`, etc. are working deny-by-resource examples; most carry a paired `*_test.yaml` under `charts/cerbos-policies/tests/` you can copy for the new rule. See [`images/mcp-cerbos-shim/README.md`](images/mcp-cerbos-shim/README.md) for the CEL helper mechanism if the new resource needs one (e.g. normalizing a field name across spellings).
 - **A mutation instead of a deny** — same mapping file, a `force` block on the tool entry (see the GitHub PR draft-forcing and Notion parent-folder-pinning entries already there for the pattern).
 
 ## Quickstart
@@ -79,7 +79,7 @@ $EDITOR values.yaml          # cluster vars + the agents you want (start with th
 ./vicegerent creds <name>
 ```
 
-Requires `kind`, `cilium-cli`, `kubectl`, `helm`, `yq`, `jq` on `PATH`, and an SSH key with access to your git host.
+Requires `kind`, `cilium-cli`, `kubectl`, `helm` 4+, `yq` v4, `jq`, `git`, and OpenSSL 3 (not macOS's LibreSSL) on `PATH`, plus an SSH key with access to your git host.
 
 ## Development
 

@@ -17,13 +17,20 @@ func init() {
 // awsValueGlobalOpts are AWS CLI global options whose VALUE is the following
 // token, so that token must be skipped when scanning for the service/operation
 // positionals. (--opt=value is a single token, skipped by the leading-dash
-// rule; boolean globals like --debug/--no-verify-ssl take no value.)
+// rule; boolean globals like --debug/--no-verify-ssl/--cli-auto-prompt take no
+// value — listing one here would make the parser eat the service positional as
+// its "value" and mis-pair service/operation.)
 var awsValueGlobalOpts = map[string]bool{
 	"--region": true, "--profile": true, "--output": true, "--endpoint-url": true,
 	"--ca-bundle": true, "--cli-read-timeout": true, "--cli-connect-timeout": true,
 	"--color": true, "--query": true, "--page-size": true, "--max-items": true,
-	"--starting-token": true, "--cli-binary-format": true, "--cli-auto-prompt": true,
+	"--starting-token": true, "--cli-binary-format": true,
 }
+
+// awsUnparsedOp is the awsOps token emitted for a command whose service and
+// operation could not both be identified. The angle brackets cannot occur in a
+// real AWS service or operation name, so it can never collide with one.
+const awsUnparsedOp = "<unparsed>"
 
 // awsSecretReadAttrOption surfaces, for the aws-api-mcp-server `call_aws` tool,
 // each parsed command's "<service>/<operation>" as a lowercased `awsOps` list,
@@ -40,9 +47,10 @@ var awsValueGlobalOpts = map[string]bool{
 // AWS CLI grammar is `aws [global-options] <service> <operation> [params]`:
 // service and operation are the first two barewords after an optional leading
 // `aws`, once interleaved global options (and their values) are skipped. A
-// command we can't confidently parse yields no awsOps entry, so the
-// has()-guarded deny falls through to allow — fail-open-when-unverifiable, the
-// same posture as every other helper; per-profile IAM is the airtight backstop.
+// command we can't confidently parse yields the awsUnparsedOp sentinel rather
+// than nothing, so resource_aws.yaml can deny it: every other rule there is
+// has(awsOps)-guarded, so an absent key would fall through to allow and make an
+// unparseable command a bypass of both the minting and secret-read denies.
 func awsSecretReadAttrOption() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Function("awsSecretReadAttr",
@@ -59,14 +67,19 @@ func awsSecretReadAttrOption() []cel.EnvOption {
 					}
 					cmds = append(cmds, lookupCIStringSlice(m, "cli_command")...)
 
-					var ops []string
+					ops := make([]string, 0, len(cmds))
 					for _, c := range cmds {
-						if op := awsServiceOp(c); op != "" {
-							ops = append(ops, op)
+						op := awsServiceOp(c)
+						if op == "" {
+							op = awsUnparsedOp
 						}
+						ops = append(ops, op)
 					}
 					if len(ops) == 0 {
-						return types.NewDynamicMap(types.DefaultTypeAdapter, map[string]any{})
+						// No cli_command at all: the tool requires one, so the
+						// call is either malformed or hiding it somewhere this
+						// helper can't see. Unverifiable, so still deny.
+						ops = []string{awsUnparsedOp}
 					}
 					return types.NewDynamicMap(types.DefaultTypeAdapter, map[string]any{"awsOps": ops})
 				}),
@@ -86,7 +99,7 @@ func awsServiceOp(command string) string {
 	var pos []string
 	for i < len(toks) && len(pos) < 2 {
 		t := toks[i]
-		if t == "--" { // explicit end-of-options separator
+		if t == "" || t == "--" { // quoted empty value / end-of-options separator
 			i++
 			continue
 		}

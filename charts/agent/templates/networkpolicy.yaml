@@ -62,7 +62,8 @@ spec:
     #
     # NOTE: if Slack rotates the WSS hostname (rare but possible), Socket Mode will
     # fail to reconnect and you'll see apps.connections.open succeed but the WSS
-    # connection refused. Add the new hostname here and to no_proxy in _sandbox.tpl.
+    # connection refused. Add the new hostname here; _sandbox.tpl's no_proxy already
+    # carries the suffix form `.slack.com` and needs no edit.
     {{- if .Values.networkAllowlist.slackFQDNs }}
     - toFQDNs:
         {{- range .Values.networkAllowlist.slackFQDNs }}

@@ -163,7 +163,10 @@ fi
 # ---------------------------------------------------------------------------
 step "Doctor check"
 echo
-"$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" doctor || true
+# Reported, not fatal: the remaining steps (CLI symlink, next-steps) are still
+# worth doing on a partial setup, and doctor's own output names what is missing.
+"$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" doctor \
+  || warn "doctor reported missing prerequisites (above); fix them, then re-run './vicegerent mcp doctor'."
 
 # ---------------------------------------------------------------------------
 # 6. Link the vicegerent CLI onto PATH (~/.local/bin)
@@ -196,7 +199,9 @@ echo
 echo "${G}${B}Host stack setup complete.${N}"
 echo
 echo "Next steps:"
-echo "  1. Provision host + cluster secrets:  ./vicegerent setup secrets platform"
-echo "     (writes host ghostunnel material to ~/.vicegerent/ghostunnel)"
-echo "  2. Ensure the kind cluster is up:      ./vicegerent setup cluster"
-echo "  3. Bring up the stack:                 ./vicegerent start"
+echo "  1. Create the kind cluster:            ./vicegerent setup cluster"
+echo "  2. Provision host + cluster secrets:   ./vicegerent setup secrets platform"
+echo "     (kubectl-applies the platform Secrets, so the cluster must exist first;"
+echo "      also writes host ghostunnel material to ~/.vicegerent/ghostunnel)"
+echo "  3. Install the platform:               ./vicegerent install"
+echo "  4. Bring up the host stack:            ./vicegerent start"

@@ -38,9 +38,11 @@ Prerequisites:
 - `kind`
 - `cilium-cli`
 - `kubectl`
-- `helm`
+- `helm` 4+ — the installer uses Helm 4 flags (`--rollback-on-failure`, `--force-replace`, `--hide-notes`) and refuses to run on Helm 3
 - `yq` v4
 - `jq`
+- `git`
+- `openssl` 3 — the secrets scripts need `req -addext`, which macOS's stock LibreSSL lacks (`brew install openssl@3`, then put it ahead of `/usr/bin` on `PATH`)
 - SSH access to your git host — see "Configuring for your machine" above
 
 Create the cluster (creates the Kind cluster on its docker network, installs Cilium as the CNI, and patches CoreDNS to resolve `host.docker.internal`):
@@ -70,7 +72,7 @@ MCP-server API keys are the exception: they are `thv` (ToolHive) secrets on the 
 
 ### Platform-wide
 
-Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, and applies the shared model API keys and the SearXNG signing key. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start.
+Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, generates the SearXNG signing key, the mcp-cerbos-shim self-token, and the Velero S3 credentials, and applies the model API keys you supply. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start. The Velero S3 credentials are likewise mirrored to `~/.vicegerent/rclone-s3/auth-key` (override with `RCLONE_S3_HOST_DIR`), which is what the host `rclone serve s3` process authenticates against.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # set any key to apply it non-interactively
@@ -85,19 +87,23 @@ export ANTHROPIC_API_KEY=sk-ant-...   # set any key to apply it non-interactivel
 This applies these Kubernetes Secrets (and one ConfigMap):
 
 ```text
-agentgateway-system  vicegerent-anthropic-secrets Authorization         (Anthropic API key)
-agentgateway-system  vicegerent-openai-secrets  Authorization         (optional OpenAI key)
-agentgateway-system  vicegerent-mcp-client      tls.crt, tls.key      (ghostunnel mTLS client cert)
-agentgateway-system  ghostunnel-ca (ConfigMap)  ca.crt                (ghostunnel CA cert)
-agentgateway-system  ghostunnel-server          server.crt/key,ca.crt (host recovery copy)
-searxng              searxng-secret             secret_key            (session/limiter signing key)
-egress-proxy         egress-proxy-ca            ca.crt, ca.key        (MITM CA private material)
-agent-sandbox        egress-proxy-ca-cert       ca.crt                (MITM CA cert, trust only)
+agentgateway-system  vicegerent-anthropic-secrets  Authorization          (Anthropic API key)
+agentgateway-system  vicegerent-openai-secrets     Authorization          (optional OpenAI key)
+agentgateway-system  vicegerent-deepseek-secrets   Authorization          (optional DeepSeek key)
+agentgateway-system  vicegerent-zai-secrets        Authorization          (optional Z.ai/GLM key)
+agentgateway-system  vicegerent-mcp-client         tls.crt, tls.key       (ghostunnel mTLS client cert)
+agentgateway-system  ghostunnel-ca (ConfigMap)     ca.crt                 (ghostunnel CA cert)
+agentgateway-system  ghostunnel-server             server.crt/key, ca.crt (host recovery copy)
+searxng              searxng-secret                secret_key             (session/limiter signing key)
+cerbos               mcp-cerbos-shim-self-token    token                  (shim's own re-entrant lookups)
+egress-proxy         egress-proxy-ca               ca.crt, ca.key         (MITM CA private material)
+agent-sandbox        egress-proxy-ca-cert          ca.crt                 (MITM CA cert, trust only)
+velero               velero-credentials            cloud                  (rclone S3 SigV4 credentials)
 ```
 
 MCP-server API keys (tavily/firecrawl/gitlab) are **not** here — they are `thv` secrets on the host (`./vicegerent setup mcp`); notion/linear use OAuth.
 
-The host-only ghostunnel files (`~/.vicegerent/ghostunnel`): `ca.cert`, `ca.key`, `server.crt`, `server.key`, `client.crt`, `client.key`. The CA key stays host-side so a re-run can re-issue a leaf without rebuilding the chain, and the host ghostunnel server reads its material from here.
+The ghostunnel files under `~/.vicegerent/ghostunnel`: `ca.cert`, `ca.key`, `server.crt`, `server.key`, `client.crt`, `client.key`. Only `ca.key` is host-exclusive — it stays here so a re-run can re-issue a leaf without rebuilding the chain — and the host ghostunnel server reads its material from this directory.
 
 ### Per-agent
 
@@ -135,6 +141,8 @@ Flags and env:
     --from <name>    run this stage and every stage after it
 RECREATE=1           add `helm --force-replace` (delete/recreate on immutable-field conflict)
 HELM_TIMEOUT=10m     per-release --wait timeout
+VALUES_FILE=<file>   machine plane values (same as --values; the flag wins)
+DEFAULTS_FILE=<file> default layer laid under it (default: <repo>/values.defaults.yaml)
 ```
 
 Stages run in this order: `cni` → `crds` → `storage` → `controllers` → `platform` → `agents`. Use `--stage platform` to re-render just the platform charts after editing a cluster var, or `--from controllers` to resume partway. The `agents` stage also prunes: an agent you remove from `values.yaml` is `helm uninstall`ed on the next run (removing a controller from `stages.yaml`, by contrast, needs a manual `helm uninstall`).
@@ -213,11 +221,11 @@ $EDITOR values.yaml                    # this machine's cluster vars + agents
 
 ## Host-side MCP control plane
 
-Every MCP server runs on the laptop under ToolHive (`thv`) and is aggregated behind a single Virtual MCP Server (vMCP) that ghostunnel exposes to the cluster over mTLS. The control plane lives in [`host/mcp`](../host/mcp): `vicegerent mcp` brings up the 17 ToolHive workloads declared in `toolhive-servers.json` (kubernetes, github, gitlab, tavily, firecrawl, notion, linear, jira, grafana, alertmanager, pagerduty, elastic, aws — plus the `aws_profiles` companion and three regional `_gov` variants — all off by default) and supervises the three long-lived host processes — `thv vmcp serve` (aggregates the group on `127.0.0.1:4483`), `ghostunnel` (terminates cluster mTLS, listens `127.0.0.1:8453`, forwards to the vMCP), and an opt-in `caffeinate` that keeps macOS awake while the stack runs.
+Every MCP server runs on the laptop under ToolHive (`thv`) and is aggregated behind a single Virtual MCP Server (vMCP) that ghostunnel exposes to the cluster over mTLS. The control plane lives in [`host/mcp`](../host/mcp): `vicegerent mcp` brings up the 17 ToolHive workloads declared in `toolhive-servers.json` (kubernetes, github, gitlab, tavily, firecrawl, notion, linear, jira, grafana, alertmanager, pagerduty, elastic, aws — plus the `aws_profiles` companion and three regional `_gov` variants — all off by default) and supervises four long-lived host processes — `thv vmcp serve` (aggregates the group on `127.0.0.1:4483`), `ghostunnel` (terminates cluster mTLS, listens `127.0.0.1:8453`, forwards to the vMCP), `rclone serve s3` (the Velero backup bucket on `127.0.0.1:9899`), and `mcp-health-watch` (polls workload health + AWS credential expiry and notifies) — plus an opt-in `caffeinate` that keeps macOS awake while the stack runs.
 
-The cluster reaches the vMCP at `host.docker.internal:8453`; agentgateway carries a `vmcp` `AgentgatewayBackend` and a single `/mcp/vmcp` HTTPRoute. Through the vMCP, tools are named `{workload}_<tool>` (e.g. `kubernetes_resources_get`).
+The cluster reaches the vMCP at `host.docker.internal:8453`. agentgateway fronts it with one `AgentgatewayBackend` + HTTPRoute + `AgentgatewayPolicy` trio per Gateway listener: `vmcp` on `/mcp/vmcp` for agent traffic (guardrail phase `Full`), and `vmcp-internal` on the internal `:81` listener for the shim's own re-entrant ownership lookups (phase `Request` only, so a lookup can't recurse into response inspection). Through the vMCP, tools are named `{workload}_<tool>` (e.g. `kubernetes_resources_get`).
 
-First-time setup installs the host prerequisites (`thv`, `ghostunnel`, `supervisor`, and the Python venv `vicegerent mcp` runs under), then walks you through enabling and configuring servers interactively (API keys become `thv` secrets; notion/linear use browser OAuth), and links the `vicegerent` CLI onto your `PATH`:
+First-time setup installs the host prerequisites (`thv`, `ghostunnel`, `supervisor`, `rclone`, `terminal-notifier`, and the Python venv `vicegerent mcp` runs under), then walks you through enabling and configuring servers interactively (API keys become `thv` secrets; notion/linear use browser OAuth), and links the `vicegerent` CLI onto your `PATH`:
 
 ```bash
 ./vicegerent setup mcp
@@ -232,7 +240,7 @@ Start and stop the whole local platform — the Kind cluster and the host MCP st
 ./vicegerent stop    # stop the host MCP stack (including ToolHive workloads), then stop the cluster
 ```
 
-For finer control of just the host stack, drive it with `./vicegerent mcp` (`start [--caffeinate]`, `stop`, `status`, `logs`, `doctor`, `enable`/`disable`); the interactive TUI is the top-level `./vicegerent tui`. See [`host/mcp/README.md`](../host/mcp/README.md) for the full reference.
+For finer control of just the host stack, drive it with `./vicegerent mcp` (`configure`, `enable`/`disable`, `start [--caffeinate]`, `stop`, `status`, `logs`, `doctor`); the interactive TUI is the top-level `./vicegerent tui`. There is one more subcommand, `mcp-health-watch` — supervisord runs it as the fourth supervised process, and you should not invoke it by hand. See [`host/mcp/README.md`](../host/mcp/README.md) for the full reference.
 
 ```bash
 ./vicegerent mcp start

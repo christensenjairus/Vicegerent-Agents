@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # kubectl-based action runners: `kubectl apply -k` for pinned-ref kustomize overlays
-# and the vendored csi-driver-host-path tree, plus the two readiness gates that
-# replace Flux's `wait: true` barrier.
+# and the vendored csi-driver-host-path tree, plus the two readiness gates.
 
 # kubectl_k <name> <path> <gate> <waitResource> <waitNamespace>
 #   gate=established  wait every applied CRD to reach Established (CRD stages)

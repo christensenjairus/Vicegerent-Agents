@@ -3,8 +3,9 @@
 # that MINT credentials / tokens / access (privilege escalation) and (2) direct
 # secret-VALUE reads. The shim's awsSecretReadAttr helper (mapping.yaml) parses
 # each call_aws command (str or batch list) into a lowercased awsOps
-# ["<service>/<operation>", ...] list; both rules match against it. The op sets
-# are fixed AWS facts, hardcoded here (no cluster-var).
+# ["<service>/<operation>", ...] list, or the "<unparsed>" sentinel for a command
+# it can't split into both positionals; all three rules match against it. The op
+# sets are fixed AWS facts, hardcoded here (no cluster-var).
 #
 # WHY THIS IS REQUIRED (verified live, 2026): READ_OPERATIONS_ONLY only blocks
 # operations AWS classifies IsWrite=true. It does NOT stop credential/secret
@@ -36,6 +37,21 @@ resourcePolicy:
   version: default
   resource: aws_command
   rules:
+    - name: deny-unparseable-command
+      actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.awsOps)
+            && request.resource.attr.awsOps.exists(o, o == "<unparsed>")
+      output:
+        when:
+          ruleActivated: >-
+            "This AWS command could not be parsed into a service and operation,"
+            + " so it cannot be checked against the denied operation sets."
+            + " Re-issue it in plain `aws <service> <operation> [params]` form."
     - name: deny-credential-and-access-minting
       actions: ['*']
       effect: EFFECT_DENY

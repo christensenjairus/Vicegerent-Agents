@@ -27,7 +27,7 @@ spec:
       containers:
         - name: mcp-cerbos-shim
           # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim
-          image: harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim:v0.33.3
+          image: harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim:v0.33.4
           ports:
             - name: grpc
               containerPort: 4445
@@ -43,8 +43,6 @@ spec:
                 secretKeyRef:
                   name: mcp-cerbos-shim-self-token
                   key: token
-            - name: NOTION_SCRATCHPAD_PAGE_ID
-              value: {{ .Values.clusterVars.notionScratchpadPageId | quote }}
             - name: NOTION_ALLOWED_PARENT_PAGE_IDS  # Scratchpad always implicit, then the team-folder list
               value: {{ prepend (.Values.clusterVars.notionAllowedParentPageIds | default list) .Values.clusterVars.notionScratchpadPageId | join "," | quote }}
             - name: NOTION_USER_ID

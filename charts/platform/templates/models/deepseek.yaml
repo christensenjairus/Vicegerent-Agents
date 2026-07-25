@@ -34,6 +34,7 @@ spec:
   parentRefs:
     - name: agentgateway-proxy
       namespace: agentgateway-system
+      sectionName: http
   rules:
     - matches:
         - path:

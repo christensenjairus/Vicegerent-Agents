@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -865,10 +866,18 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 	// missing any of them is already malformed and the gate is skipped
 	// (same "nothing verifiable, nothing to inject" posture as the Linear
 	// gates' own missing-id case) rather than specially fail-closed here.
+	// A pullNumber that IS present but isn't a usable number is different:
+	// skipping it would leave prAuthor unset and let the call past
+	// deny-not-own-pr, so that denies instead.
 	if githubExistingPRTools[cp.Name] && res.ResourceType == githubRepoResource {
 		owner, _ := cp.Arguments["owner"].(string)
 		repo, _ := cp.Arguments["repo"].(string)
-		pullNumber, ok := cp.Arguments["pullNumber"].(float64)
+		raw, present := cp.Arguments["pullNumber"]
+		pullNumber, ok := coerceNumber(raw)
+		if present && !ok {
+			log.Printf("deny: %s unusable pullNumber %#v (repo=%s/%s backend=%s)", cp.Name, raw, owner, repo, backend)
+			return deny("could not read this GitHub PR number, so its author cannot be verified (failing closed)"), nil
+		}
 		if owner != "" && repo != "" && ok {
 			author, derr := s.checkGithubPRAuthor(ctx, owner, repo, pullNumber)
 			if derr != nil {
@@ -1216,6 +1225,33 @@ func (s *Server) checkJiraIssueAssignee(ctx context.Context, issueKey string) (s
 		return "", fmt.Errorf("could not verify this Jira issue's assignee (failing closed): %v", err)
 	}
 	return assignee, nil
+}
+
+// coerceNumber reads a JSON-decoded tool argument that should be a number.
+// Arguments reach the shim as protobuf Struct values, so a well-formed number
+// is a float64; a client that sends the same field as a JSON string or via a
+// json.Number decoder must still be understood, because the alternative is a
+// gate that silently skips itself on a shape it didn't expect.
+func coerceNumber(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		return f, err == nil
+	}
+	return 0, false
 }
 
 // pagerdutyIncidentIDsFromArgs extracts every incident id a

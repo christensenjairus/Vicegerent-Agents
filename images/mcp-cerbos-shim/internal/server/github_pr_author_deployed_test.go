@@ -161,6 +161,59 @@ func TestDeployedGithubMapping_NoResolvableAuthorFailsClosed(t *testing.T) {
 	}
 }
 
+// TestDeployedGithubMapping_StringPullNumberStillResolvesAuthor proves a
+// pullNumber that arrives as a JSON string (a shape a harness or a
+// hallucinating agent can produce) is coerced rather than ignored: ignoring it
+// would leave prAuthor unset and hand Cerbos a call that deny-not-own-pr
+// cannot evaluate.
+func TestDeployedGithubMapping_StringPullNumberStillResolvesAuthor(t *testing.T) {
+	d := &stubDecider{allow: true}
+	up := &fakeUpstream{text: githubPRResultOtherAuthor}
+	s := newGithubServer(t, d, up)
+	res, err := s.CheckRequest(context.Background(),
+		mcpReq("vmcp", "tools/call", toolCall("github_update_pull_request_branch",
+			map[string]any{"owner": "someoneelse", "repo": "some-repo", "pullNumber": "99"})))
+	if err != nil {
+		t.Fatalf("CheckRequest: %v", err)
+	}
+	if !isPass(res) {
+		t.Fatalf("expected pass: stubDecider always allows; the point is what the gate resolved")
+	}
+	if up.calls != 1 {
+		t.Errorf("expected exactly one pull_request_read lookup, got %d", up.calls)
+	}
+	if got, _ := d.gotAttr["prAuthor"].(string); got != "someoneelse" {
+		t.Errorf("Cerbos saw prAuthor=%q, want the resolved author someoneelse", got)
+	}
+}
+
+// TestDeployedGithubMapping_UnusablePullNumberFailsClosed proves a pullNumber
+// that is present but cannot be read as a number denies. Skipping the gate
+// there would let the call reach Cerbos with no prAuthor attr, which is exactly
+// the bypass deny-not-own-pr exists to prevent.
+func TestDeployedGithubMapping_UnusablePullNumberFailsClosed(t *testing.T) {
+	for _, bad := range []any{"not-a-number", "", true, map[string]any{"n": 42}, []any{42}, nil} {
+		d := &stubDecider{allow: true}
+		up := &fakeUpstream{text: githubPRResultOwnAuthor}
+		s := newGithubServer(t, d, up)
+		res, err := s.CheckRequest(context.Background(),
+			mcpReq("vmcp", "tools/call", toolCall("github_update_pull_request_branch",
+				map[string]any{"owner": "christensenjairus", "repo": "vicegerent-agents", "pullNumber": bad})))
+		if err != nil {
+			t.Fatalf("CheckRequest(pullNumber=%#v): %v", bad, err)
+		}
+		if !isDeny(res) {
+			t.Errorf("pullNumber=%#v: expected deny (fail closed), got pass=%v mutated=%v", bad, isPass(res), isMutated(res))
+		}
+		if d.calls != 0 {
+			t.Errorf("pullNumber=%#v: Cerbos must NOT be consulted when the gate fails closed, got %d calls", bad, d.calls)
+		}
+		if up.calls != 0 {
+			t.Errorf("pullNumber=%#v: no upstream lookup should be attempted, got %d calls", bad, up.calls)
+		}
+	}
+}
+
 func TestDeployedGithubMapping_UnconfiguredAuthorGateFailsClosed(t *testing.T) {
 	d := &stubDecider{allow: true}
 	// No WithGithubPRAuthor: production's main.go always wires it, so

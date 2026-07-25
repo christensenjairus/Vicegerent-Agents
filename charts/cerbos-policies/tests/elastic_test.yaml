@@ -1,10 +1,11 @@
 ---
-# Fixtures use the literal denied token matching test-values.yaml's
-# elasticDeniedIndexPatterns ("snowflake") — validate.sh compiles the
-# rendered policy against them, so keep the two in sync.
+# Fixtures use the literal denied tokens matching test-values.yaml's
+# elasticDeniedIndexPatterns ("snowflake", "Salesforce") — validate.sh compiles
+# the rendered policy against them, so keep the two in sync.
 name: elastic_denied_index_block_test
 description: Data-access calls targeting a denied index/datastream token are denied
-  (by name, rollover backing index, or ES|QL query text); other data is allowed.
+  (by name, rollover backing index, ES|QL query text, or a mixed-case pattern); other
+  data is allowed.
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
@@ -28,6 +29,14 @@ resources:
     kind: elastic
     attr:
       targets: [from logs-snowflake-beta-default | limit 10]
+  # test-values.yaml's second token is mixed-case ("Salesforce") while the
+  # helper lowercases every target, so this fixture fails if the policy stops
+  # lowercasing the operator's patterns at match time.
+  denied_mixed_case_pattern:
+    id: logs-salesforce-default
+    kind: elastic
+    attr:
+      targets: [logs-salesforce-default]
   allowed_index:
     id: logs-nginx
     kind: elastic
@@ -41,7 +50,11 @@ tests:
   - name: targeting the denied datastream / its backing index / via ES|QL is denied
     input:
       principals: [hermes]
-      resources: [denied_datastream, denied_rollover_index, denied_via_esql]
+      resources:
+        - denied_datastream
+        - denied_rollover_index
+        - denied_via_esql
+        - denied_mixed_case_pattern
       actions:
         - platform_core_search
         - platform_core_execute_esql
@@ -61,6 +74,12 @@ tests:
           platform_streams_query_documents: EFFECT_DENY
       - principal: hermes
         resource: denied_via_esql
+        actions:
+          platform_core_search: EFFECT_DENY
+          platform_core_execute_esql: EFFECT_DENY
+          platform_streams_query_documents: EFFECT_DENY
+      - principal: hermes
+        resource: denied_mixed_case_pattern
         actions:
           platform_core_search: EFFECT_DENY
           platform_core_execute_esql: EFFECT_DENY

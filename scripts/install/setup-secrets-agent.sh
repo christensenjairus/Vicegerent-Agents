@@ -34,7 +34,7 @@ AGENT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -y|--yes) ASSUME_YES=1 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     -*) echo "unknown argument: $1" >&2; exit 2 ;;
     *) [[ -z "$AGENT" ]] && AGENT="$1" || { echo "unexpected argument: $1" >&2; exit 2; } ;;
   esac
@@ -143,7 +143,12 @@ for field in SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS SLACK_HOME_CHAN
   val="${!field:-}"
   [[ -z "$val" ]] && val="$(secret_val "$ITEM" "$field" || true)"
   if [[ -z "$val" && "$ASSUME_YES" != "1" ]]; then
-    read -r -p "  $field (empty to skip): " val
+    case "$field" in
+      # The two tokens are credentials, so they are not echoed; the allowed-users
+      # and home-channel values are not secret and are easier to check on screen.
+      *_TOKEN) read -r -s -p "  $field (empty to skip): " val; echo ;;
+      *)       read -r -p "  $field (empty to skip): " val ;;
+    esac
   fi
   if [[ -n "$val" ]]; then
     args+=(--from-literal="$field=$val")

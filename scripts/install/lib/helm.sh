@@ -8,14 +8,16 @@
 # so apply_crds and the upgrade share one exact location+values definition.
 
 # Helm never upgrades CRDs shipped in a chart's crds/ directory (install-only, by
-# design). Flux did it via `crds: CreateReplace`; we replicate by server-side-
-# applying those CRDs before the release upgrade. `helm show crds` emits ONLY the
-# crds/-dir CRDs — NOT CRDs a chart renders from templates/ (e.g. tetragon), which
+# design), so we server-side-apply those CRDs before the release upgrade. `helm
+# show crds` emits ONLY the crds/-dir CRDs — NOT CRDs a chart renders from templates/ (e.g. tetragon), which
 # Helm creates and upgrades with the release itself and would refuse to adopt if we
 # pre-applied them ("invalid ownership metadata"). No-op for charts with no crds/ dir.
 apply_crds() {
-  local name="$1" out; out="$(mktemp_f)"
-  helm show crds "${LOC[@]}" 2>/dev/null > "$out" || true
+  local name="$1" out err; out="$(mktemp_f)"; err="$(mktemp_f)"
+  # A registry/network/auth failure here used to leave an empty file that the
+  # -s guard skipped in silence, upgrading the release against stale CRDs.
+  helm show crds "${LOC[@]}" > "$out" 2>"$err" \
+    || die "helm show crds failed for ${name}: $(tr '\n' ' ' < "$err")"
   if [[ -s "$out" ]]; then
     info "apply_crds: server-side applying crds/-dir CRDs for ${name}"
     kc apply --server-side --force-conflicts -f "$out"
@@ -89,7 +91,7 @@ helm_local() {
     local dvf i aname vf
     dvf="$(defaults_slice_agent)"
     for ((i = 0; i < count; i++)); do
-      aname="$(yq ".agents[$i].name" "$VALUES_FILE")"
+      aname="$(yq -r ".agents[$i].name" "$VALUES_FILE")"
       vf="$(mv_slice_agent "$i")"
       LOC=("$chartdir"); VALS=(-f "$dvf" -f "$vf" --set "dashboard.index=$i")
       _do_helm "$aname" "$namespace" false
@@ -104,7 +106,7 @@ helm_local() {
             [[ "$name" == "platform" ]] && VALS+=(--set-file "secretPatterns=$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-patterns.json") ;;
     egress) LOC=("$chartdir"); VALS=(-f "$(defaults_slice_egress)" -f "$(mv_slice_egress)" \
               --set-file "secretPatterns=$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-patterns.json") ;;
-    *)      LOC=("$chartdir"); VALS=(-f "$DEFAULTS_FILE") ;;
+    *)      die "action '$name': a local chart needs machineValues (full|egress) or forEach: agents" ;;
   esac
   _do_helm "$name" "$namespace" false
 }
