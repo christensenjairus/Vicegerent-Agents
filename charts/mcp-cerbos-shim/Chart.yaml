@@ -1,0 +1,6 @@
+---
+apiVersion: v2
+name: mcp-cerbos-shim
+description: gRPC ext_authz shim that maps agentgateway MCP tool calls to Cerbos checks
+  (the argument-level authz guardrail on the vmcp backend).
+version: 0.1.0

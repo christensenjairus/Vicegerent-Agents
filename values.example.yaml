@@ -1,0 +1,91 @@
+---
+# Machine plane for `./vicegerent install` -- copy to values.yaml (gitignored) and
+# edit for your machine. This file is DELTAS ONLY: it carries just the handful of
+# values that differ from the committed defaults. The full annotated menu of every
+# setting, with its default, lives in values.defaults.yaml, which the installer and
+# scripts/validate.sh layer UNDERNEATH this file per chart -- anything omitted here
+# falls through to that default. Nothing here is a secret; API keys and crypto
+# material are Kubernetes Secrets seeded by `./vicegerent setup secrets`.
+#
+# Two complete real-world machine files live under examples/ (personal.yaml,
+# work.yaml) to copy from.
+clusterVars:
+  # GitHub owner/repo pairs agents may write to, and this machine's GitHub login.
+  githubAllowedRepos: [your-org/your-repo]
+  githubUsername: your-github-username
+  # Jira/Linear write scopes and the assignees agents may set.
+  jiraAllowedProjects: [PROJ]
+  jiraAllowedAssignees: [you@example.com]
+  linearAllowedTeams: [your-linear-team-uuid, YourTeam, TEAM]
+  linearAllowedAssignees: [you@example.com]
+  # Notion Scratchpad page, and this machine's Notion user id (deny-not-own-page gate).
+  notionScratchpadPageId: your-notion-scratchpad-page-id
+  notionUserId: your-notion-user-id
+  # This machine's fixed Alertmanager silence-creator identity.
+  alertmanagerCreatedBy: your-username
+# One charts/agent release per entry (max 10). The dashboard NodePort is derived as
+# 30119 + the agent's index in this list (host-published pool 30119-30128).
+agents:
+  - name: hermes
+    obsidian:
+      vaultPath: /workspace/knowledge-vault
+    git:
+      userName: your-git-username
+      userEmail: you@example.com
+    # Defaults enable anthropic + openai; this agent is anthropic-only.
+    providers:
+      openai:
+        enabled: false
+    # Cilium strips a CNAME answer unless every intermediate name is allowlisted, so
+    # cnameChain must list them all.
+    networkAllowlist:
+      cnameChainedFQDN: git.example.com
+      cnameChain: ddns-a.example.com,ddns-b.example.net
+      slackFQDNs:
+        - slack.com
+        - wss-primary.slack.com
+        - wss-backup.slack.com
+        - files.slack.com
+    config: |-
+      model:
+        provider: anthropic
+      agent:
+        system_prompt: You are a technical expert. Provide detailed, accurate technical information.
+    soul: |-
+      # Personality
+      You are a pragmatic senior engineer with strong taste.
+      You optimize for truth, clarity, and usefulness over politeness theater. You may occasionally swear colorfully when frustrated.
+
+      ## Style
+      - Be direct without being cold
+      - Prefer substance over filler
+      - Push back when something is a bad idea
+      - Admit uncertainty plainly
+      - Keep explanations compact unless depth is useful
+
+      ## What to avoid
+      - Sycophancy
+      - Hype language
+      - Repeating the user's framing if it's wrong
+      - Overexplaining obvious things
+
+      ## Technical posture
+      - Prefer simple systems over clever systems
+      - Care about operational reality, not idealized architecture
+      - Treat edge cases as part of the design, not cleanup
+
+      ## Tools
+      - You have live MCP tools via the vMCP (kubernetes, plus whatever the operator enabled: gitlab, tavily, firecrawl, notion, linear, ...)
+      - When a task needs external data or a real action, search your available tools for the right one and use it
+      - Don't guess, hand-wave, or give up when a tool could get the real answer
+egress:
+  apexWildcardDomains: github.com,githubusercontent.com
+  exactOnlyDomains: pypi.org,files.pythonhosted.org,proxy.golang.org,sum.golang.org,storage.googleapis.com
+# Defaults enable all four model backends; this machine renders only anthropic.
+models:
+  openai:
+    enabled: false
+  deepseek:
+    enabled: false
+  zai:
+    enabled: false

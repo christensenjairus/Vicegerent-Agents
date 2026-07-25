@@ -11,14 +11,12 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 	"time"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	config "github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/internal"
 	"github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/internal/authz"
@@ -28,6 +26,14 @@ import (
 	"github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/internal/upstream"
 	pb "github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/proto/gen"
 )
+
+// internalBackendName is the AgentgatewayBackend the shim's own re-entrant
+// lookups arrive on (the :81 vmcp-internal route -- see upstream.DefaultVMCPURL
+// and charts/platform/templates/vmcp.yaml). service_names surfaces the backend
+// name, so CheckRequest recognizes the shim's own traffic by it. That route
+// runs CheckRequest only (no CheckResponse), which is what breaks the
+// shim<->agentgateway prompt-injection loop.
+const internalBackendName = "vmcp-internal"
 
 const toolsCall = "tools/call"
 
@@ -56,8 +62,9 @@ var redactableResponseMethods = map[string]bool{
 // The Notion existing-page-write ancestry gate keys off the mapped resource,
 // not the tool-name string, so renaming a tool in mapping.yaml keeps the gate
 // intact as long as it keeps one of these resourceType/action pairs (matches
-// the rules in defs/resource_notion.yaml). notion-create-pages is NOT one of
-// these -- it's still pinned to Scratchpad-only via its own Cerbos deny rule
+// the rules in charts/cerbos-policies/policies/resource_notion.yaml).
+// notion-create-pages is NOT one of these -- it's still pinned to
+// Scratchpad-only via its own Cerbos deny rule
 // (deny-create-outside-scratchpad), a narrower and separate policy from this
 // multi-parent allowlist for calls that target an EXISTING page.
 const (
@@ -239,8 +246,9 @@ const moderationTimeout = 10 * time.Second
 const callToolMeta = "call_tool"
 
 // denyMessage is the fallback used when Cerbos denies a call but the matched
-// deny rule carries no policy `output` (see policies/defs/*.yaml `output:`
-// blocks). It intentionally omits resource/action to avoid leaking probed
+// deny rule carries no policy `output` (see
+// charts/cerbos-policies/policies/*.yaml `output:` blocks). It intentionally
+// omits resource/action to avoid leaking probed
 // state; detail goes to the shim log. Prefer adding an `output` to the rule
 // over relying on this generic string: without a specific
 // reason, a calling agent has no way to distinguish "try a different
@@ -262,6 +270,18 @@ type Server struct {
 	engine    *eval.Engine
 	decider   authz.Decider
 	principal Principal
+
+	// selfToken, when set (WithSelfToken), is the shim's secret self-identifier.
+	// The shim's own MCP client (internal/upstream) stamps it on every
+	// re-entrant lookup as the upstream.SelfHeaderName header; CheckRequest
+	// verifies it constant-time to admit the shim on the vmcp-internal backend
+	// (which runs no CheckResponse phase, so those lookups escape the shim's own
+	// prompt-injection gate -- the circular dependency), and to deny any other
+	// caller that reaches that backend. Empty leaves the backend admitting on
+	// the CNP network lock alone -- fail-safe: agents still can't reach the :81
+	// listener, and the token lives in a Secret only the shim pod reads. See
+	// isInternalBackend / isSelfRequest / CheckRequest and README.
+	selfToken string
 
 	// notionAncestry, when set, gates every existing-page Notion write
 	// (update-page, create-comment) to pages under one of
@@ -519,6 +539,15 @@ func WithPromptInjectionDetection(detector promptinjection.Detector, judge promp
 	}
 }
 
+// WithSelfToken sets the shim's secret self-identifier (see Server.selfToken).
+// The same value is handed to the upstream.Client via upstream.WithSelfToken so
+// the shim's own re-entrant lookups carry it and CheckRequest can authenticate
+// them on the vmcp-internal backend. Empty token leaves that backend's token
+// check inert (fail-safe -- see the field doc).
+func WithSelfToken(token string) Option {
+	return func(s *Server) { s.selfToken = token }
+}
+
 // New constructs a Server. The engine must already be compiled from mapping.
 func New(m *config.Mapping, e *eval.Engine, d authz.Decider, p Principal, opts ...Option) *Server {
 	s := &Server{mapping: m, engine: e, decider: d, principal: p}
@@ -536,8 +565,32 @@ type callParams struct {
 
 // CheckRequest is the pre-forward gate. It returns Pass{} to allow, Mutated{}
 // to allow-with-rewritten-args (only for a tool carrying a mapping `force`
-// set), or an AuthorizationError to deny. It never sets header_mutation/metadata.
+// set), or an AuthorizationError to deny. It never sets metadata or
+// header_mutation.
 func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpRequestResult, error) {
+	// The shim's own re-entrant lookups (internal/upstream, for the
+	// live-resolved ownership gates) arrive on the dedicated vmcp-internal
+	// backend, whose route runs CheckRequest but NOT CheckResponse -- so the
+	// prompt-injection gate never fires on a lookup of injection-bearing
+	// content and fails the ownership check closed (the circular dependency
+	// this path breaks). Admit them without gates. This branch runs BEFORE
+	// resolveBackend, which errors on an unmapped backend (vmcp-internal has no
+	// mapping entry -- it forwards to the same vMCP the mapped backends do).
+	// The backend is reserved for the shim by two independent locks: a
+	// CiliumNetworkPolicy restricts its :81 listener to the shim pod (network),
+	// and -- when a self-token is configured -- the caller must present it in
+	// the SelfHeaderName header (constant-time), so even a route ever mis-scoped
+	// onto the agent-facing :80 still can't be driven by an agent. An
+	// unconfigured token leaves the CNP as the sole lock (fail-safe, dev). See
+	// isInternalBackend / isSelfRequest.
+	if isInternalBackend(req.GetServiceNames()) {
+		if s.selfToken != "" && !s.isSelfRequest(req) {
+			log.Printf("deny: tokenless caller on the reserved vmcp-internal backend (method=%q backend=%v)", req.GetMethod(), req.GetServiceNames())
+			return deny("the vmcp-internal backend is reserved for the cerbos shim's own re-entrant lookups"), nil
+		}
+		return pass(), nil
+	}
+
 	backend, derr := s.resolveBackend(req.GetServiceNames())
 	if derr != nil {
 		return deny(derr.Error()), nil
@@ -950,11 +1003,6 @@ func buildMutatedParams(cp callParams, wrapped bool, force map[string]any) ([]by
 	return marshalNoHTMLEscape(map[string]any{"name": cp.Name, "arguments": cp.Arguments})
 }
 
-// checkNotionAncestry returns nil to allow the existing-page-write call
-// through to Cerbos, or an error (used verbatim as the deny reason) to block
-// it. Every failure path is fail-closed: an unconfigured gate, a missing
-// page_id, a lookup error, and a confirmed not-under-any-allowed-parent all
-// deny.
 // checkModeration sends every free-text arg through s.moderationChecker.
 // Fails OPEN on a moderation-service error (unlike every other gate in this
 // file, which fails closed) -- a service outage shouldn't deny every write
@@ -1012,6 +1060,11 @@ func extractStrings(v any) []string {
 	return out
 }
 
+// checkNotionAncestry returns nil to allow the existing-page-write call
+// through to Cerbos, or an error (used verbatim as the deny reason) to block
+// it. Every failure path is fail-closed: an unconfigured gate, a missing
+// page_id, a lookup error, and a confirmed not-under-any-allowed-parent all
+// deny.
 func (s *Server) checkNotionAncestry(ctx context.Context, pageID string) error {
 	if s.notionAncestry == nil || len(s.notionAllowedParentIDs) == 0 {
 		// The gate is mandatory for these tools: production always wires it
@@ -1239,6 +1292,41 @@ func pass() *pb.McpRequestResult {
 	return &pb.McpRequestResult{Result: &pb.McpRequestResult_Pass{Pass: &pb.Pass{}}}
 }
 
+// isInternalBackend reports whether service_names identifies the dedicated
+// vmcp-internal backend the shim's own re-entrant lookups arrive on.
+// service_names carries the backend name (confirmed live), so an exact match
+// is enough; a call on any other backend is agent traffic on the normal path.
+func isInternalBackend(names []string) bool {
+	for _, n := range names {
+		if n == internalBackendName {
+			return true
+		}
+	}
+	return false
+}
+
+// isSelfRequest reports whether req carries the shim's secret self-token in the
+// upstream.SelfHeaderName header, i.e. it originated from the shim's own MCP
+// client (internal/upstream) rather than an agent. Constant-time compare; a
+// missing token config (selfToken == "") always returns false so callers on
+// the internal backend are admitted on the CNP network lock alone (fail-safe;
+// see CheckRequest). Header keys are matched case-insensitively since
+// agentgateway may normalize them.
+func (s *Server) isSelfRequest(req *pb.McpRequest) bool {
+	if s.selfToken == "" {
+		return false
+	}
+	want := []byte(s.selfToken)
+	for _, h := range req.GetHeaders() {
+		if strings.EqualFold(h.GetKey(), upstream.SelfHeaderName) {
+			if subtle.ConstantTimeCompare(h.GetValue(), want) == 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // deny returns a PERMISSION_DENIED AuthorizationError with NO side-effect channels.
 func deny(reason string) *pb.McpRequestResult {
 	return &pb.McpRequestResult{
@@ -1328,6 +1416,22 @@ const maxJudgeCallsPerResponse = 20
 // checked and returned BEFORE the redaction pass runs, since there's no
 // point redacting a result that's about to be withheld entirely.
 func (s *Server) CheckResponse(ctx context.Context, resp *pb.McpResponse) (*pb.McpResponseResult, error) {
+	// The shim's own re-entrant lookups run on the vmcp-internal route, whose
+	// AgentgatewayPolicy has no CheckResponse phase (tools/call: Request), so
+	// this handler is not invoked for them -- that no-Response-phase policy is
+	// the primary mechanism breaking the shim<->agentgateway prompt-injection
+	// loop. This backend check is defense-in-depth: were that policy ever
+	// mis-set to Full/Response, a lookup of injection-bearing content would
+	// otherwise hit the gate and fail the ownership check closed again (exactly
+	// the silent failure this whole path fixes). Reaching this backend already
+	// requires the :81 CNP lock and the request-side token gate, and the shim
+	// consumes its lookups programmatically (nothing flows to the model), so
+	// skipping both the injection gate and redaction here is safe. See
+	// CheckRequest / isInternalBackend and charts/platform/templates/vmcp.yaml.
+	if isInternalBackend(resp.GetServiceNames()) {
+		return responsePass(), nil
+	}
+
 	if !redactableResponseMethods[resp.GetMethod()] {
 		return responsePass(), nil
 	}
@@ -1491,7 +1595,3 @@ func collectStrings(v any, out *[]string) {
 		}
 	}
 }
-
-// Compile-time guard: gRPC-level errors are gateway transport failures, not denies.
-var _ = status.Errorf
-var _ = codes.OK

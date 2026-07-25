@@ -5,10 +5,7 @@
   "enabledManagers": [
     "custom.regex",
     "dockerfile",
-    "flux",
-    "helm-values",
     "kubernetes",
-    "kustomize",
     "npm",
     "pip_requirements",
     "pre-commit"
@@ -19,26 +16,9 @@
   "recreateWhen": "always",
   "rollbackPrs": false,
   "prConcurrentLimit": 5,
-  "flux": {
-    "managerFilePatterns": [
-      "/^clusters/.+\\.ya?ml$/",
-      "/^infrastructure/controllers/.+\\.ya?ml$/"
-    ]
-  },
-  "helm-values": {
-    "managerFilePatterns": [
-      "/^infrastructure/controllers/.+/values\\.ya?ml$/",
-      "/^charts/.+/values\\.ya?ml$/"
-    ]
-  },
   "kubernetes": {
     "managerFilePatterns": [
-      "/^(apps|clusters|infrastructure)/.+\\.ya?ml$/"
-    ]
-  },
-  "kustomize": {
-    "managerFilePatterns": [
-      "/^(apps|clusters|infrastructure)/.*/kustomization\\.ya?ml$/"
+      "/^stages/kustomize/csi-driver-host-path/.+\\.ya?ml$/"
     ]
   },
   "packageRules": [
@@ -47,8 +27,8 @@
       "groupName": "pre-commit hooks"
     },
     {
-      "matchFileNames": ["infrastructure/controllers/**"],
-      "groupName": "infrastructure controller ({{packageFileDir}})"
+      "matchFileNames": ["stages/**"],
+      "groupName": "platform controllers ({{packageFileDir}})"
     },
     {
       "matchFileNames": [".gitlab-ci.yml"],
@@ -74,31 +54,81 @@
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/github/github-mcp-server"],
       "allowedVersions": "<1.6.0"
-    },
-    {
-      "description": "Flux controllers are upgraded as a matched set via `flux bootstrap` regeneration, never per-image. The flux manager still surfaces a single grouped flux-version signal from the gotk-components header.",
-      "matchFileNames": ["clusters/**/flux-system/gotk-components.yaml"],
-      "matchManagers": ["kubernetes", "kustomize"],
-      "enabled": false
     }
   ],
   "customManagers": [
     {
+      "description": "hermes-agent image tag in the root values.defaults.yaml agents[0] template (nested in a list, no sibling Chart.yaml, so tracked here rather than by the helm-values manager). Loose versioning comes from the packageRules entry keyed on the depName.",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^infrastructure/controllers/agent-sandbox/chart/repository\\.ya?ml$/"
+        "/^values\\.defaults\\.ya?ml$/"
       ],
       "matchStrings": [
-        "url:\\s*https://github\\.com/(?<depName>[^\\s]+?)\\.git\\s+ref:\\s+tag:\\s*(?<currentValue>[^\\s]+)"
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s+repository:\\s*[^\\s]+\\s*\\n\\s+tag:\\s*(?<currentValue>[^\\s]+)"
+      ]
+    },
+    {
+      "description": "Remote HTTP Helm charts in the install control plane (repo + chart + version).",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^stages/stages\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "repo:\\s*(?<registryUrl>https?://\\S+)\\s*\\n\\s+chart:\\s*(?<depName>\\S+)\\s*\\n\\s+version:\\s*(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "helm"
+    },
+    {
+      "description": "OCI Helm charts in the install control plane (oci:// chart ref + version).",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^stages/stages\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "chart:\\s*oci://(?<depName>\\S+)\\s*\\n\\s+version:\\s*(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "Git-sourced Helm charts in the install control plane (gitRepo + ref tag).",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^stages/stages\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "gitRepo:\\s*https://github\\.com/(?<depName>\\S+?)(?:\\.git)?\\s*\\n\\s+ref:\\s*(?<currentValue>\\S+)"
       ],
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
     },
     {
+      "description": "Pinned `kubectl apply -k` remote bases (gateway-api + external-snapshotter CRDs and snapshot-controller).",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^infrastructure/controllers/agentgateway/chart/values\\.ya?ml$/",
-        "/^apps/base/gateway/gateway\\.ya?ml$/"
+        "/^stages/kustomize/.+/kustomization\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "https://github\\.com/(?<depName>[^/]+/[^/]+)//[^?]+\\?ref=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
+    },
+    {
+      "description": "Upstream controller image tags in stages/values/*.yaml (image.repository + image.tag pairs -- cerbos, victoria-logs, vector, reloader, ...). agentgateway's split registry+repository shape has its own manager below; requiring a '/' in the repository skips agentgateway's bare `controller` so it is not double-tracked.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^stages/values/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "repository:\\s*(?<depName>[^\\s]+/[^\\s]+)\\s*\\n\\s+tag:\\s*(?<currentValue>[^\\s]+)"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^stages/values/agentgateway\\.ya?ml$/",
+        "/^charts/platform/templates/gateway\\.ya?ml$/"
       ],
       "matchStrings": [
         "registry:\\s*(?<registryOrg>[^\\s]+)\\s*\\n\\s+repository:\\s*(?<depName>[^\\s]+)\\s*\\n\\s+tag:\\s*(?<currentValue>[^\\s]+)"
@@ -150,6 +180,7 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/^charts/egress-proxy/templates/deployment\\.ya?ml$/",
+        "/^charts/mcp-cerbos-shim/templates/deployment\\.ya?ml$/",
         "/^charts/agent/templates/restart-job\\.ya?ml$/"
       ],
       "matchStrings": [

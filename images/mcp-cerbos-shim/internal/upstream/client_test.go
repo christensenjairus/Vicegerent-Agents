@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -198,6 +199,65 @@ func TestCallTool_ToolReportedError(t *testing.T) {
 	_, err := c.CallTool(ctx, "notion_notion-fetch", map[string]any{"id": "x"})
 	if err == nil {
 		t.Fatal("expected error when tool result isError")
+	}
+}
+
+// TestCallTool_SelfTokenHeader asserts WithSelfToken stamps SelfHeaderName on
+// EVERY request the client sends (initialize, the initialized notification, and
+// tools/call), and that an unconfigured token omits the header entirely -- the
+// send side of the vmcp-internal backend's token authentication.
+func TestCallTool_SelfTokenHeader(t *testing.T) {
+	tests := []struct {
+		name      string
+		opts      []Option
+		wantToken string // "" => header must be absent
+	}{
+		{name: "token set stamps header on every request", opts: []Option{WithSelfToken("s3cr3t-self-token")}, wantToken: "s3cr3t-self-token"},
+		{name: "no token omits header", opts: nil, wantToken: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var seen []string // header value per request ("" if unset)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				seen = append(seen, r.Header.Get(SelfHeaderName))
+				mu.Unlock()
+				body := make([]byte, r.ContentLength)
+				_, _ = r.Body.Read(body)
+				var req rpcRequest
+				_ = json.Unmarshal(body, &req)
+				w.Header().Set("Content-Type", "application/json")
+				switch req.Method {
+				case "initialize":
+					w.Header().Set("Mcp-Session-Id", "sess")
+					fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{}}`, *req.ID)
+				case "notifications/initialized":
+					w.WriteHeader(http.StatusAccepted)
+				case "tools/call":
+					fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"content":[{"type":"text","text":"ok"}]}}`, *req.ID)
+				}
+			}))
+			defer srv.Close()
+
+			c := New(srv.URL, nil, tc.opts...)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if _, err := c.CallTool(ctx, "notion_notion-fetch", map[string]any{"id": "x"}); err != nil {
+				t.Fatalf("CallTool: %v", err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			if len(seen) < 3 {
+				t.Fatalf("expected >=3 requests (initialize, initialized, tools/call), saw %d", len(seen))
+			}
+			for i, got := range seen {
+				if got != tc.wantToken {
+					t.Errorf("request %d: %s = %q, want %q", i, SelfHeaderName, got, tc.wantToken)
+				}
+			}
+		})
 	}
 }
 

@@ -18,12 +18,15 @@
 #   -y, --yes     auto-approve every change (non-interactive)
 #   -h, --help    show this help
 #
-# Env overrides: KUBE_CONTEXT, SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
+# Env overrides: SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
 #   SLACK_ALLOWED_USERS, SLACK_HOME_CHANNEL
 
 set -euo pipefail
 
-KUBE_CONTEXT="${KUBE_CONTEXT:-kind-vicegerent}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/kube-context.sh
+source "$SCRIPT_DIR/../lib/kube-context.sh"
+
 NS=agent-sandbox
 
 ASSUME_YES=0
@@ -85,11 +88,7 @@ secret_val() {
 for cmd in kubectl openssl ssh-keygen jq; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not on PATH"
 done
-kubectl config get-contexts "$KUBE_CONTEXT" >/dev/null 2>&1 \
-  || die "kubectl context '$KUBE_CONTEXT' does not exist"
-current_ctx="$(kubectl config current-context 2>/dev/null || true)"
-[[ "$current_ctx" == "$KUBE_CONTEXT" ]] \
-  || die "current kubectl context is '${current_ctx:-<none>}', expected '$KUBE_CONTEXT' (run: kubectl config use-context $KUBE_CONTEXT)"
+require_kind_context
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vicegerent-agent-setup.XXXXXX")"
 chmod 700 "$WORK"
@@ -137,9 +136,9 @@ args=(--from-literal="password=$password" --from-literal="signing-secret=$signin
 
 # Slack fields (optional). env override > existing value > interactive prompt.
 echo
-echo "  Slack is optional. Create the app from a manifest:"
-echo "    vicegerent slack manifest \"<BotName>\" | pbcopy"
-echo "  then api.slack.com → Create New App → From manifest; enable Socket Mode; install to workspace."
+echo "  Slack is optional. Create the app from the manifest at slack-app-manifest.yaml"
+echo "  (edit the bot name first): api.slack.com → Create New App → From manifest;"
+echo "  enable Socket Mode; install to workspace."
 for field in SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS SLACK_HOME_CHANNEL; do
   val="${!field:-}"
   [[ -z "$val" ]] && val="$(secret_val "$ITEM" "$field" || true)"

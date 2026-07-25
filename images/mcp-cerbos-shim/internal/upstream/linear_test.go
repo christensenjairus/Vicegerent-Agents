@@ -6,8 +6,11 @@ import (
 	"testing"
 )
 
-func TestGetIssueDetails_ResolvesTeamAndAssigneeFromLiveShapeGuess(t *testing.T) {
-	c := &fakeCaller{text: `{"id":"PROJ-1","title":"some issue","team":"HAHomelabs","assignee":"jchristensen@moveworks.ai"}`}
+func TestGetIssueDetails_ResolvesTeamAndAssigneeFromLiveShape(t *testing.T) {
+	// Live-verified 2026-07-25 shape: team and assignee are both bare top-level
+	// display-name strings, and the stable user UUID rides in a SEPARATE
+	// assigneeId field this parser deliberately ignores (no email anywhere).
+	c := &fakeCaller{text: `{"id":"PROJ-1","title":"some issue","team":"HAHomelabs","assignee":"Jairus Christensen","assigneeId":"f60cb294-8107-4cbc-b0e3-d4180352849b"}`}
 	team, assignee, err := GetIssueDetails(context.Background(), c, "PROJ-1")
 	if err != nil {
 		t.Fatalf("GetIssueDetails: %v", err)
@@ -15,8 +18,8 @@ func TestGetIssueDetails_ResolvesTeamAndAssigneeFromLiveShapeGuess(t *testing.T)
 	if team != "HAHomelabs" {
 		t.Errorf("team = %q, want HAHomelabs", team)
 	}
-	if assignee != "jchristensen@moveworks.ai" {
-		t.Errorf("assignee = %q, want jchristensen@moveworks.ai", assignee)
+	if assignee != "Jairus Christensen" {
+		t.Errorf("assignee = %q, want Jairus Christensen", assignee)
 	}
 	if c.gotTool != "linear_get_issue" {
 		t.Errorf("gotTool = %q, want linear_get_issue", c.gotTool)

@@ -104,15 +104,13 @@ func PageIsUnderAnyAncestor(ctx context.Context, client ToolCaller, pageID strin
 // must be decoded here before the <ancestor-path> regexes can match content
 // that would otherwise still be JSON-string-escaped (a literal backslash-quote
 // instead of a real quote character, or a literal two-char backslash-n instead
-// of a real newline). Discovered live: the original
-// unit-test fixtures used bare <page> XML directly as CallTool's return,
-// which is why 147 passing tests never caught this in an earlier pass.
+// of a real newline).
 type notionFetchEnvelope struct {
 	Text string `json:"text"`
 }
 
 // extractNotionFetchText unwraps the notion-fetch tool's inner JSON envelope
-// to recover the actual <page>...</page> markdown text pageIsUnderAncestor's
+// to recover the actual <page>...</page> markdown text the ancestor-path
 // regexes expect. Falls back to the raw input unchanged if it isn't a JSON
 // object with a "text" field (keeps existing raw-XML test fixtures and any
 // non-JSON tool wired up via a stub working without modification).
@@ -124,16 +122,10 @@ func extractNotionFetchText(raw string) string {
 	return env.Text
 }
 
-// pageIsUnderAncestor is the pure parse+compare half, split out so tests drive
-// it with literal fixture strings (and via a stub ToolCaller) rather than a
-// live network round trip.
-func pageIsUnderAncestor(fetchText, ancestorPageID string) (bool, error) {
-	return pageIsUnderAnyAncestor(fetchText, []string{ancestorPageID})
-}
-
-// pageIsUnderAnyAncestor is pageIsUnderAncestor generalized to a set of
-// allowed ancestors -- true if any one of them appears in the page's
-// flattened ancestor chain.
+// pageIsUnderAnyAncestor is the pure parse+compare half, driven by tests with
+// literal fixture strings (via a stub ToolCaller) rather than a live network
+// round trip: true if any allowed ancestor appears in the page's flattened
+// ancestor chain.
 func pageIsUnderAnyAncestor(fetchText string, ancestorPageIDs []string) (bool, error) {
 	targets := make(map[string]struct{}, len(ancestorPageIDs))
 	for _, id := range ancestorPageIDs {

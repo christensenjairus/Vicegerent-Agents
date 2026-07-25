@@ -1,0 +1,6 @@
+---
+apiVersion: v2
+name: cerbos-policies
+description: Cerbos resource policies rendered into the stable cerbos-policies ConfigMap
+  the cerbos controller hot-reloads.
+version: 0.1.0

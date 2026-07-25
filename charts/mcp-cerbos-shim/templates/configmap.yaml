@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-cerbos-shim-mapping
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-cerbos-shim
+data:
+  mapping.yaml: |
+{{ tpl (.Files.Get "files/mapping.yaml") . | indent 4 }}

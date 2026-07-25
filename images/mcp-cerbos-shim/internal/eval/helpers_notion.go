@@ -45,12 +45,13 @@ func notionAttrOption() []cel.EnvOption {
 }
 
 // notionCreateAttrOption: create-pages' `parent` decides where the new page(s)
-// land. Cerbos runs its own CEL environment (the policy YAML in defs/), which
-// has none of this repo's Go helpers or string functions registered, so the
+// land. Cerbos runs its own CEL environment (the policy YAML under
+// charts/cerbos-policies/policies/), which has none of this repo's Go helpers
+// or string functions registered, so the
 // normalization (parent id dash-stripping/lowercasing) has to happen here,
 // shim-side, and be handed to Cerbos as an already-normalized string attr --
 // Cerbos's policy CEL only ever does a flat `==` against the cluster-var
-// (also stored dash-free/lowercase in cluster-vars.yaml).
+// (also stored dash-free/lowercase in values.yaml).
 //
 // parentKind is "page_id"/"database_id"/"data_source_id" (the tool's three
 // parent shapes) or "" when parent is omitted entirely -- omitting parent
@@ -95,7 +96,7 @@ func hasNonEmptyKey(m map[string]any, key string) bool {
 }
 
 // normalizeNotionID strips dashes and lowercases a Notion page id -- Notion
-// accepts/returns ids both dashed and undashed, and cluster-vars.yaml stores
+// accepts/returns ids both dashed and undashed, and values.yaml stores
 // notionScratchpadPageId dash-free/lowercase, so this must match that shape
 // for the Cerbos policy's flat string `==` to work regardless of which form
 // the calling agent supplied.

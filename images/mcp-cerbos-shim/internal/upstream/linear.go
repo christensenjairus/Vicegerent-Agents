@@ -25,19 +25,18 @@ const linearGetIssueTool = "linear_get_issue"
 // ancestry.go's notionFetchEnvelope) -- Linear's own MCP server returns its
 // tool result as plain JSON text, no extra nesting.
 //
-// "assignee" is decoded as json.RawMessage rather than a typed string:
-// unlike team, this field's shape was NOT verified against a live call (this
-// sandbox has no Linear credentials to test against) -- by analogy with
-// team's own confirmed shape (same tool, same API), it's assumed to be a
-// similarly bare top-level string (the assignee's display name/identifier,
-// the same form list_issues'/save_issue's own `assignee` arg accepts), not a
-// nested user object. Decoding it as RawMessage first means an actual shape
-// surprise on assignee fails parseLinearAssignee (and therefore
-// GetIssueDetails) closed, rather than a Go json.Unmarshal type-mismatch
-// error on a plain `string`-typed field silently breaking team's own
-// (already-verified) parse too. Live verification against a real Linear
-// account is a mandatory follow-up before relying on this in production --
-// see the MR's own follow-up section.
+// "assignee" carries the assignee's DISPLAY NAME as a bare top-level string
+// -- verified live 2026-07-25 against the real vMCP route, e.g.
+// {..., "assignee":"Jairus Christensen", "assigneeId":"f60cb294-..."}. The
+// stable user UUID rides in a SEPARATE "assigneeId" field this struct
+// deliberately ignores; there is NO email anywhere in the result, which is
+// why ${linearAllowedAssignees} must carry the display-name form (not just an
+// email) for the live-resolution path to match -- see values.defaults.yaml.
+// It is still decoded as json.RawMessage rather than a typed string so that
+// an unexpected future shape (a nested user object) fails parseLinearAssignee
+// (and therefore GetIssueDetails) closed, rather than a Go json.Unmarshal
+// type-mismatch on a plain `string`-typed field silently breaking team's own
+// parse too.
 type linearIssueDetails struct {
 	Team     string          `json:"team"`
 	Assignee json.RawMessage `json:"assignee"`

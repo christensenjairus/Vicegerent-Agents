@@ -62,7 +62,7 @@ spec:
     #
     # NOTE: if Slack rotates the WSS hostname (rare but possible), Socket Mode will
     # fail to reconnect and you'll see apps.connections.open succeed but the WSS
-    # connection refused. Add the new hostname here and to no_proxy in sandbox.yaml.
+    # connection refused. Add the new hostname here and to no_proxy in _sandbox.tpl.
     {{- if .Values.networkAllowlist.slackFQDNs }}
     - toFQDNs:
         {{- range .Values.networkAllowlist.slackFQDNs }}
@@ -90,7 +90,7 @@ spec:
     # SSH bypasses the HTTP proxy — direct egress for git push/pull. The configured FQDN may
     # resolve through a CNAME chain (dynamic DNS); Cilium's toFQDNs DNS proxy strips a CNAME
     # answer unless every name in the chain is itself allowlisted, so cnameChain lists the
-    # intermediate names. Both are machine-scoped (cluster-vars.yaml); github.com is always
+    # intermediate names. Both are machine-scoped (values.yaml); github.com is always
     # allowed.
     - toFQDNs:
         {{- if .Values.networkAllowlist.cnameChainedFQDN }}

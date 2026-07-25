@@ -1,0 +1,418 @@
+---
+# Fixtures use literal repos matching test-values.yaml's githubAllowedRepos —
+# validate.sh compiles the rendered policy against them, so keep the two in sync.
+name: github_repo_allowlist_block_test
+description: GitHub calls targeting a repo outside the allowlist are denied; calls
+  confined to an allowed owner/repo are allowed.
+options:
+  now: '2026-07-02T00:00:00Z'
+principals:
+  hermes:
+    id: hermes
+    roles: [agent]
+resources:
+  moveworks_emu_moveworks:
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: moveworks}
+  moveworks_emu_k8s_manifests:
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: k8s-manifests}
+  moveworks_emu_sec:
+    id: moveworks-emu/sec
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: sec}
+  jchristensen_movester_moveworks:
+    id: jchristensen_movester/moveworks
+    kind: github_repo
+    attr: {owner: jchristensen_movester, repo: moveworks}
+  jchristensen_movester_k8s_manifests:
+    id: jchristensen_movester/k8s-manifests
+    kind: github_repo
+    attr: {owner: jchristensen_movester, repo: k8s-manifests}
+  vicegerent_agents:
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents}
+  other_repo:
+    id: someoneelse/some-repo
+    kind: github_repo
+    attr: {owner: someoneelse, repo: some-repo}
+  same_repo_wrong_owner:
+    id: moveworks-emu/vicegerent-agents
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: vicegerent-agents}
+  missing_attrs:
+    id: /
+    kind: github_repo
+    attr: {owner: '', repo: ''}
+  push_to_main:
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: main}
+  create_or_update_file_on_master:
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: master}
+  create_branch_named_production:
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: production}
+  push_to_feature_branch:
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: feature-x}
+  create_pull_request_against_main:
+    # create_pull_request has no 'branch' arg (only base/head) — the shim's
+    # branch attr resolves to '' for it, same as every other non-branch-writing
+    # tool. Opening a PR against main must not be blocked.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: ''}
+  push_to_main_disallowed_repo:
+    # Both guardrails apply at once; either alone would deny.
+    id: someoneelse/some-repo
+    kind: github_repo
+    attr: {owner: someoneelse, repo: some-repo, branch: main}
+  create_pr_with_reviewers:
+    # create_pull_request setting reviewers is denied outright.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', hasReviewers: 'true'}
+  update_pr_with_reviewers:
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', hasReviewers: 'true'}
+  create_pr_no_reviewers:
+    # No reviewers set at all -- must stay allowed.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', hasReviewers: 'false'}
+  create_pr_moveworks_bare_head:
+    # Bare head (no owner prefix at all) into a restricted owner -- same-repo
+    # branch, must be denied.
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: moveworks, branch: '', head: some-feature-branch}
+  create_pr_moveworks_fork_qualified:
+    # head qualified with the allowed fork owner -- allowed.
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: moveworks, branch: '', head: jchristensen_movester:some-feature-branch}
+  create_pr_moveworks_wrong_fork_owner:
+    # head IS qualified (contains ':'), but owner is wrong -- still denied.
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: moveworks, branch: '', head: someoneelse:some-feature-branch}
+  create_pr_non_restricted_owner_bare_head:
+    # Bare head into a non-restricted allowed owner (christensenjairus is not
+    # in githubForkRequiredOwners) -- unaffected by the new rule.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', head: some-feature-branch}
+  create_k8s_manifests_good_title_and_body:
+    # moveworks-emu/k8s-manifests create with a compliant title+body -- allowed.
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: k8s-manifests
+      branch: ''
+      title: '[TEAM-1234] Bump image tag'
+      body: See https://bannertech.atlassian.net/browse/CHANGE-1234 for context
+      isPrCreate: 'true'
+  create_k8s_manifests_bad_title:
+    # Title has no ticket-ref prefix -- denied.
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: k8s-manifests
+      branch: ''
+      title: Bump image tag
+      body: https://bannertech.atlassian.net/browse/CHANGE-1234
+      isPrCreate: 'true'
+  create_k8s_manifests_missing_body_link:
+    # Body has no change-ticket link -- denied.
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: k8s-manifests
+      branch: ''
+      title: '[TEAM-1234] Bump image tag'
+      body: just some notes, no link
+      isPrCreate: 'true'
+  create_k8s_manifests_no_body_at_all:
+    # create_pull_request called with no body arg at all -- still denied
+    # (missing body is a violation on create, not a pass-through).
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: k8s-manifests
+      branch: ''
+      title: '[TEAM-1234] Bump image tag'
+      isPrCreate: 'true'
+  update_k8s_manifests_untouched_title_body:
+    # update_pull_request that touches neither title nor body -- allowed
+    # regardless of what the PR's existing title/body already are.
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: k8s-manifests, branch: '', isPrCreate: 'false'}
+  update_k8s_manifests_sets_bad_title:
+    # update_pull_request that sets a non-compliant title -- denied.
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: k8s-manifests
+      branch: ''
+      title: some random title
+      isPrCreate: 'false'
+  update_k8s_manifests_sets_bad_body:
+    # update_pull_request that sets a body with no change-ticket link -- denied.
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: k8s-manifests
+      branch: ''
+      body: no link here
+      isPrCreate: 'false'
+  update_k8s_manifests_sets_good_body:
+    # update_pull_request that sets a compliant body -- allowed.
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: k8s-manifests
+      branch: ''
+      body: https://bannertech.atlassian.net/browse/CHANGE-9999
+      isPrCreate: 'false'
+  create_other_repo_bad_title_and_body:
+    # Same bad title/body shape, but NOT moveworks-emu/k8s-manifests -- the
+    # ticket-ref/change-link rules must not apply outside that one repo.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr:
+      owner: christensenjairus
+      repo: vicegerent-agents
+      branch: ''
+      title: no ticket ref here
+      body: no change link either
+      isPrCreate: 'true'
+  list_pull_requests_k8s_manifests:
+    # A read-only tool mapped to *github_repo (e.g. list_pull_requests) never
+    # carries title/body/isPrCreate at all -- must not be affected.
+    id: moveworks-emu/k8s-manifests
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: k8s-manifests, branch: ''}
+  update_pr_own_author:
+    # githubUsername is jchristensen_movester (matching test-values.yaml) --
+    # a PR the shim resolved as authored by that same user is allowed.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', prAuthor: jchristensen_movester}
+  update_pr_other_author:
+    # The shim resolved a DIFFERENT real author -- denied regardless of what
+    # the call's own args say (there is no author-setting arg on any of
+    # these tools to begin with).
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', prAuthor: someoneelse}
+  read_tool_no_author_attr:
+    # Read tools and create_pull_request never get a prAuthor attr at all
+    # (server.go only injects it for the three existing-PR-write tools) --
+    # has()-guarded, so its absence must not deny.
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: ''}
+tests:
+  - name: calls confined to an allowed repo are allowed
+    input:
+      principals: [hermes]
+      resources:
+        - moveworks_emu_moveworks
+        - moveworks_emu_k8s_manifests
+        - moveworks_emu_sec
+        - jchristensen_movester_moveworks
+        - jchristensen_movester_k8s_manifests
+        - vicegerent_agents
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: moveworks_emu_moveworks
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: moveworks_emu_k8s_manifests
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: moveworks_emu_sec
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: jchristensen_movester_moveworks
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: jchristensen_movester_k8s_manifests
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: vicegerent_agents
+        actions: {access: EFFECT_ALLOW}
+  - name: calls targeting a repo outside the allowlist are denied
+    input:
+      principals: [hermes]
+      resources: [other_repo, same_repo_wrong_owner, missing_attrs]
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: other_repo
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: same_repo_wrong_owner
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: missing_attrs
+        actions: {access: EFFECT_DENY}
+  - name: writes targeting a protected branch are denied even on an allowed repo
+    input:
+      principals: [hermes]
+      resources:
+        - push_to_main
+        - create_or_update_file_on_master
+        - create_branch_named_production
+        - push_to_main_disallowed_repo
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: push_to_main
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_or_update_file_on_master
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_branch_named_production
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: push_to_main_disallowed_repo
+        actions: {access: EFFECT_DENY}
+  - name: writes to a non-protected branch, and calls that carry no branch, are allowed
+    input:
+      principals: [hermes]
+      resources: [push_to_feature_branch, create_pull_request_against_main]
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: push_to_feature_branch
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: create_pull_request_against_main
+        actions: {access: EFFECT_ALLOW}
+  - name: setting reviewers on a pull request is denied; no reviewers set is allowed
+    input:
+      principals: [hermes]
+      resources:
+        - create_pr_with_reviewers
+        - update_pr_with_reviewers
+        - create_pr_no_reviewers
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: create_pr_with_reviewers
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_pr_with_reviewers
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_pr_no_reviewers
+        actions: {access: EFFECT_ALLOW}
+  - name: PRs into a restricted owner must come from an allowed fork; unrestricted
+      owners are unaffected
+    input:
+      principals: [hermes]
+      resources:
+        - create_pr_moveworks_bare_head
+        - create_pr_moveworks_fork_qualified
+        - create_pr_moveworks_wrong_fork_owner
+        - create_pr_non_restricted_owner_bare_head
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: create_pr_moveworks_bare_head
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_pr_moveworks_fork_qualified
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: create_pr_moveworks_wrong_fork_owner
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_pr_non_restricted_owner_bare_head
+        actions: {access: EFFECT_ALLOW}
+  - name: PR title/description format is enforced only against moveworks-emu/k8s-manifests
+    input:
+      principals: [hermes]
+      resources:
+        - create_k8s_manifests_good_title_and_body
+        - create_k8s_manifests_bad_title
+        - create_k8s_manifests_missing_body_link
+        - create_k8s_manifests_no_body_at_all
+        - update_k8s_manifests_untouched_title_body
+        - update_k8s_manifests_sets_bad_title
+        - update_k8s_manifests_sets_bad_body
+        - update_k8s_manifests_sets_good_body
+        - create_other_repo_bad_title_and_body
+        - list_pull_requests_k8s_manifests
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: create_k8s_manifests_good_title_and_body
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: create_k8s_manifests_bad_title
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_k8s_manifests_missing_body_link
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_k8s_manifests_no_body_at_all
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_k8s_manifests_untouched_title_body
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: update_k8s_manifests_sets_bad_title
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_k8s_manifests_sets_bad_body
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_k8s_manifests_sets_good_body
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: create_other_repo_bad_title_and_body
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: list_pull_requests_k8s_manifests
+        actions: {access: EFFECT_ALLOW}
+  - name: writes are only allowed on a PR the shim resolved as authored by this machine's
+      own GitHub user (githubUsername is jchristensen_movester, matching test-values.yaml);
+      calls with no prAuthor attr at all (reads, create_pull_request) are unaffected
+    input:
+      principals: [hermes]
+      resources:
+        - update_pr_own_author
+        - update_pr_other_author
+        - read_tool_no_author_attr
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: update_pr_own_author
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: update_pr_other_author
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: read_tool_no_author_attr
+        actions: {access: EFFECT_ALLOW}

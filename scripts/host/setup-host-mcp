@@ -7,14 +7,16 @@
 #   1. Homebrew packages: thv (ToolHive), ghostunnel, supervisor, rclone, terminal-notifier
 #   2. Python venv + deps: pip install -r host/mcp/requirements-host.txt
 #   3. ToolHive secrets provider + required API-key secrets (guidance)
-#   4. Final doctor check: vicegerent-mcp doctor
+#   4. Configure MCP servers: enable/skip each + set its secrets
+#   5. Final doctor check: vicegerent mcp doctor
+#   6. Link the CLI: symlink ~/.local/bin/vicegerent → this repo's ./vicegerent
 #
 # Flags:
-#   -y, --yes      auto-approve every step (non-interactive)
+#   -y, --yes      auto-approve prerequisite installs (configure stays interactive)
 #   -h, --help     show this help
 #
 # Prerequisites on the host Mac: Homebrew, a running kind cluster (for the
-# kubernetes MCP server) — see `./vicegerent cluster setup`.
+# kubernetes MCP server) — see `./vicegerent setup cluster`.
 
 set -euo pipefail
 
@@ -24,7 +26,7 @@ ASSUME_YES=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -y|--yes)    ASSUME_YES=1 ;;
-    -h|--help)   sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -138,26 +140,63 @@ else
   echo "     thv secret setup"
 fi
 
-echo
-echo "  MCP servers are OFF by default. Enable the ones you want and set their API"
-echo "  keys interactively with:"
-echo "     ./vicegerent mcp configure"
-echo "  (GitLab/Tavily/Firecrawl prompt for a key; Notion/Linear use OAuth — a browser"
-echo "  tab opens on first start and the token persists via the secrets provider.)"
+# ---------------------------------------------------------------------------
+# 4. Configure MCP servers (enable/skip each + set its secrets)
+# ---------------------------------------------------------------------------
+step "Configure MCP servers"
+if [[ "$ASSUME_YES" == "1" ]]; then
+  echo
+  echo "  Skipping interactive server configuration (-y/non-interactive run)."
+  echo "  Re-run './vicegerent setup mcp' without -y to enable servers and set keys."
+else
+  echo
+  echo "  MCP servers are OFF by default. Enable the ones you want and set their API"
+  echo "  keys now (GitLab/Tavily/Firecrawl prompt for a key; Notion/Linear use OAuth —"
+  echo "  a browser tab opens on first start and the token persists via the secrets"
+  echo "  provider). Re-run './vicegerent setup mcp' any time to change your selection."
+  echo
+  "$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" configure
+fi
 
 # ---------------------------------------------------------------------------
-# 4. Doctor check
+# 5. Doctor check
 # ---------------------------------------------------------------------------
 step "Doctor check"
 echo
 "$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" doctor || true
 
+# ---------------------------------------------------------------------------
+# 6. Link the vicegerent CLI onto PATH (~/.local/bin)
+# ---------------------------------------------------------------------------
+step "CLI symlink (~/.local/bin/vicegerent)"
+
+LINK_DIR="$HOME/.local/bin"
+LINK="$LINK_DIR/vicegerent"
+TARGET="$REPO_ROOT/vicegerent"
+if [[ -L "$LINK" && "$(readlink "$LINK")" == "$TARGET" ]]; then
+  info "vicegerent already linked → $TARGET"
+elif [[ -e "$LINK" && ! -L "$LINK" ]]; then
+  warn "$LINK exists and is not a symlink; leaving it untouched."
+else
+  echo "  Will link $LINK → $TARGET"
+  if confirm; then
+    mkdir -p "$LINK_DIR"
+    ln -sf "$TARGET" "$LINK"
+    info "Linked vicegerent → $TARGET (run 'vicegerent' from any directory)"
+    case ":$PATH:" in
+      *":$LINK_DIR:"*) ;;
+      *) warn "$LINK_DIR is not on your PATH — add it: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+    esac
+  else
+    warn "Skipped CLI symlink. Invoke it as ./vicegerent from the repo root."
+  fi
+fi
+
 echo
 echo "${G}${B}Host stack setup complete.${N}"
 echo
 echo "Next steps:"
-echo "  1. Provision host + cluster secrets:  ./vicegerent secrets setup platform"
+echo "  1. Provision host + cluster secrets:  ./vicegerent setup secrets platform"
 echo "     (writes host ghostunnel material to ~/.vicegerent/ghostunnel)"
-echo "  2. Ensure the kind cluster is up:      ./vicegerent cluster setup"
-echo "  3. Enable + set up the MCP servers:    ./vicegerent mcp configure"
-echo "  4. Bring up the stack:                 ./vicegerent start"
+echo "  2. Ensure the kind cluster is up:      ./vicegerent setup cluster"
+echo "  3. Bring up the stack:                 ./vicegerent start"

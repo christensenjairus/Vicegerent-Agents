@@ -6,7 +6,7 @@ A thin wrapper over the upstream `public.ecr.aws/awslabs-mcp/awslabs/aws-api-mcp
 
 `call_aws` is declared `async def`, but it executes the AWS call (`interpret_command`, and `execute_awscli_customization` for CLI customizations — both synchronous botocore/CLI work) **directly on the event loop**. A long call — e.g. `secretsmanager list-secrets` paginating a whole account (~10s, hundreds of KB) — blocks the loop, so the server can't answer *any* MCP protocol message (`initialize`, ping) until it returns.
 
-Upstream, that freezes the whole ToolHive vMCP. The vMCP re-aggregates every backend's capabilities on each `tools/list` under one shared deadline, with no per-backend timeout; a backend stuck mid-call misses the deadline, cancels the shared context, and every sibling's query fails — `no backends returned capabilities` — so one slow AWS call takes down every tool for every request. (The `vmcp-watchdog` is the defense-in-depth safety net for *any* such backend; this image fixes the aws backend at the source.)
+Upstream, that freezes the whole ToolHive vMCP. The vMCP re-aggregates every backend's capabilities on each `tools/list` under one shared deadline, with no per-backend timeout; a backend stuck mid-call misses the deadline, cancels the shared context, and every sibling's query fails — `no backends returned capabilities` — so one slow AWS call takes down every tool for every request. (This image fixes the aws backend at the source.)
 
 ## The fix
 

@@ -16,8 +16,12 @@ import (
 // evaluates it exactly like an explicit-assignee call. The deny *decision*
 // for a non-matching assignee itself is proven by defs/linear_test.yaml.
 
-const linearIssueResultDevopsAssignedToMe = `{"id":"PROJ-1","team":"HAHomelabs","assignee":"jchristensen@moveworks.ai"}`
-const linearIssueResultDevopsAssignedToOther = `{"id":"PROJ-2","team":"HAHomelabs","assignee":"someone@example.com"}`
+// Live-verified 2026-07-25 shape: get_issue returns the assignee as a bare
+// display-name string (with the stable UUID in a separate, here-ignored
+// assigneeId field), NOT an email -- the reason linearAllowedAssignees must
+// carry the display-name form for the live-resolution path to match.
+const linearIssueResultDevopsAssignedToMe = `{"id":"PROJ-1","team":"HAHomelabs","assignee":"Jairus Christensen","assigneeId":"f60cb294-8107-4cbc-b0e3-d4180352849b"}`
+const linearIssueResultDevopsAssignedToOther = `{"id":"PROJ-2","team":"HAHomelabs","assignee":"Someone Else","assigneeId":"00000000-0000-0000-0000-000000000000"}`
 const linearIssueResultDevopsUnassigned = `{"id":"PROJ-3","team":"HAHomelabs"}`
 
 func TestDeployedLinearMapping_UpdateWithNoAssigneeArgResolvesCurrentAssignee(t *testing.T) {
@@ -39,14 +43,14 @@ func TestDeployedLinearMapping_UpdateWithNoAssigneeArgResolvesCurrentAssignee(t 
 	if got, _ := d.gotAttr["teamId"].(string); got != "HAHomelabs" {
 		t.Errorf("Cerbos saw teamId=%q, want the resolved team HAHomelabs", got)
 	}
-	if got, _ := d.gotAttr["assignee"].(string); got != "jchristensen@moveworks.ai" {
-		t.Errorf("Cerbos saw assignee=%q, want the resolved assignee jchristensen@moveworks.ai", got)
+	if got, _ := d.gotAttr["assignee"].(string); got != "Jairus Christensen" {
+		t.Errorf("Cerbos saw assignee=%q, want the resolved assignee Jairus Christensen", got)
 	}
 }
 
 // TestDeployedLinearMapping_UpdateWithNoAssigneeArgOnOtherAssigneeResolvesAndForwards
 // proves the GATE's half of the contract: it resolves the issue's REAL
-// current assignee (someone@example.com, not the operator) and hands that
+// current assignee (Someone Else, not the operator) and hands that
 // exact value to Cerbos as assignee. The actual allow/deny decision is
 // Cerbos policy's job (defs/linear_test.yaml); stubDecider here always
 // allows, so this only confirms what the gate SENDS.
@@ -63,8 +67,8 @@ func TestDeployedLinearMapping_UpdateWithNoAssigneeArgOnOtherAssigneeResolvesAnd
 	if !isPass(res) {
 		t.Fatalf("expected pass: stubDecider always allows regardless of attr (real deny logic is Cerbos's own, tested in linear_test.yaml)")
 	}
-	if got, _ := d.gotAttr["assignee"].(string); got != "someone@example.com" {
-		t.Errorf("Cerbos saw assignee=%q, want the resolved (non-matching) assignee someone@example.com", got)
+	if got, _ := d.gotAttr["assignee"].(string); got != "Someone Else" {
+		t.Errorf("Cerbos saw assignee=%q, want the resolved (non-matching) assignee Someone Else", got)
 	}
 }
 
@@ -147,8 +151,8 @@ func TestDeployedLinearMapping_SaveCommentWithNoAssigneeSignalResolvesFromSameLo
 	if up.calls != 1 {
 		t.Errorf("expected exactly one linear_get_issue lookup (shared between team and assignee resolution), got %d", up.calls)
 	}
-	if got, _ := d.gotAttr["assignee"].(string); got != "jchristensen@moveworks.ai" {
-		t.Errorf("Cerbos saw assignee=%q, want the resolved assignee jchristensen@moveworks.ai", got)
+	if got, _ := d.gotAttr["assignee"].(string); got != "Jairus Christensen" {
+		t.Errorf("Cerbos saw assignee=%q, want the resolved assignee Jairus Christensen", got)
 	}
 	if got, _ := d.gotAttr["assigneeVerified"].(bool); got != true {
 		t.Errorf("expected assigneeVerified=true forwarded when the lookup resolved the assignee, got %v", d.gotAttr["assigneeVerified"])

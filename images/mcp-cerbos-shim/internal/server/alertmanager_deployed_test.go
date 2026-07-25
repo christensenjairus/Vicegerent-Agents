@@ -258,13 +258,12 @@ func TestDeployedAlertmanagerMapping_CreateSilenceForcesCreatedBy(t *testing.T) 
 		t.Fatalf("expected a mutated (force createdBy) result, got pass=%v deny=%v", isPass(res), isDeny(res))
 	}
 	_, args := decodeMutated(t, res)
-	// mapping.yaml is loaded raw here (no Flux postBuild.substituteFrom, which
-	// only runs at cluster reconcile time) -- the forced value is still the
-	// literal ${alertmanagerCreatedBy} token, not a real cluster-var value.
-	// That's still enough to prove the override happened: it must not be the
-	// caller-supplied value.
-	if args["createdBy"] != "${alertmanagerCreatedBy}" {
-		t.Errorf("forced arg createdBy = %v, want the literal ${alertmanagerCreatedBy} token (Flux substitutes this at reconcile time, not here)", args["createdBy"])
+	// The mapping is Helm-rendered here (deployedMapping renders the chart), so
+	// .Values.clusterVars.alertmanagerCreatedBy is substituted -- values.example.yaml
+	// sets it to "your-username". The force override must replace the caller's value
+	// with that resolved cluster-var identity.
+	if args["createdBy"] != "your-username" {
+		t.Errorf("forced arg createdBy = %v, want the resolved cluster-var your-username (not the caller-supplied value)", args["createdBy"])
 	}
 }
 

@@ -62,7 +62,7 @@ spec:
         - ports:
             - port: '8080'
               protocol: TCP
-    # Public-internet allowlist — set apexWildcardDomains/exactOnlyDomains in cluster-vars.yaml
+    # Public-internet allowlist — set apexWildcardDomains/exactOnlyDomains in values.yaml's egress: block
     # (drives scrub.py from the same source). httpbin.io is hardcoded: redaction-test target only.
     - toFQDNs:
         {{- range (splitList "," .Values.apexWildcardDomains) }}
@@ -89,7 +89,7 @@ spec:
               - method: GET
   # Explicit deny for private/link-local/loopback/CGNAT — defence-in-depth.
   # egressDeny takes precedence over egress allows, guarding against DNS rebinding
-  # and future accidental CIDR additions. internalAllowlistCIDRs (cluster-vars.yaml)
+  # and future accidental CIDR additions. internalAllowlistCIDRs (values.yaml egress:)
   # carves a machine-scoped except out of 10.0.0.0/8 below; empty by default.
   egressDeny:
     - toCIDRSet:

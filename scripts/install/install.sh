@@ -1,122 +1,177 @@
 #!/usr/bin/env bash
-# Idempotent bootstrap of the vicegerent platform onto a local Kind cluster.
+# Staged, idempotent (re-)install of the vicegerent platform onto a local Kind
+# cluster. Replaces the former `flux bootstrap`: the control plane (stage order,
+# chart coords, pinned versions, image tags) lives in stages/stages.yaml, and the
+# machine plane (clusterVars/agents/egress/models) in a gitignored values.yaml
+# copied from values.example.yaml. Every stage runs its actions in order and
+# health-gates (helm --wait / kubectl wait) before the next, so a `git pull` +
+# re-run delivers upgrades with no gaps.
 #
-# Runs `flux bootstrap git`. Secrets are provisioned separately and directly as
-# Kubernetes Secrets by setup-secrets-platform.sh / setup-secrets-agent.sh — run
-# those before (or right after) bootstrap so the workloads Flux reconciles have
-# the material they consume. `flux bootstrap git` is idempotent and re-applies
-# cleanly, so this script is safe to re-run.
+# Secrets are NOT created here — the setup scripts own them as Kubernetes Secrets.
+# The platform/agents stages pre-flight the Secrets their workloads block on and
+# fail fast with a pointer instead of a 10-minute --wait hang.
 #
-# Flags:
-#   -y, --yes           auto-approve every change (non-interactive)
-#   -h, --help          show this help
+# Usage: install.sh [flags]
+#   -y, --yes            auto-approve every prompt (non-interactive)
+#       --values <file>  machine plane values (default: <repo>/values.yaml)
+#       --stage <name>   run only this stage
+#       --from <name>    run this stage and every stage after it
+#   -h, --help           show this help
 #
-# Env overrides: KUBE_CONTEXT, REPO_URL, BRANCH, CLUSTER_PATH, PRIVATE_KEY_FILE
-# REPO_URL defaults to this checkout's 'origin' remote (normalized to an ssh://
-# URL, which Flux's SSH bootstrap requires), so a fork bootstraps against itself
-# without any override.
+# Env: RECREATE=1  add `helm --force-replace` (delete/recreate on immutable-field conflict)
+#      HELM_TIMEOUT  per-release --wait timeout (default 10m)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Flux SSH auth requires an ssh:// URL; convert SCP-style (git@host:path) and
-# https remotes to it, and leave an ssh:// URL untouched.
-normalize_ssh_url() {
-  local url="$1"
-  case "$url" in
-    ""|ssh://*) printf '%s' "$url" ;;
-    https://*)  printf 'ssh://git@%s' "${url#https://}" ;;
-    *@*:*)      printf 'ssh://%s' "$(printf '%s' "$url" | sed 's|:|/|')" ;;
-    *)          printf '%s' "$url" ;;
-  esac
-}
-
-KUBE_CONTEXT="${KUBE_CONTEXT:-kind-vicegerent}"
-REPO_URL="${REPO_URL:-$(normalize_ssh_url "$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)")}"
-BRANCH="${BRANCH:-main}"
-CLUSTER_PATH="${CLUSTER_PATH:-./clusters/personal}"
-PRIVATE_KEY_FILE="${PRIVATE_KEY_FILE:-$HOME/.ssh/id_rsa}"
-
+VALUES_FILE="${VALUES_FILE:-$REPO_ROOT/values.yaml}"
+DEFAULTS_FILE="${DEFAULTS_FILE:-$REPO_ROOT/values.defaults.yaml}"
+STAGES_FILE="$REPO_ROOT/stages/stages.yaml"
+HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
+RECREATE="${RECREATE:-0}"
 ASSUME_YES=0
+ONLY_STAGE=""
+FROM_STAGE=""
+
+# Scratch dir for lib-helper temp files; removed whole on EXIT. A single dir the
+# parent owns survives the $(...) subshells those helpers run in -- an array
+# appended to inside a subshell would never reach this scope -- and never leaks.
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+LOC=()
+VALS=()
+
+# shellcheck source=../lib/kube-context.sh
+source "$REPO_ROOT/scripts/lib/kube-context.sh"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/helm.sh
+source "$SCRIPT_DIR/lib/helm.sh"
+# shellcheck source=lib/kubectl.sh
+source "$SCRIPT_DIR/lib/kubectl.sh"
+# shellcheck source=lib/reconcile.sh
+source "$SCRIPT_DIR/lib/reconcile.sh"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -y|--yes) ASSUME_YES=1 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
-    *) echo "unknown argument: $1" >&2; exit 2 ;;
+    -y|--yes)   ASSUME_YES=1 ;;
+    --values)   VALUES_FILE="$2"; shift ;;
+    --stage)    ONLY_STAGE="$2"; shift ;;
+    --from)     FROM_STAGE="$2"; shift ;;
+    -h|--help)  sed -n '2,22p' "$0"; exit 0 ;;
+    *) die "unknown argument: $1" ;;
   esac
   shift
 done
 
-if [[ -t 1 ]]; then
-  B=$'\033[1m'; G=$'\033[0;32m'; Y=$'\033[0;33m'; R=$'\033[0;31m'; N=$'\033[0m'
+if [[ "$RECREATE" == "1" ]]; then
+  HELM_UPGRADE_FLAGS=(--wait --force-replace)
 else
-  B=""; G=""; Y=""; R=""; N=""
+  HELM_UPGRADE_FLAGS=(--wait --rollback-on-failure)
 fi
-info() { echo "${G}•${N} $*"; }
-step() { echo; echo "${B}== $* ==${N}"; }
-warn() { echo "${Y}!${N} $*" >&2; }
-die()  { echo "${R}ERROR:${N} $*" >&2; exit 1; }
-
-confirm() {
-  echo
-  echo "${Y}CHANGE:${N} $*"
-  if [[ "$ASSUME_YES" == "1" ]]; then
-    echo "  (auto-approved via --yes)"
-    return 0
-  fi
-  local ans
-  read -r -p "  Proceed? [y/N] " ans
-  [[ "$ans" =~ ^[Yy]$ ]]
-}
-
-kc() { kubectl --context "$KUBE_CONTEXT" "$@"; }
+HELM_UPGRADE_FLAGS+=(--hide-notes)
 
 # --- prerequisites ---------------------------------------------------------
 step "Prerequisites"
-for cmd in kubectl flux; do
+for cmd in kubectl helm yq git; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed or not on PATH"
 done
-kubectl config get-contexts "$KUBE_CONTEXT" >/dev/null 2>&1 \
-  || die "kubectl context '$KUBE_CONTEXT' does not exist"
-current_ctx="$(kubectl config current-context 2>/dev/null || true)"
-[[ "$current_ctx" == "$KUBE_CONTEXT" ]] \
-  || die "current kubectl context is '${current_ctx:-<none>}', expected '$KUBE_CONTEXT' (run: kubectl config use-context $KUBE_CONTEXT)"
-[[ -n "$REPO_URL" ]] \
-  || die "REPO_URL not set and '$REPO_ROOT' has no 'origin' git remote; set REPO_URL to your fork's SSH URL"
-[[ -f "$PRIVATE_KEY_FILE" ]] || die "private key not found: $PRIVATE_KEY_FILE"
-info "All required tools present; context '$KUBE_CONTEXT' exists."
-
-echo
-echo "Target context: $KUBE_CONTEXT"
-echo "Repository:     $REPO_URL"
-echo "Branch:         $BRANCH"
-echo "Cluster path:   $CLUSTER_PATH"
-echo "Private key:    $PRIVATE_KEY_FILE"
-kc cluster-info >/dev/null
-kc get nodes -o wide
-
-# --- Flux bootstrap --------------------------------------------------------
-step "Flux bootstrap"
-if kc get namespace flux-system >/dev/null 2>&1; then
-  info "flux-system namespace exists; re-running bootstrap to reconcile (idempotent)."
-else
-  confirm "Bootstrap Flux onto context '$KUBE_CONTEXT' against $REPO_URL ($BRANCH, $CLUSTER_PATH)." \
-    || die "Flux bootstrap declined; aborting."
+# The installer uses Helm 4 flags (--rollback-on-failure, --force-replace,
+# --hide-notes); a positively-detected Helm 3 fails fast instead of erroring
+# mid-stage on an "unknown flag". A parse hiccup falls through rather than block.
+helm_major="$(helm version --short 2>/dev/null | sed -E 's/^v?([0-9]+).*/\1/')"
+if [[ "$helm_major" =~ ^[0-9]+$ ]] && [[ "$helm_major" -lt 4 ]]; then
+  die "Helm 4+ required (found Helm ${helm_major}); upgrade helm"
 fi
+require_kind_context
+[[ -f "$STAGES_FILE" ]] || die "stages file not found: $STAGES_FILE"
+[[ -f "$DEFAULTS_FILE" ]] || die "defaults file not found: $DEFAULTS_FILE"
+[[ -f "$VALUES_FILE" ]] \
+  || die "machine values not found: $VALUES_FILE — copy values.example.yaml to values.yaml and edit it"
+kc cluster-info >/dev/null || die "cannot reach cluster on context '$KUBE_CONTEXT'"
+info "Tools present; context '$KUBE_CONTEXT' reachable; using $VALUES_FILE"
 
-flux bootstrap git \
-  --url="$REPO_URL" \
-  --branch="$BRANCH" \
-  --path="$CLUSTER_PATH" \
-  --private-key-file="$PRIVATE_KEY_FILE" \
-  --context="$KUBE_CONTEXT"
+# --- dispatch one action ---------------------------------------------------
+run_action() {
+  local a="$1"
+  local type name
+  type="$(yq "$a.type" "$STAGES_FILE")"
+  name="$(yq "$a.name" "$STAGES_FILE")"
+  case "$type" in
+    helm)
+      helm_remote "$name" \
+        "$(yq "$a.repo" "$STAGES_FILE")" \
+        "$(yq "$a.chart" "$STAGES_FILE")" \
+        "$(yq "$a.version" "$STAGES_FILE")" \
+        "$(yq "$a.namespace" "$STAGES_FILE")" \
+        "$(yq "$a.values // \"\"" "$STAGES_FILE")" \
+        "$(yq "$a.crds // false" "$STAGES_FILE")"
+      ;;
+    helm-oci)
+      helm_oci "$name" \
+        "$(yq "$a.chart" "$STAGES_FILE")" \
+        "$(yq "$a.version" "$STAGES_FILE")" \
+        "$(yq "$a.namespace" "$STAGES_FILE")" \
+        "$(yq "$a.values // \"\"" "$STAGES_FILE")" \
+        "$(yq "$a.crds // false" "$STAGES_FILE")"
+      ;;
+    helm-git)
+      helm_git "$name" \
+        "$(yq "$a.gitRepo" "$STAGES_FILE")" \
+        "$(yq "$a.ref" "$STAGES_FILE")" \
+        "$(yq "$a.chartPath" "$STAGES_FILE")" \
+        "$(yq "$a.namespace" "$STAGES_FILE")" \
+        "$(yq "$a.values // \"\"" "$STAGES_FILE")" \
+        "$(yq "$a.crds // false" "$STAGES_FILE")"
+      ;;
+    local)
+      helm_local "$name" \
+        "$(yq "$a.namespace" "$STAGES_FILE")" \
+        "$(yq "$a.machineValues // \"\"" "$STAGES_FILE")" \
+        "$(yq "$a.forEach // \"\"" "$STAGES_FILE")"
+      ;;
+    kubectl-k)
+      kubectl_k "$name" \
+        "$(yq "$a.path" "$STAGES_FILE")" \
+        "$(yq "$a.gate // \"\"" "$STAGES_FILE")" \
+        "$(yq "$a.waitResource // \"\"" "$STAGES_FILE")" \
+        "$(yq "$a.waitNamespace // \"\"" "$STAGES_FILE")"
+      ;;
+    *) die "unknown action type '$type' for action '$name'" ;;
+  esac
+}
+
+# --- stage loop ------------------------------------------------------------
+stage_count="$(yq '.stages | length' "$STAGES_FILE")"
+reached=0
+[[ -z "$FROM_STAGE" ]] && reached=1
+
+for ((si = 0; si < stage_count; si++)); do
+  sname="$(yq ".stages[$si].name" "$STAGES_FILE")"
+
+  if [[ -n "$ONLY_STAGE" && "$sname" != "$ONLY_STAGE" ]]; then continue; fi
+  if [[ "$reached" == 0 ]]; then
+    [[ "$sname" == "$FROM_STAGE" ]] && reached=1 || continue
+  fi
+
+  step "STAGE: $sname"
+  case "$sname" in
+    platform) preflight_platform_secrets ;;
+    agents)   preflight_agent_secrets ;;
+  esac
+
+  action_count="$(yq ".stages[$si].actions | length" "$STAGES_FILE")"
+  for ((ai = 0; ai < action_count; ai++)); do
+    run_action ".stages[$si].actions[$ai]"
+  done
+
+  [[ "$sname" == "agents" ]] && reconcile_agents
+done
 
 echo
-info "${G}Bootstrap complete.${N}"
-warn "If you have not already, provision secrets so workloads can start:"
-echo "  ./vicegerent secrets setup platform"
-echo "  ./vicegerent secrets setup agent <name>"
-echo "Check reconciliation with:"
-echo "  flux --context $KUBE_CONTEXT get all -A"
+info "${G}Install complete.${N}"
+echo "Inspect with:"
+echo "  helm --kube-context $KUBE_CONTEXT list -A"
+echo "  kubectl --context $KUBE_CONTEXT get pods -A"

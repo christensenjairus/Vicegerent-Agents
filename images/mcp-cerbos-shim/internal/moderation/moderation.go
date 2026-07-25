@@ -13,7 +13,7 @@ import (
 )
 
 // DefaultModerationURL routes through the existing openai AgentgatewayBackend
-// (apps/base/models/openai/backend.yaml) -- no new secret or egress rule needed.
+// (charts/platform/templates/models/openai.yaml) -- no new secret or egress rule needed.
 const DefaultModerationURL = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1/moderations"
 
 const DefaultModel = "omni-moderation-latest"

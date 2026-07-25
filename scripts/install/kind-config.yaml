@@ -7,9 +7,9 @@ networking:
   podSubnet: 10.244.0.0/16
 nodes:
   - role: control-plane
-    # Agent dashboard NodePort pool published to the host loopback. Each agent picks
-    # an unused port from 30119-30128 (agents/<name>/values.yaml dashboard.nodePort);
-    # the dashboard is then at http://127.0.0.1:<nodePort>/. hermes uses 30119.
+    # Agent dashboard NodePort pool published to the host loopback. Each agent's port
+    # is 30119 + its `dashboard.index` (0-9) in the values.yaml agents[] list; the
+    # dashboard is then at http://127.0.0.1:<nodePort>/. hermes uses index 0 -> 30119.
     # extraPortMappings are creation-time only, so this pool is fixed at cluster setup —
     # to run more than 10 agents, widen the range and recreate the cluster.
     extraPortMappings:

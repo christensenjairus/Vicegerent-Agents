@@ -4,14 +4,12 @@
 scrub.py is embedded as a ConfigMap block-scalar inside a Helm template
 (charts/egress-proxy/templates/addon-configmap.yaml), not a normal importable
 Python module, so this test renders the ConfigMap with `helm template` (same path
-scripts/validate.sh uses), stubs the `mitmproxy` import, exec()s the rendered
-source, and asserts against the REAL compiled REDACT_PATTERNS — not a hand-copied
-duplicate that could silently drift from what ships.
-
-It covers the regex layer only. The gitleaks second layer lives in the Go sidecar
-(images/egress-gitleaks-sidecar) and is unit-tested there with `go test`; here we
-monkeypatch _redact_gitleaks to a no-op so _redact's two-layer plumbing (and its
-fail-open contract when the sidecar is absent) is exercised without a live sidecar.
+scripts/validate.sh uses, including --set-file secretPatterns=…), stubs the
+`mitmproxy` import, exec()s the rendered source, and asserts against the REAL
+compiled REDACT_PATTERNS — not a hand-copied duplicate that could silently drift
+from what ships. Those patterns are injected from the single canonical source
+images/mcp-cerbos-shim/internal/server/secret-patterns.json (the same file the Go
+shim embeds via //go:embed), so this exercises exactly the shapes both runtimes match.
 
 Fake/synthetic fixtures only, built by concatenation so no literal credential
 string sits verbatim in this file (keeps detect-secrets from flagging the test).
@@ -29,8 +27,10 @@ import types
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHART = os.path.join(REPO, "charts", "egress-proxy")
-VALUES = os.environ.get("EGRESS_VALUES", os.path.join(REPO, "apps", "work", "egress-proxy", "values.yaml"))
-VARS = os.environ.get("CLUSTER_VARS", os.path.join(REPO, "clusters", "work", "cluster-vars.yaml"))
+EXAMPLE_VALUES = os.path.join(REPO, "values.example.yaml")
+EGRESS_VALUES = os.environ.get("EGRESS_VALUES")
+SECRET_PATTERNS = os.path.join(
+    REPO, "images", "mcp-cerbos-shim", "internal", "server", "secret-patterns.json")
 
 R = "<masked>"
 
@@ -43,31 +43,30 @@ def _need(tool):
 
 
 def render_scrub_py():
-    """Resolve Flux ${vars} into the overlay values, helm-template the ConfigMap,
-    and return the scrub.py source string."""
+    """helm-template the egress-proxy ConfigMap against the machine-plane egress
+    slice and return the scrub.py source string. The chart reads its values
+    directly now (no Flux ${var} substitution): EGRESS_VALUES is the already
+    re-rooted `.egress` subtree; when unset we slice it from values.example.yaml."""
     _need("helm")
     _need("yq")
-    import json
-    import re
 
-    data = json.loads(subprocess.check_output(["yq", "-o=json", ".data", VARS]))
-    src = open(VALUES).read()
-    for k, v in data.items():
-        src = src.replace("${" + k + "}", v)
-    left = sorted(set(re.findall(r"\$\{[A-Za-z0-9_]+\}", src)))
-    if left:
-        print(f"ERROR - unresolved cluster-vars tokens in values: {left}", file=sys.stderr)
-        sys.exit(1)
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
-        f.write(src)
-        resolved = f.name
+    values = EGRESS_VALUES
+    tmp = None
+    if not values:
+        egress = subprocess.check_output(["yq", ".egress", EXAMPLE_VALUES])
+        with tempfile.NamedTemporaryFile("wb", suffix=".yaml", delete=False) as f:
+            f.write(egress)
+            tmp = f.name
+        values = tmp
     try:
         rendered = subprocess.check_output(
-            ["helm", "template", "egress-proxy", CHART, "-f", resolved,
+            ["helm", "template", "egress-proxy", CHART, "-f", values,
+             "--set-file", "secretPatterns=" + SECRET_PATTERNS,
              "--show-only", "templates/addon-configmap.yaml"]
         )
     finally:
-        os.unlink(resolved)
+        if tmp:
+            os.unlink(tmp)
     scrub = subprocess.run(
         ["yq", '.data."scrub.py"'], input=rendered, stdout=subprocess.PIPE, check=True
     ).stdout.decode()
@@ -90,7 +89,6 @@ def load_scrub(source):
 
 # Fake, secret-SHAPED fixtures (built by concatenation). pragma: allowlist secret
 def fixtures():
-    from re import compile as _c  # noqa: F401 (kept parallel to scrub.py imports)
     return [
         ("ssh_private_key",
          "-----BEGIN " + "OPENSSH " + "PRIVATE" + " KEY-----\n"  # pragma: allowlist secret
@@ -218,23 +216,22 @@ def main():
         else:
             print(f"  ok   PII scoped-out: {label}")
 
-    # 3. Two-layer _redact must FAIL OPEN when the gitleaks sidecar is absent.
-    #    No sidecar is running in this test, so calling the shipped _redact hits a
-    #    connection-refused on 127.0.0.1:8081; _redact_gitleaks must swallow it and
-    #    _redact must still return the regex layer's redaction (secret gone, count
-    #    >= 1, no exception) rather than raising or blocking.
+    # 3. _redact runs the single regex layer and returns (text, count, breakdown).
+    #    Assert a known secret is redacted, counted, and named in the breakdown.
+    #    scrub.py has no second (gitleaks) layer and no network hop anymore, so there
+    #    is no fail-open contract left to exercise — just the one-layer path.
     secret = "AKIA" + "Q" * 16  # pragma: allowlist secret
     try:
-        out, n, _bd = ns["_redact"]("key=" + secret)
+        out, n, bd = ns["_redact"]("key=" + secret)
     except Exception as e:  # pragma: no cover
-        print(f"  FAIL _redact raised instead of failing open: {e}")
+        print(f"  FAIL _redact raised: {e}")
         failures += 1
     else:
-        if n < 1 or secret in out:
-            print(f"  FAIL _redact fail-open regression: count={n} out={out!r}")
+        if n < 1 or secret in out or not bd:
+            print(f"  FAIL _redact single-layer regression: count={n} out={out!r} bd={bd!r}")
             failures += 1
         else:
-            print("  ok   _redact fails open to regex-only when sidecar unreachable")
+            print("  ok   _redact redacts via the single regex layer (count + breakdown)")
 
     # 4. MCP tool-call/response correlation (_mcp_tool_calls / _mcp_response_entries /
     #    _mcp_tool_responses), exercised against fake flow stand-ins (mcp_flow above) --
@@ -362,7 +359,7 @@ def main():
     if failures:
         print(f"\nFAIL: {failures} scrub-pattern assertion(s) failed", file=sys.stderr)
         sys.exit(1)
-    print("\nPASS: scrub.py regex registry + fail-open plumbing verified")
+    print("\nPASS: scrub.py regex registry + MCP call/response correlation verified")
 
 
 if __name__ == "__main__":

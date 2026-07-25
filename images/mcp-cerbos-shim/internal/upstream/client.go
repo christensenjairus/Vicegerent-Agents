@@ -8,18 +8,37 @@
 //
 // RECURSION-SAFETY NOTE (read before mapping notion_notion-fetch in Cerbos):
 // every lookup this package makes is itself a tools/call that re-enters the
-// shim's own CheckRequest gate exactly once (agentgateway routes it back
-// through the shim before forwarding to vMCP). Today notion_notion-fetch is
-// completely unmapped in mapping.yaml (falls through to defaultAction:
-// allow), so that re-entry passes straight through and there is no loop.
-// If a future Cerbos policy or mapping.yaml entry ever adds a deny rule (or
-// any check requiring another lookup) for notion_notion-fetch, this call
-// could start getting denied, silently breaking every ancestry check that
-// depends on it (they fail closed -- see PageIsUnderAncestor -- so the failure
-// mode is "always deny", not silent-allow, but it will look like an
-// unrelated regression). Keep notion_notion-fetch unmapped, or if it ever
-// needs a policy, make sure this package's calls are exempted or the
-// ancestry check is redesigned.
+// shim's own CheckRequest AND CheckResponse gates exactly once (agentgateway
+// routes it back through the shim before forwarding to vMCP, and scrubs the
+// result on the way back).
+//
+// CheckRequest leg: today notion_notion-fetch is completely unmapped in
+// mapping.yaml (falls through to defaultAction: allow), so that re-entry
+// passes straight through Cerbos and there is no loop. If a future Cerbos
+// policy or mapping.yaml entry ever adds a deny rule (or any check requiring
+// another lookup) for notion_notion-fetch, this call could start getting
+// denied, silently breaking every ancestry check that depends on it (they
+// fail closed -- see PageIsUnderAncestor -- so the failure mode is "always
+// deny", not silent-allow, but it will look like an unrelated regression).
+// Keep notion_notion-fetch unmapped, or if it ever needs a policy, make sure
+// this package's calls are exempted or the ancestry check is redesigned.
+//
+// CheckResponse leg: the prompt-injection gate (server.checkPromptInjection)
+// runs on the RESULT of this package's own lookups too. A lookup that fetches
+// attacker-controlled content (e.g. a Notion page carrying a prompt injection,
+// whose author this package is resolving) would otherwise be DENIED by the
+// shim's own response gate -- the lookup errors, the ownership gate fails
+// closed, and the agent's original call is denied with a misleading reason.
+// To break that loop, this package targets a DEDICATED request-only route
+// (DefaultVMCPURL -> the :81 vmcp-internal backend, whose AgentgatewayPolicy
+// runs CheckRequest but NOT CheckResponse), so the prompt-injection gate never
+// runs on the shim's own lookups. Two independent locks keep agents off that
+// route: the :81 listener is restricted to the shim pod by a CiliumNetworkPolicy
+// (network/port), and CheckRequest denies any caller on the vmcp-internal
+// backend that doesn't present the shim's secret self-token in the
+// SelfHeaderName header (app/backend). The token lives in a Secret only the
+// shim pod can read, so agents cannot forge it. See server.go's
+// isInternalBackend / isSelfRequest and README "Re-Entrant Lookup Path".
 package upstream
 
 import (
@@ -32,11 +51,23 @@ import (
 	"strings"
 )
 
-// DefaultVMCPURL is the in-cluster agentgateway route to vMCP. Confirmed
-// live-reachable over plain HTTP (no mTLS) -- the mTLS hop (ghostunnel) only
-// covers agentgateway's own egress to the host vMCP, not this in-cluster leg.
-// Same URL Hermes's own hermes-config vmcp MCP client uses.
-const DefaultVMCPURL = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp"
+// SelfHeaderName is the HTTP header the shim's own MCP client sets (to its
+// secret self-token) on every re-entrant lookup, so the shim's CheckRequest
+// gate can recognize its own traffic on the vmcp-internal backend and admit
+// it (denying any tokenless caller on that backend). server.go verifies the
+// value constant-time against the same token. Exported so the server package
+// references one source of truth.
+const SelfHeaderName = "X-Vicegerent-Shim-Self"
+
+// DefaultVMCPURL is the in-cluster agentgateway route this package uses for its
+// re-entrant lookups: the DEDICATED :81 "internal" listener and vmcp-internal
+// route, NOT the agent-facing :80 /mcp/vmcp route. The vmcp-internal
+// AgentgatewayPolicy runs CheckRequest only (no CheckResponse), so the
+// prompt-injection gate never fires on the shim's own lookups (the circular
+// dependency this whole path breaks -- see the package RECURSION-SAFETY NOTE).
+// Reachable over plain HTTP (no mTLS) -- the mTLS hop (ghostunnel) only covers
+// agentgateway's own egress to the host vMCP, not this in-cluster leg.
+const DefaultVMCPURL = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local:81/mcp/vmcp-internal"
 
 // mcpProtocolVersion is the MCP spec date this client speaks. Sent in
 // initialize and echoed in the MCP-Protocol-Version header on every
@@ -51,17 +82,38 @@ const mcpProtocolVersion = "2025-06-18"
 type Client struct {
 	url        string
 	httpClient *http.Client
+	selfToken  string
+}
+
+// Option configures a Client. Kept minimal (one option today) to match the
+// server package's functional-option idiom and avoid churning the existing
+// New(url, nil) call sites when more knobs are added.
+type Option func(*Client)
+
+// WithSelfToken makes the Client stamp SelfHeaderName: <token> on every
+// request it sends, so the shim's CheckRequest gate can recognize its own
+// re-entrant lookups on the vmcp-internal backend and admit them (see the
+// package RECURSION-SAFETY NOTE). Empty token omits the header; the internal
+// backend's CheckRequest then falls back to admitting on the CNP network lock
+// alone (server.go leaves the token check inert when it too is unconfigured),
+// so lookups still work in a dev deploy without the Secret -- fail-safe.
+func WithSelfToken(token string) Option {
+	return func(c *Client) { c.selfToken = token }
 }
 
 // New constructs a Client. httpClient may be nil to use a default
 // *http.Client{} (plain HTTP, no TLS config -- see DefaultVMCPURL doc).
 // Per-call timeouts are enforced via context, not a client-wide Timeout, so
 // callers control the budget explicitly (see CallTool).
-func New(url string, httpClient *http.Client) *Client {
+func New(url string, httpClient *http.Client, opts ...Option) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
-	return &Client{url: url, httpClient: httpClient}
+	c := &Client{url: url, httpClient: httpClient}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // jsonrpcRequest and jsonrpcResponse are the minimal JSON-RPC 2.0 envelope
@@ -221,6 +273,22 @@ func (c *Client) doRPC(ctx context.Context, sessionID string, req jsonrpcRequest
 	return resp, err
 }
 
+// setHeaders applies the streamable-HTTP transport headers every request
+// this client sends needs, plus SelfHeaderName when a self-token is
+// configured (WithSelfToken) so the shim recognizes its own re-entrant
+// lookups. Shared by postJSONRPC and post so the two stay in lockstep.
+func (c *Client) setHeaders(req *http.Request, sessionID string) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("MCP-Protocol-Version", mcpProtocolVersion)
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	if c.selfToken != "" {
+		req.Header.Set(SelfHeaderName, c.selfToken)
+	}
+}
+
 // postJSONRPC marshals req, POSTs it, and parses the (possibly
 // session-establishing) response. Returns the session id from the
 // Mcp-Session-Id response header, if any.
@@ -234,12 +302,7 @@ func (c *Client) postJSONRPC(ctx context.Context, sessionID string, req jsonrpcR
 	if err != nil {
 		return "", nil, fmt.Errorf("build request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-	httpReq.Header.Set("MCP-Protocol-Version", mcpProtocolVersion)
-	if sessionID != "" {
-		httpReq.Header.Set("Mcp-Session-Id", sessionID)
-	}
+	c.setHeaders(httpReq, sessionID)
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -278,12 +341,7 @@ func (c *Client) post(ctx context.Context, sessionID string, body []byte) error 
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-	httpReq.Header.Set("MCP-Protocol-Version", mcpProtocolVersion)
-	if sessionID != "" {
-		httpReq.Header.Set("Mcp-Session-Id", sessionID)
-	}
+	c.setHeaders(httpReq, sessionID)
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {

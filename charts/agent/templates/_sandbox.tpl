@@ -1,11 +1,10 @@
 {{- define "vicegerent-agent.sandbox" -}}
-apiVersion: agents.x-k8s.io/v1alpha1
+apiVersion: agents.x-k8s.io/v1beta1
 kind: Sandbox
 metadata:
   name: {{ include "vicegerent-agent.name" . }}
   namespace: agent-sandbox
   annotations:
-    kustomize.toolkit.fluxcd.io/force: Disabled
     helm.sh/resource-policy: keep
 spec:
   podTemplate:
@@ -398,13 +397,21 @@ spec:
             - name: ZAI_BASE_URL
               value: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/zai/api/paas/v4
 {{- end }}
-            # TODO: haiku is overkill for mnemosyne consolidation; replace with a cheap OpenAI model once org tokens are available.
+{{- $mnemProvider := .Values.mnemosyne.provider -}}
+{{- if not (has $mnemProvider (list "anthropic" "openai" "deepseek" "zai")) }}{{- fail (printf "mnemosyne.provider %q must be one of anthropic/openai/deepseek/zai" $mnemProvider) -}}{{- end -}}
+{{- $gw := "http://agentgateway-proxy.agentgateway-system.svc.cluster.local" -}}
+{{- $mnemUrl := "" -}}
+{{- if eq $mnemProvider "anthropic" }}{{- $mnemUrl = printf "%s/mnemosyne-anthropic/v1" $gw -}}
+{{- else if eq $mnemProvider "openai" }}{{- $mnemUrl = printf "%s/openai/v1" $gw -}}
+{{- else if eq $mnemProvider "deepseek" }}{{- $mnemUrl = printf "%s/deepseek/v1" $gw -}}
+{{- else if eq $mnemProvider "zai" }}{{- $mnemUrl = printf "%s/zai/api/paas/v4" $gw -}}
+{{- end }}
             - name: MNEMOSYNE_LLM_ENABLED
               value: 'true'
             - name: MNEMOSYNE_LLM_BASE_URL
-              value: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/haiku-oai/v1
+              value: {{ $mnemUrl }}
             - name: MNEMOSYNE_LLM_MODEL
-              value: claude-haiku-4-5
+              value: {{ index .Values.providers $mnemProvider "mnemosyneModel" }}
             - name: MNEMOSYNE_LLM_API_KEY
               value: unused
             - name: HF_HUB_OFFLINE

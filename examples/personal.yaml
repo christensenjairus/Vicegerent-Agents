@@ -1,0 +1,83 @@
+---
+# Real-world machine values, deltas only -- see values.defaults.yaml for the full
+# annotated menu of every setting and its default. The installer layers that file
+# under this one, so only the overrides for this machine appear here.
+clusterVars:
+  githubAllowedRepos:
+    - christensenjairus/vicegerent-agents
+    - christensenjairus/clustercreator
+  githubUsername: christensenjairus
+  jiraAllowedProjects: [CHANGE]
+  linearAllowedTeams:
+    - 91f312b9-73e9-45ea-8b80-4d3a1ef7aff9
+    - HAHomelabs
+    - HAH
+  grafanaDeniedDatasourceUids: [fess5o6x6evb4b]
+  grafanaDeniedDatasourceNames: [dev-opensearch-datasource]
+  notionScratchpadPageId: 393de8859710809c9f5ec57a91d2c81a
+  notionAllowedParentPageIds: [1ccde885971080989baffe615ee5922b]
+  notionUserId: 80ef9a06-7ab7-4479-b971-effdd3aa247c
+  alertmanagerMaxSilenceSeconds: '1209600'
+  alertmanagerCreatedBy: jchristensen
+agents:
+  - name: hermes
+    obsidian:
+      vaultPath: /workspace/knowledge-vault
+    git:
+      userName: felix
+      userEmail: felix@hahomelabs.com
+    providers:
+      deepseek:
+        enabled: true
+      zai:
+        enabled: true
+    networkAllowlist:
+      cnameChainedFQDN: gitlab.hahomelabs.com
+      cnameChain: uw1-ddns.hahomelabs.com,uw1-hahomelabs.ddns.net
+      slackFQDNs:
+        - slack.com
+        - wss-primary.slack.com
+        - wss-backup.slack.com
+        - files.slack.com
+      edgeTtsFQDNs: [speech.platform.bing.com]
+    config: |-
+      model:
+        provider: anthropic
+      agent:
+        system_prompt: You are a technical expert. Provide detailed, accurate technical information.
+        disabled_toolsets:
+          - computer_use
+          - browser
+          - image_gen
+      tts:
+        provider: edge
+    soul: |-
+      # Personality
+      You are a pragmatic senior engineer with strong taste.
+      You optimize for truth, clarity, and usefulness over politeness theater. You may occasionally swear colorfully when frustrated.
+
+      ## Style
+      - Be direct without being cold
+      - Prefer substance over filler
+      - Push back when something is a bad idea
+      - Admit uncertainty plainly
+      - Keep explanations compact unless depth is useful
+
+      ## What to avoid
+      - Sycophancy
+      - Hype language
+      - Repeating the user's framing if it's wrong
+      - Overexplaining obvious things
+
+      ## Technical posture
+      - Prefer simple systems over clever systems
+      - Care about operational reality, not idealized architecture
+      - Treat edge cases as part of the design, not cleanup
+
+      ## Tools
+      - You have live MCP tools via the vMCP (kubernetes, plus whatever the operator enabled: gitlab, tavily, firecrawl, notion, linear, ...)
+      - When a task needs external data or a real action, search your available tools for the right one and use it
+      - Don't guess, hand-wave, or give up when a tool could get the real answer
+egress:
+  apexWildcardDomains: github.com,githubusercontent.com
+  exactOnlyDomains: pypi.org,files.pythonhosted.org,proxy.golang.org,sum.golang.org,storage.googleapis.com

@@ -10,10 +10,10 @@ import (
 )
 
 // DefaultJudgeURL routes through the existing openai AgentgatewayBackend
-// (apps/base/models/openai/backend.yaml), same reused route as
+// (charts/platform/templates/models/openai.yaml), same reused route as
 // internal/moderation -- no new secret or egress rule needed. The backend's
 // /v1/chat/completions path is proxied to OpenAI's Completions API (see
-// backend.yaml's `ai.routes` map), unlike /v1/moderations which only
+// that backend's `ai.routes` map), unlike /v1/moderations which only
 // supports the Moderations endpoint shape -- a yes/no injection judgment
 // needs a chat-completion-style call, not a moderation-category call.
 const DefaultJudgeURL = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1/chat/completions"

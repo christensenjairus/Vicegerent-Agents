@@ -1,13 +1,18 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	config "github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/internal"
 	"github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/internal/eval"
+	"gopkg.in/yaml.v3"
 )
 
 // These tests run the SHIPPED mapping (not a fixture) through the request path,
@@ -16,17 +21,84 @@ import (
 // tool call into the grafana_datasource resource Cerbos denies for OpenSearch;
 // the deny *decision* itself is proven by defs/grafana_test.yaml.
 
-func deployedMapping(t *testing.T) *config.Mapping {
-	t.Helper()
-	p := filepath.Join("..", "..", "..", "..", "infrastructure", "controllers", "mcp-cerbos-shim", "mapping.yaml")
-	if _, err := os.Stat(p); err != nil {
-		t.Skipf("deployed mapping not reachable from test dir: %v", err)
+// deployedResult is the cached outcome of rendering the shim's mapping ConfigMap
+// from charts/mcp-cerbos-shim. Exactly one of {mapping, skip, err} is set.
+type deployedResult struct {
+	mapping *config.Mapping
+	skip    string
+	err     error
+}
+
+// loadDeployedMapping renders the chart once for the whole package (~71 callers).
+// The mapping now lives at charts/mcp-cerbos-shim/files/mapping.yaml as a Helm
+// template ({{ ... }}), so it is only loadable after rendering — we mirror
+// scripts/validate.sh's invocation and read the ConfigMap's mapping.yaml key.
+var loadDeployedMapping = sync.OnceValue(renderDeployedMapping)
+
+func renderDeployedMapping() deployedResult {
+	// Skip (not fail) only where Helm genuinely can't run: a machine without
+	// helm, or a bare checkout missing the chart. A render/parse error is a real
+	// failure and must surface loudly.
+	if _, err := exec.LookPath("helm"); err != nil {
+		return deployedResult{skip: "helm not on PATH"}
+	}
+	root, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
+	if err != nil {
+		return deployedResult{err: fmt.Errorf("resolve repo root: %w", err)}
+	}
+	chart := filepath.Join(root, "charts", "mcp-cerbos-shim")
+	if _, err := os.Stat(chart); err != nil {
+		return deployedResult{skip: fmt.Sprintf("chart %s not present: %v", chart, err)}
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("helm", "template", "mcp-cerbos-shim", chart,
+		"-f", filepath.Join(root, "values.defaults.yaml"),
+		"-f", filepath.Join(root, "values.example.yaml"),
+		"--show-only", "templates/configmap.yaml")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return deployedResult{err: fmt.Errorf("helm template mcp-cerbos-shim failed: %v\n%s%s", err, stdout.String(), stderr.String())}
+	}
+
+	var cm struct {
+		Data map[string]string `yaml:"data"`
+	}
+	if err := yaml.Unmarshal(stdout.Bytes(), &cm); err != nil {
+		return deployedResult{err: fmt.Errorf("parse rendered configmap: %w", err)}
+	}
+	text, ok := cm.Data["mapping.yaml"]
+	if !ok {
+		return deployedResult{err: fmt.Errorf("rendered configmap has no data key mapping.yaml")}
+	}
+
+	dir, err := os.MkdirTemp("", "deployed-mapping-")
+	if err != nil {
+		return deployedResult{err: fmt.Errorf("tempdir: %w", err)}
+	}
+	defer os.RemoveAll(dir)
+	p := filepath.Join(dir, "mapping.yaml")
+	if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+		return deployedResult{err: fmt.Errorf("write rendered mapping: %w", err)}
 	}
 	m, err := config.Load(p)
 	if err != nil {
-		t.Fatalf("load deployed mapping: %v", err)
+		return deployedResult{err: fmt.Errorf("load rendered mapping: %w", err)}
 	}
-	return m
+	return deployedResult{mapping: m}
+}
+
+func deployedMapping(t *testing.T) *config.Mapping {
+	t.Helper()
+	r := loadDeployedMapping()
+	switch {
+	case r.skip != "":
+		t.Skip(r.skip)
+	case r.err != nil:
+		t.Fatalf("%v", r.err)
+	}
+	return r.mapping
 }
 
 func TestDeployedGrafanaMapping_OpenSearchReachesCerbos(t *testing.T) {

@@ -27,7 +27,7 @@ Owns the full local ToolHive stack that backs the cluster's MCP access:
                        again once expired). Detection only -- never restarts or
                        refreshes anything itself.
   caffeinate           opt-in: holds a macOS "stay awake" assertion while the
-                       stack is up (enable per-start with --caffeinate, or --always).
+                       stack is up (enable per-start with --caffeinate).
 
 vMCP, ghostunnel, rclone-s3, and mcp-health-watch (plus caffeinate when enabled)
 run under supervisord with autorestart. The workloads are brought up by `start`
@@ -90,7 +90,6 @@ VELERO_SECRET = "velero-credentials"  # pragma: allowlist secret
 # server cert/key + CA cert is mirrored to a kind Secret by setup-secrets-platform.sh
 # so a host that's missing them can recover before ghostunnel starts.
 DEFAULT_GHOSTUNNEL_DIR = Path.home() / ".vicegerent" / "ghostunnel"
-GHOSTUNNEL_KUBE_CONTEXT = os.environ.get("KUBE_CONTEXT", "kind-vicegerent")
 GHOSTUNNEL_SECRET_NS = "agentgateway-system"  # pragma: allowlist secret
 GHOSTUNNEL_SECRET = "ghostunnel-server"  # pragma: allowlist secret
 # host filename -> kind Secret data key
@@ -212,16 +211,6 @@ def _locked_state(runtime_dir: Path) -> Generator[dict[str, Any], None, None]:
 def save_server_state(runtime_dir: Path, enabled: dict[str, bool]) -> None:
     with _locked_state(runtime_dir) as data:
         data["enabled"] = enabled
-
-
-def caffeinate_always(runtime_dir: Path) -> bool:
-    """Persisted preference: keep macOS awake whenever the stack starts."""
-    return bool(_read_state(runtime_dir).get("always_caffeinate", False))
-
-
-def set_caffeinate_always(runtime_dir: Path, value: bool) -> None:
-    with _locked_state(runtime_dir) as data:
-        data["always_caffeinate"] = bool(value)
 
 
 def load_server_params(runtime_dir: Path) -> dict[str, dict[str, str]]:
@@ -745,7 +734,7 @@ def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[
     `secrets[]` entry instead (jira_url, grafana('_gov')_url) via `thv secret get`
     directly, since those aren't in `params` at all. Either way, raise a clear
     error if the value isn't set yet — same pattern as the existing kubeconfig
-    "run `vicegerent mcp configure`" error.
+    "run `./vicegerent setup mcp`" error.
     """
     name = server["name"]
     net = server.get("network")
@@ -775,7 +764,7 @@ def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[
         if not value:
             raise SystemExit(
                 f"{name}: network.host_from_param {host_from_param!r} has no value yet "
-                "— run `vicegerent mcp configure` to set it"
+                "— run `./vicegerent setup mcp` to set it"
             )
         host = urllib.parse.urlparse(value).hostname
         if not host:
@@ -791,7 +780,7 @@ def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[
         if not value:
             raise SystemExit(
                 f"{name}: network.host_from_secret {host_from_secret!r} has no value yet "
-                "— run `vicegerent mcp configure` (or `thv secret set` it) first"
+                "— run `./vicegerent setup mcp` (or `thv secret set` it) first"
             )
         host = urllib.parse.urlparse(value).hostname
         if not host:
@@ -861,7 +850,7 @@ def build_thv_run_argv(
         if not positional:
             raise SystemExit(
                 f"server {name!r}: remote type needs 'registry' or a resolvable "
-                "'registry_from_param' — run `vicegerent mcp configure` to set it"
+                "'registry_from_param' — run `./vicegerent setup mcp` to set it"
             )
     else:
         raise SystemExit(f"server {name!r}: unknown type {stype!r}")
@@ -918,7 +907,7 @@ def build_thv_run_argv(
             elif server.get("kind_cluster"):
                 kubeconfig = write_internal_kubeconfig(server["kind_cluster"], runtime_dir)
             else:
-                raise SystemExit(f"{name}: no kubeconfig set — run `vicegerent mcp configure`")
+                raise SystemExit(f"{name}: no kubeconfig set — run `./vicegerent setup mcp`")
             argv += ["-v", f"{kubeconfig}:{KUBECONFIG_CONTAINER_PATH}:ro"]
             argv += ["-e", f"KUBECONFIG={KUBECONFIG_CONTAINER_PATH}"]
             server_args += ["--kubeconfig", KUBECONFIG_CONTAINER_PATH]
@@ -933,7 +922,7 @@ def build_thv_run_argv(
             if not aws_dir.is_dir():
                 raise SystemExit(
                     f"{name}: AWS config dir not found: {aws_dir} — run `aws configure` "
-                    "/ `aws sso login` first, or set the path via `vicegerent mcp configure`"
+                    "/ `aws sso login` first, or set the path via `./vicegerent setup mcp`"
                 )
             # The two overlay mounts below land *inside* the read-only aws_dir mount,
             # so the container runtime must create their mountpoints by mkdir-ing into
@@ -1710,6 +1699,40 @@ def status(
     return 0
 
 
+def resolve_kind_context() -> str | None:
+    """Return the Kind context vicegerent should target, or None on error.
+
+    By default this is the canonical ``kind-vicegerent`` context, so the host stack
+    works without the user ever selecting a kubectl context. The undocumented
+    ``VICEGERENT_USE_CURRENT_CONTEXT`` escape hatch (any non-empty value) instead
+    targets whatever context kubectl is currently on, for a developer running several
+    Kind clusters at once (mirrors scripts/lib/kube-context.sh). Either way the result
+    must be a Kind context (name starts with 'kind-'), so callers fail closed on a
+    stray or production context.
+    """
+    if os.environ.get("VICEGERENT_USE_CURRENT_CONTEXT"):
+        ctx = subprocess.run(
+            ["kubectl", "config", "current-context"], capture_output=True, text=True,
+        ).stdout.strip()
+        if not ctx:
+            print(
+                "VICEGERENT_USE_CURRENT_CONTEXT is set but kubectl has no active context; "
+                "select one: kubectl config use-context kind-<cluster>",
+                file=sys.stderr,
+            )
+            return None
+    else:
+        ctx = "kind-vicegerent"
+    if not ctx.startswith("kind-"):
+        print(
+            f"refusing to target non-Kind context '{ctx}': vicegerent only operates on "
+            "local Kind clusters (context must start with 'kind-').",
+            file=sys.stderr,
+        )
+        return None
+    return ctx
+
+
 def ensure_ghostunnel_material() -> None:
     """If the host ghostunnel material is missing, recover it from the kind Secret.
 
@@ -1723,16 +1746,9 @@ def ensure_ghostunnel_material() -> None:
     missing = [f for f in GHOSTUNNEL_FILES if not (hd / f).is_file() or (hd / f).stat().st_size == 0]
     if not missing:
         return
-    current_ctx = subprocess.run(
-        ["kubectl", "config", "current-context"], capture_output=True, text=True,
-    ).stdout.strip()
-    if current_ctx != GHOSTUNNEL_KUBE_CONTEXT:
-        print(
-            f"ghostunnel material missing {missing}, but current kubectl context is "
-            f"'{current_ctx or '<none>'}', expected '{GHOSTUNNEL_KUBE_CONTEXT}'. "
-            f"Run: kubectl config use-context {GHOSTUNNEL_KUBE_CONTEXT}",
-            file=sys.stderr,
-        )
+    ctx = resolve_kind_context()
+    if not ctx:
+        print(f"ghostunnel material missing {missing}; cannot recover without a Kind context.", file=sys.stderr)
         return
 
     print(f"ghostunnel material missing {missing}; recovering from kind Secret {GHOSTUNNEL_SECRET} …")
@@ -1741,7 +1757,7 @@ def ensure_ghostunnel_material() -> None:
     for fname in missing:
         key = GHOSTUNNEL_FILES[fname].replace(".", r"\.")
         result = subprocess.run(
-            ["kubectl", "--context", GHOSTUNNEL_KUBE_CONTEXT, "-n", GHOSTUNNEL_SECRET_NS,
+            ["kubectl", "--context", ctx, "-n", GHOSTUNNEL_SECRET_NS,
              "get", "secret", GHOSTUNNEL_SECRET, "-o", f"jsonpath={{.data.{key}}}"],
             capture_output=True, text=True,
         )
@@ -1770,20 +1786,13 @@ def ensure_rclone_material() -> None:
     authkey = d / "auth-key"
     if authkey.is_file() and authkey.stat().st_size > 0:
         return
-    current_ctx = subprocess.run(
-        ["kubectl", "config", "current-context"], capture_output=True, text=True,
-    ).stdout.strip()
-    if current_ctx != GHOSTUNNEL_KUBE_CONTEXT:
-        print(
-            f"rclone auth-key missing, but current kubectl context is "
-            f"'{current_ctx or '<none>'}', expected '{GHOSTUNNEL_KUBE_CONTEXT}'. "
-            f"Run: ./vicegerent secrets setup platform",
-            file=sys.stderr,
-        )
+    ctx = resolve_kind_context()
+    if not ctx:
+        print("rclone auth-key missing; cannot recover without a Kind context.", file=sys.stderr)
         return
     print(f"rclone auth-key missing; recovering from kind Secret {VELERO_SECRET} …")
     result = subprocess.run(
-        ["kubectl", "--context", GHOSTUNNEL_KUBE_CONTEXT, "-n", VELERO_SECRET_NS,
+        ["kubectl", "--context", ctx, "-n", VELERO_SECRET_NS,
          "get", "secret", VELERO_SECRET, "-o", "jsonpath={.data.cloud}"],
         capture_output=True, text=True,
     )
@@ -1818,8 +1827,7 @@ def start_stack(
     listen: str | None = None,
     allow_cn: str | None = None,
     skip_workloads: bool = False,
-    caffeinate: bool | None = None,
-    always_caffeinate: bool = False,
+    caffeinate: bool = False,
 ) -> int:
     """Full bring-up: thv workloads -> vMCP config -> supervisord (vMCP/ghostunnel, opt-in caffeinate).
 
@@ -1835,11 +1843,8 @@ def start_stack(
 
     already_running = is_supervisor_running(runtime_dir)
 
-    # caffeinate is opt-in: an explicit flag wins, else the persisted "always"
-    # preference (default off). --always saves the choice.
-    use_caffeinate = caffeinate if caffeinate is not None else caffeinate_always(runtime_dir)
-    if always_caffeinate:
-        set_caffeinate_always(runtime_dir, use_caffeinate)
+    # caffeinate is opt-in per start via --caffeinate; nothing is persisted.
+    use_caffeinate = caffeinate
 
     paths["logs"].mkdir(parents=True, exist_ok=True)
 
@@ -2220,7 +2225,7 @@ def configure(
         if not have_provider:
             print(
                 "  ! Still no provider — enabling servers anyway, but set their keys later\n"
-                "    (re-run `vicegerent mcp configure` after `thv secret setup`).\n"
+                "    (re-run `./vicegerent setup mcp` after `thv secret setup`).\n"
             )
 
     running = list_workloads(group)
@@ -2404,7 +2409,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     return start_stack(
         args.runtime_dir, args.servers_config, args.ghostshell,
         args.listen, args.allow_cn, args.skip_workloads,
-        args.caffeinate, args.always_caffeinate,
+        args.caffeinate,
     )
 
 
@@ -2434,7 +2439,7 @@ def cmd_tui(args: argparse.Namespace) -> int:
 
 
 _HELP = """\
-vicegerent-mcp — host-side ToolHive stack controller
+vicegerent mcp — host-side ToolHive stack controller
 
 Owns the local ToolHive stack behind the cluster's MCP access:
   ToolHive workloads (group 'vicegerent') -> vMCP aggregator on :4483
@@ -2448,11 +2453,10 @@ mcp-health-watch run under supervisord; the workloads run under ToolHive's own
 daemon and persist across stack restarts.
 
 Commands:
-  configure              interactively enable/skip each MCP server + set secrets
   enable KEY             enable a server (persists; brought up on next start)
   disable KEY            disable a server (stops it; ToolHive won't run it)
   start [--caffeinate]   bring up enabled workloads + vMCP + ghostunnel (idempotent);
-                         --caffeinate keeps macOS awake, --always to make it the default.
+                         --caffeinate keeps macOS awake while the stack runs.
                          mcp-health-watch always runs (no flag): macOS notification
                          when an enabled workload drops, plus an AWS credential-expiry
                          warning whenever the `aws` server is enabled
@@ -2465,7 +2469,7 @@ Commands:
   doctor                 check binaries, thv secrets provider + secrets, kind
   tui                    interactive dashboard (textual)
 
-MCP servers are OFF by default; run `configure` (or `enable KEY`) to opt in.
+MCP servers are OFF by default; run `./vicegerent setup mcp` (or `enable KEY`) to opt in.
 
 Global options:
   --runtime-dir PATH     supervisord/runtime state directory
@@ -2479,7 +2483,7 @@ Environment:
   LISTEN                 ghostunnel listen address (default 127.0.0.1:8453)
   RCLONE_ADDR            rclone serve s3 listen address (default 127.0.0.1:9899)
 
-Run './vicegerent-mcp COMMAND --help' for per-command options.
+Run 'vicegerent mcp COMMAND --help' for per-command options.
 """
 
 
@@ -2494,6 +2498,7 @@ class _SuppressSubparsers(argparse.RawDescriptionHelpFormatter):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="vicegerent mcp",
         description=_HELP,
         formatter_class=_SuppressSubparsers,
         add_help=True,
@@ -2530,16 +2535,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="don't run `thv run`; assume workloads are already up",
     )
     start.add_argument(
-        "--caffeinate", dest="caffeinate", action="store_true", default=None,
+        "--caffeinate", dest="caffeinate", action="store_true",
         help="keep macOS awake while the stack runs (opt-in; default off)",
-    )
-    start.add_argument(
-        "--no-caffeinate", dest="caffeinate", action="store_false",
-        help="don't keep macOS awake, overriding a saved 'always' preference",
-    )
-    start.add_argument(
-        "--always", dest="always_caffeinate", action="store_true",
-        help="persist the caffeinate choice as the default for future starts",
     )
     start.set_defaults(func=cmd_start)
 
@@ -2585,41 +2582,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     return args.func(args)
-
-
-__all__ = [
-    "runtime_paths",
-    "load_servers_config",
-    "group_name",
-    "vmcp_port",
-    "enabled_servers",
-    "vmcp_target",
-    "default_listen",
-    "list_workloads",
-    "build_thv_run_argv",
-    "build_permission_profile",
-    "write_permission_profile",
-    "server_spec_fingerprint",
-    "load_server_fingerprints",
-    "save_server_fingerprint",
-    "server_spec_changed",
-    "run_workloads",
-    "generate_vmcp_config",
-    "get_supervisor_states",
-    "is_supervisor_running",
-    "tail_log_iter",
-    "status",
-    "start_stack",
-    "stop_stack",
-    "tail_log",
-    "doctor",
-    "run_tui",
-    "DEFAULT_RUNTIME_DIR",
-    "DEFAULT_SERVERS_CONFIG",
-    "DEFAULT_GHOSTSHELL",
-    "DEFAULT_LISTEN",
-    "SUPERVISED_PROGRAMS",
-]
 
 
 if __name__ == "__main__":

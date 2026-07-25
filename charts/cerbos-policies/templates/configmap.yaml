@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cerbos-policies
+  namespace: {{ .Release.Namespace }}
+data:
+{{- range $path, $_ := .Files.Glob "policies/*.yaml" }}
+  {{ base $path }}: |
+{{ tpl ($.Files.Get $path) $ | indent 4 }}
+{{- end }}
