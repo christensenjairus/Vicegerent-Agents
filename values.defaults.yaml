@@ -89,6 +89,7 @@ clusterVars:
 
   # Alertmanager silence duration cap (seconds) + this machine's fixed silence-creator
   # identity (createSilence force-stamps it; deleteSilence checks it live).
+  # Empty = deny every silence delete, there being no identity to check against.
   alertmanagerMaxSilenceSeconds: '86400'
   alertmanagerCreatedBy: ''
 
