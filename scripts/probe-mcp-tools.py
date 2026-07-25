@@ -227,6 +227,14 @@ def _list_tools_sse(sse_url, timeout=30):
     return replies.get(2, {}).get("result", {}).get("tools", [])
 
 
+def _arg_type(spec):
+    """Derive an argument's type string, falling back to a `|`-joined anyOf union."""
+    atype = spec.get("type", "")
+    if not atype and "anyOf" in spec:
+        atype = "|".join(o.get("type", "?") for o in spec["anyOf"])
+    return atype
+
+
 def tool_rows(server, tools):
     """Flatten tools -> CSV rows (server, tool, tool_desc, arg, type, required)."""
     for t in tools:
@@ -239,10 +247,7 @@ def tool_rows(server, tools):
             yield [server, name, desc, "", "", ""]
             continue
         for arg, spec in props.items():
-            atype = spec.get("type", "")
-            if not atype and "anyOf" in spec:
-                atype = "|".join(o.get("type", "?") for o in spec["anyOf"])
-            yield [server, name, desc, arg, atype, "yes" if arg in required else "no"]
+            yield [server, name, desc, arg, _arg_type(spec), "yes" if arg in required else "no"]
 
 
 def tool_entry(t):
@@ -252,10 +257,7 @@ def tool_entry(t):
     required = set(schema.get("required") or [])
     arguments = {}
     for arg, spec in props.items():
-        atype = spec.get("type", "")
-        if not atype and "anyOf" in spec:
-            atype = "|".join(o.get("type", "?") for o in spec["anyOf"])
-        entry = {"type": atype, "required": arg in required}
+        entry = {"type": _arg_type(spec), "required": arg in required}
         adesc = " ".join((spec.get("description") or "").split())
         if adesc:
             entry["description"] = adesc

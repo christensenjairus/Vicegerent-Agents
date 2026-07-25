@@ -1,0 +1,151 @@
+---
+# Control plane for `./vicegerent install`: ordered stages. The installer runs each
+# stage's actions in order and health-gates before moving on. Everything here is
+# machine-invariant and
+# Renovate-tracked (chart versions, image tags, `?ref=` pins); the machine plane
+# (clusterVars/agents/egress/models) lives in the gitignored values.yaml.
+#
+# Action types:
+#   helm      remote HTTP chart      -> repo + chart + version
+#   helm-oci  OCI chart              -> chart (full oci ref incl. chart name) + version
+#   helm-git  chart inside a git repo-> gitRepo + ref + chartPath
+#   local     in-repo chart          -> chart (repo-relative path); fed from values.yaml
+#   kubectl-k `kubectl apply -k`     -> path (a stages/kustomize/* overlay)
+#
+# Fields:
+#   namespace       target namespace (helm/local); `--create-namespace` is always passed
+#   values          upstream-chart values file under stages/values/ (helm/helm-oci/helm-git)
+#   crds: true      run apply_crds() first -- Helm never upgrades crds/-dir CRDs, so this
+#                   templates + server-side-applies them
+#   machineValues   local charts: full = whole values.yaml (chart reads .clusterVars/.models);
+#                   egress = the values.yaml egress: block re-rooted as the chart's values
+#   forEach: agents local charts: install once per values.yaml agents[] entry
+#   gate            kubectl-k readiness gate: established (CRDs) | rollout (+ waitResource/waitNamespace)
+stages:
+  - name: cni
+    actions:
+      - name: cilium
+        type: helm
+        repo: https://helm.cilium.io
+        chart: cilium
+        version: 1.19.6
+        namespace: kube-system
+        values: cilium.yaml
+  - name: crds
+    actions:
+      - name: gateway-api-crds
+        type: kubectl-k
+        path: stages/kustomize/gateway-api-crds
+        gate: established
+      - name: external-snapshotter-crds
+        type: kubectl-k
+        path: stages/kustomize/external-snapshotter-crds
+        gate: established
+      - name: agentgateway-crds
+        type: helm-oci
+        chart: oci://cr.agentgateway.dev/charts/agentgateway-crds
+        version: v1.3.1
+        namespace: agentgateway-system
+  - name: storage
+    actions:
+      - name: snapshot-controller
+        type: kubectl-k
+        path: stages/kustomize/snapshot-controller
+        gate: rollout
+        waitResource: deployment/snapshot-controller
+        waitNamespace: kube-system
+      - name: csi-driver-host-path
+        type: kubectl-k
+        path: stages/kustomize/csi-driver-host-path
+        gate: rollout
+        waitResource: statefulset/csi-hostpathplugin
+        waitNamespace: csi-hostpath-system
+  - name: controllers
+    actions:
+      - name: tetragon
+        type: helm
+        repo: https://helm.cilium.io
+        chart: tetragon
+        version: 1.7.0
+        namespace: kube-system
+        crds: true
+        values: tetragon.yaml
+      - name: reloader
+        type: helm
+        repo: https://stakater.github.io/stakater-charts
+        chart: reloader
+        version: 2.2.14
+        namespace: reloader
+        values: reloader.yaml
+      - name: metrics-server
+        type: helm
+        repo: https://kubernetes-sigs.github.io/metrics-server/
+        chart: metrics-server
+        version: 3.13.1
+        namespace: metrics-server
+        values: metrics-server.yaml
+      - name: victoria-logs
+        type: helm
+        repo: https://victoriametrics.github.io/helm-charts/
+        chart: victoria-logs-single
+        version: 0.13.9
+        namespace: victoria-logs
+        crds: true
+        values: victoria-logs.yaml
+      - name: velero
+        type: helm
+        repo: https://vmware-tanzu.github.io/helm-charts/
+        chart: velero
+        version: 12.1.0
+        namespace: velero
+        crds: true
+        values: velero.yaml
+      - name: agents-sandbox-controller
+        type: helm-git
+        gitRepo: https://github.com/kubernetes-sigs/agent-sandbox
+        ref: v0.5.2
+        chartPath: helm
+        namespace: agent-sandbox-system
+        crds: true
+        values: agent-sandbox.yaml
+      - name: agentgateway
+        type: helm-oci
+        chart: oci://cr.agentgateway.dev/charts/agentgateway
+        version: v1.3.1
+        namespace: agentgateway-system
+        values: agentgateway.yaml
+      - name: cerbos-policies
+        type: local
+        chart: charts/cerbos-policies
+        namespace: cerbos
+        machineValues: full
+      - name: cerbos
+        type: helm-oci
+        chart: oci://ghcr.io/cerbos/helm-charts/cerbos
+        version: 0.53.0
+        namespace: cerbos
+        values: cerbos.yaml
+      - name: mcp-cerbos-shim
+        type: local
+        chart: charts/mcp-cerbos-shim
+        namespace: cerbos
+        machineValues: full
+  - name: platform
+    actions:
+      - name: platform
+        type: local
+        chart: charts/platform
+        namespace: agentgateway-system
+        machineValues: full
+      - name: egress-proxy
+        type: local
+        chart: charts/egress-proxy
+        namespace: egress-proxy
+        machineValues: egress
+  - name: agents
+    actions:
+      - name: agent
+        type: local
+        chart: charts/agent
+        namespace: agent-sandbox
+        forEach: agents

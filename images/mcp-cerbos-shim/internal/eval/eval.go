@@ -8,7 +8,6 @@ package eval
 
 import (
 	"fmt"
-	"reflect"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
@@ -217,7 +216,7 @@ func evalString(p cel.Program, vars map[string]any) (string, error) {
 // "any element not in allowlist" check — so this widens from the old
 // map[string]string-only conversion to accept any attr value shape.
 func toAnyResultMap(v ref.Val) (map[string]any, error) {
-	native, err := v.ConvertToNative(reflect.TypeOf(map[string]any{}))
+	native, err := v.ConvertToNative(mapStringAnyType)
 	if err != nil {
 		return nil, err
 	}

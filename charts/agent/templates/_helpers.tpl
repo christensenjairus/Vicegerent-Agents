@@ -36,7 +36,7 @@ When working on a dedicated branch in a repo that already has a persistent clone
 {{- define "vicegerent-agent.environment" -}}
 # Environment
 You run inside a sealed agent sandbox: a non-root container on a
-locked-down Kubernetes cluster, managed by GitOps (Flux). The platform is
+locked-down Kubernetes cluster, installed by a staged Helm script. The platform is
 defined in the `vicegerent-agents` repo
 (gitlab.hahomelabs.com/jchristensen/vicegerent-agents) — that repo is where
 your own capabilities, models, tools, and limits are configured.
@@ -189,21 +189,18 @@ model_catalog:
 model:
   default: {{ $primaryModel }}
   provider: {{ $primaryProvider }}
-  # Hardcoded, not derived per-provider: we standardize on 1M-context models across
-  # providers today, but if a future default model has a smaller real context window
-  # this will overstate it to Hermes's compaction logic. Revisit if that changes.
-  context_length: 1000000
+  context_length: {{ .Values.tuning.contextLength }}
   persist_switch_by_default: false
 model_aliases:
 {{- if .Values.providers.anthropic.enabled }}
   haiku:
-    model: claude-haiku-4-5
+    model: {{ .Values.providers.anthropic.auxiliaryModel }}
     provider: anthropic
   sonnet:
     model: {{ .Values.providers.anthropic.model }}
     provider: anthropic
   opus:
-    model: claude-opus-4-8
+    model: {{ .Values.harnesses.claudeCode }}
     provider: anthropic
 {{- end }}
 {{- if .Values.providers.openai.enabled }}
@@ -221,17 +218,31 @@ model_aliases:
     model: {{ .Values.providers.zai.model }}
     provider: zai
 {{- end }}
-{{- if .Values.providers.openai.enabled }}
+{{- $fp := .Values.failover.provider -}}
+{{- if $fp }}
+{{- if not (has $fp (list "anthropic" "openai" "deepseek" "zai")) }}{{- fail (printf "failover.provider %q must be one of anthropic/openai/deepseek/zai" $fp) -}}{{- end -}}
+{{- if index .Values.providers $fp "enabled" }}
+{{- $fpModel := .Values.failover.model -}}
+{{- if not $fpModel }}{{- $fpModel = index .Values.providers $fp "model" -}}{{- end -}}
+{{- $gw := "http://agentgateway-proxy.agentgateway-system.svc.cluster.local" -}}
+{{- $fpBase := "" -}}
+{{- $fpKey := "" -}}
+{{- if eq $fp "anthropic" }}{{- $fpBase = printf "%s/mnemosyne-anthropic/v1" $gw -}}{{- $fpKey = "ANTHROPIC_API_KEY" -}}
+{{- else if eq $fp "openai" }}{{- $fpBase = printf "%s/openai/v1" $gw -}}{{- $fpKey = "OPENAI_API_KEY" -}}
+{{- else if eq $fp "deepseek" }}{{- $fpBase = printf "%s/deepseek/v1" $gw -}}{{- $fpKey = "DEEPSEEK_API_KEY" -}}
+{{- else if eq $fp "zai" }}{{- $fpBase = printf "%s/zai/api/paas/v4" $gw -}}{{- $fpKey = "ZAI_API_KEY" -}}
+{{- end }}
 fallback_providers:
   - provider: custom
-    model: gpt-5.4
-    base_url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
-    key_env: OPENAI_API_KEY
+    model: {{ $fpModel }}
+    base_url: {{ $fpBase }}
+    key_env: {{ $fpKey }}
+{{- end }}
 {{- end }}
 compression:
-  threshold: 0.50
+  threshold: {{ .Values.tuning.compressionThreshold }}
 prompt_caching:
-  cache_ttl: 1h
+  cache_ttl: {{ .Values.tuning.cacheTtl }}
 mcp_servers:
   agentburn:
     command: /opt/hermes/.venv/bin/agentburn
@@ -240,15 +251,15 @@ mcp_servers:
       HERMES_HOME: /opt/data
   vmcp:
     url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp
-    timeout: 90
-    connect_timeout: 5
+    timeout: {{ .Values.tuning.vmcp.timeout }}
+    connect_timeout: {{ .Values.tuning.vmcp.connectTimeout }}
 agent:
-  max_turns: 150
-  gateway_timeout: 900
-  api_max_retries: 5
-  reasoning_effort: medium
+  max_turns: {{ .Values.tuning.maxTurns }}
+  gateway_timeout: {{ .Values.tuning.gatewayTimeout }}
+  api_max_retries: {{ .Values.tuning.apiMaxRetries }}
+  reasoning_effort: {{ .Values.tuning.reasoningEffort }}
   reasoning_overrides:
-    gpt-5.4: none
+    {{ .Values.providers.openai.model }}: none
 {{- if .Values.providers.deepseek.enabled }}
     {{ .Values.providers.deepseek.model }}: high
 {{- end }}
@@ -273,7 +284,7 @@ delegation:
   provider: {{ $primaryProvider }}
   model: {{ $primaryModel }}
   orchestrator_enabled: true
-  max_spawn_depth: 2
+  max_spawn_depth: {{ .Values.tuning.maxSpawnDepth }}
 auxiliary:
   vision:
     provider: {{ $primaryProvider }}
@@ -287,8 +298,7 @@ auxiliary:
   compression:
     provider: {{ $primaryProvider }}
     model: {{ $primaryAuxiliaryModel }}
-    # Hardcoded like model.context_length above -- see that comment.
-    context_length: 1000000
+    context_length: {{ .Values.tuning.contextLength }}
   web_extract:
     provider: {{ $primaryProvider }}
     model: {{ $primaryAuxiliaryModel }}
@@ -305,13 +315,13 @@ auxiliary:
     provider: {{ $primaryProvider }}
     model: {{ $primaryAuxiliaryModel }}
 tool_loop_guardrails:
-  hard_stop_enabled: true
+  hard_stop_enabled: {{ .Values.tuning.toolLoopGuardrails.hardStopEnabled }}
   warn_after:
-    exact_failure: 4
-    same_tool_failure: 15
+    exact_failure: {{ .Values.tuning.toolLoopGuardrails.warnAfterExactFailure }}
+    same_tool_failure: {{ .Values.tuning.toolLoopGuardrails.warnAfterSameToolFailure }}
   hard_stop_after:
-    exact_failure: 12
-    same_tool_failure: 50
+    exact_failure: {{ .Values.tuning.toolLoopGuardrails.hardStopAfterExactFailure }}
+    same_tool_failure: {{ .Values.tuning.toolLoopGuardrails.hardStopAfterSameToolFailure }}
 display:
   skin: slate
   streaming: true
@@ -335,8 +345,8 @@ command_allowlist: []
 checkpoints:
   enabled: true
 clarify:
-  timeout: 300
-timezone: America/Denver
+  timeout: {{ .Values.tuning.clarifyTimeout }}
+timezone: {{ .Values.timezone }}
 terminal:
   cwd: /workspace
   persistent_shell: true

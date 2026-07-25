@@ -19,7 +19,11 @@ Two independent checks:
 Usage:
     python3 test_gpt54_fallback_reasoning.py \\
         --chart-dir /path/to/charts/agent \\
-        --values /path/to/apps/personal/agents/hermes/values.yaml
+        --values /path/to/values.defaults.yaml
+
+`--values` may be either the repo-root values.defaults.yaml (its agents[0]
+entry is sliced out automatically) or an already-sliced single-agent values
+file. charts/agent/values.yaml is intentionally empty and won't render.
 
 Requires `helm` on PATH and, for the behavioral check, a Hermes install on
 PYTHONPATH (set HERMES_HOME or just run inside the hermes-agent image/venv
@@ -31,20 +35,36 @@ chart-rendering CI check.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
+import tempfile
 import yaml
 
 
 def render_config_yaml(chart_dir: str, values_path: str) -> dict:
-    proc = subprocess.run(
-        [
-            "helm", "template", "hermes", chart_dir,
-            "-f", values_path,
-            "--show-only", "templates/config.yaml",
-        ],
-        capture_output=True, text=True, check=True,
-    )
+    # charts/agent/values.yaml is intentionally empty now; the real agent schema
+    # lives in the repo-root values.defaults.yaml under agents[0]. Slice that entry
+    # (re-rooted to top level) the way the installer/validate.sh feed the chart, so
+    # the template renders with a full values set. A file that is already a single
+    # agent slice (no top-level `agents`) is passed through unchanged.
+    with open(values_path) as f:
+        loaded = yaml.safe_load(f) or {}
+    agent_values = loaded["agents"][0] if isinstance(loaded, dict) and loaded.get("agents") else loaded
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
+        yaml.safe_dump(agent_values, tf)
+        tmp = tf.name
+    try:
+        proc = subprocess.run(
+            [
+                "helm", "template", "hermes", chart_dir,
+                "-f", tmp,
+                "--show-only", "templates/config.yaml",
+            ],
+            capture_output=True, text=True, check=True,
+        )
+    finally:
+        os.unlink(tmp)
     doc = yaml.safe_load(proc.stdout)
     config_yaml_str = doc["data"]["config.yaml"]
     return yaml.safe_load(config_yaml_str)
@@ -120,7 +140,7 @@ def check_behavioral(rendered: dict) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--chart-dir", default="charts/agent")
-    ap.add_argument("--values", default="apps/personal/agents/hermes/values.yaml")
+    ap.add_argument("--values", default="values.defaults.yaml")
     args = ap.parse_args()
 
     rendered = render_config_yaml(args.chart_dir, args.values)

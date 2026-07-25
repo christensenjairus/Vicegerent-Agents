@@ -16,7 +16,7 @@ data:
         "MCP_TIMEOUT": "90000",
         "MCP_TOOL_TIMEOUT": "90000"
       },
-      "model": "claude-opus-4-8",
+      "model": "{{ .Values.harnesses.claudeCode }}",
       "enableAllProjectMcpServers": true,
       "permissions": {
         "allow": ["mcp__mnemosyne", "mcp__vmcp"],

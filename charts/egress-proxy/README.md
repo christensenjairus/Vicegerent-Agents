@@ -9,7 +9,7 @@ The egress proxy is an mitmproxy instance that sits between the **hermes agent s
 ## What the proxy enforces
 
 ### Secrets scrubbing
-Applied to every request — headers and body — before forwarding to any destination, internal (agentgateway, searxng) or external (internet). **Two layers** run on each scrubbed string: a hand-rolled regex registry (`REDACT_PATTERNS`) then gitleaks' ~180-rule default ruleset via the in-Pod `gitleaks-sidecar` container over loopback (`images/egress-gitleaks-sidecar`). The registry mirrors `mcp-cerbos-shim`'s `secretPatternRegistry` — keep the two in sync by hand.
+Applied to every request — headers and body — before forwarding to any destination, internal (agentgateway, searxng) or external (internet). A single regex registry (`REDACT_PATTERNS`) runs on each scrubbed string, compiled at render time from the canonical `images/mcp-cerbos-shim/internal/server/secret-patterns.json` injected via `helm --set-file secretPatterns=…`. That same JSON is embedded into `mcp-cerbos-shim` via `//go:embed`, so the proxy and the shim derive from one source of truth — no hand-sync.
 
 | Pattern | What it catches |
 |---|---|
@@ -20,9 +20,8 @@ Applied to every request — headers and body — before forwarding to any desti
 | AWS / GitHub / GitLab / Google | `AKIA…`, `gh?_…`, `glpat-…`, `AIza…` |
 | OpenAI / Anthropic / Stripe | `sk-…` / `sk-proj-…`, `sk-ant-…`, `sk_live_…` / `rk_test_…` |
 | Notion / Twilio / npm / JWT | `ntn_…`, `SK<32 hex>`, `npm_…`, `eyJ….eyJ….…` |
-| gitleaks default ruleset | ~180 provider tokens/keys/connection strings the registry doesn't name (SendGrid, etc.) |
 
-The request **URL path and query** are also scrubbed on every request, and response bodies are scrubbed (non-streaming only) to guard against echo attacks — both through the same two-layer `_redact()`.
+The request **URL path and query** are also scrubbed on every request, and response bodies are scrubbed (non-streaming only) to guard against echo attacks — both through the same `_redact()`.
 
 ### Method enforcement
 GET and HEAD only for external destinations. POST, PUT, PATCH, DELETE → 403. Internal cluster services (agentgateway, searxng) may use any method — they require POST and hold no sandbox secrets. Exception: `git-upload-pack` (smart-HTTP clone/fetch, read-only) is allowed through so `pre-commit` can install hook repos.
@@ -63,17 +62,17 @@ MCP tool calls (`tools/call` through vmcp) get a dedicated pair of lines instead
 ### Destination content policy
 The proxy checks the HTTP *method*, not the *URL path* or *response content*. A GET to any allowed FQDN succeeds regardless of path. This is intentional — path-based policy requires constant maintenance and breaks legitimate use cases.
 
-**Mitigation**: The Cilium FQDN allowlist (rendered into `charts/egress-proxy/templates/networkpolicy.yaml`) is the destination gate. Only explicitly listed FQDNs are reachable. Add FQDNs in `cluster-vars.yaml`, not URL path rules — see [Adding a new external service](#adding-a-new-external-service).
+**Mitigation**: The Cilium FQDN allowlist (rendered into `charts/egress-proxy/templates/networkpolicy.yaml`) is the destination gate. Only explicitly listed FQDNs are reachable. Add FQDNs in `values.yaml`'s `egress:` block, not URL path rules — see [Adding a new external service](#adding-a-new-external-service).
 
 ### Sophisticated GET exfiltration
 A URL within the 2048-char limit can still carry meaningful data in query strings or path segments. Encoding (base64, hex, split-chunking) bypasses pattern scrubbing. This is a fundamental limitation of HTTP-layer inspection.
 
 **Accepted risk**: The FQDN allowlist limits the set of reachable destinations. Exfiltration requires a reachable destination that accepts and stores GET parameters — an attacker needs prior access to configure such an endpoint.
 
-### Secrets not caught by either layer
-The regex registry covers the named provider shapes in the table above; gitleaks adds its ~180-rule default set on top. A credential in neither — a bespoke internal token format, or any secret carried **encoded** (base64, hex, split-chunked) — still passes through. Pattern/rule matching is raw-value only.
+### Secrets not caught by the registry
+The regex registry covers the named provider shapes in the table above. A credential in none of them — a bespoke internal token format, or any secret carried **encoded** (base64, hex, split-chunked) — still passes through. Pattern matching is raw-value only.
 
-**To add a regex pattern**: edit `REDACT_PATTERNS` in `charts/egress-proxy/templates/addon-configmap.yaml` (and mirror it into `mcp-cerbos-shim`'s `secretPatternRegistry` if MCP tool calls should also catch it). gitleaks rules are upstream — bump the sidecar's pinned gitleaks version to pick up new ones. For verbatim secret values, see below.
+**To add a regex pattern**: edit the canonical `images/mcp-cerbos-shim/internal/server/secret-patterns.json` — one edit covers both this proxy (injected via `--set-file`) and the shim (`//go:embed`). For verbatim secret values, see below.
 
 **To scrub a literal secret value**: there is currently no mechanism to inject runtime secret values into the proxy for scrubbing. Adding this requires mounting the secret into the proxy pod and loading it at startup — a future improvement.
 
@@ -81,7 +80,7 @@ The regex registry covers the named provider shapes in the table above; gitleaks
 Port 22 egress to `github.com` and `gitlab.hahomelabs.com` is direct — bypasses the proxy entirely. `git push` content is not inspectable at the HTTP layer. The SSH deploy key's scope (read-only vs read-write, per-repo vs org-wide) is the control here.
 
 ### Slack traffic
-Four specific Slack FQDNs are allowed direct (bypassing the proxy) via the **hermes** Cilium policy (`charts/agent/templates/networkpolicy.yaml`, FQDNs set through `networkAllowlist.slackFQDNs` in `apps/personal/agents/hermes/values.yaml`) and `no_proxy` in `sandbox.yaml`. Slack Socket Mode requires POST and WebSocket — both blocked by the proxy — so Slack must go direct. (`no_proxy` alone is not enough: `slack_sdk` ignores `NO_PROXY` and auto-loads `HTTPS_PROXY`, so the hermes image also carries build patch `0007-slack-bypass-egress-proxy.py` to force the bypass.)
+Four specific Slack FQDNs are allowed direct (bypassing the proxy) via the **hermes** Cilium policy (`charts/agent/templates/networkpolicy.yaml`, FQDNs set through the agent's `networkAllowlist.slackFQDNs` in `values.yaml`) and `no_proxy` in `charts/agent/templates/_sandbox.tpl`. Slack Socket Mode requires POST and WebSocket — both blocked by the proxy — so Slack must go direct. (`no_proxy` alone is not enough: `slack_sdk` ignores `NO_PROXY` and auto-loads `HTTPS_PROXY`, so the hermes image also carries build patch `0007-slack-bypass-egress-proxy.py` to force the bypass.)
 
 | FQDN | Purpose |
 |---|---|
@@ -90,7 +89,7 @@ Four specific Slack FQDNs are allowed direct (bypassing the proxy) via the **her
 | `wss-backup.slack.com` | Socket Mode WebSocket (failover endpoint) |
 | `files.slack.com` | File/image downloads for attachment handling |
 
-The former `*.slack.com` wildcard is removed. If Slack rotates the WSS hostname, Socket Mode reconnections will fail — add the new hostname to `networkAllowlist.slackFQDNs` in `apps/personal/agents/hermes/values.yaml` and `no_proxy` in `sandbox.yaml`. Slack traffic carries no sandbox secrets by design.
+The former `*.slack.com` wildcard is removed. If Slack rotates the WSS hostname, Socket Mode reconnections will fail — add the new hostname to the agent's `networkAllowlist.slackFQDNs` in `values.yaml` and `no_proxy` in `charts/agent/templates/_sandbox.tpl`. Slack traffic carries no sandbox secrets by design.
 
 ### Streaming responses
 SSE (`text/event-stream`) and chunked transfer responses skip response body scrubbing to avoid buffering the LLM stream. An echo attack via streaming is theoretically possible but requires the external server to actively reflect back injected content.
@@ -120,20 +119,22 @@ SSE (`text/event-stream`) and chunked transfer responses skip response body scru
 There are two CiliumNetworkPolicies; pick by how the sandbox reaches the service.
 
 For a service the **proxy fetches** (GET/HEAD through the egress proxy):
-1. Add the FQDN to `clusters/<machine>/cluster-vars.yaml` — one edit, single source of truth. `apexWildcardDomains` if the service also needs subdomains (an exact match plus a `*.<domain>` wildcard); `exactOnlyDomains` for an exact host only. Both are comma-joined bare hostnames, machine-scoped (same laptop implies the same network requirements, unlike the per-agent direct-egress bypass FQDNs below). Flux substitutes them into `charts/egress-proxy`, which renders the **same** list into both the Cilium `toFQDNs` policy (the kernel-level gate) and `scrub.py`'s allowlist (the mitmproxy application-layer gate) — so the two can no longer drift.
+1. Add the FQDN to `values.yaml`'s `egress:` block — one edit, single source of truth. `apexWildcardDomains` if the service also needs subdomains (an exact match plus a `*.<domain>` wildcard); `exactOnlyDomains` for an exact host only. Both are comma-joined bare hostnames, machine-scoped (same laptop implies the same network requirements, unlike the per-agent direct-egress bypass FQDNs below). The installer feeds them into `charts/egress-proxy`, which renders the **same** list into both the Cilium `toFQDNs` policy (the kernel-level gate) and `scrub.py`'s allowlist (the mitmproxy application-layer gate) — so the two can no longer drift.
 2. If the service needs POST it cannot go through the proxy (external POST → 403) — route it direct instead (below)
-3. If the service holds credentials, add a `REDACT_PATTERNS` entry for its token format For a service the sandbox reaches **direct** (bypassing the proxy, e.g. Slack):
-1. Add the FQDN to `networkAllowlist.slackFQDNs` in `apps/personal/agents/hermes/values.yaml` (rendered by `charts/agent/templates/networkpolicy.yaml`)
-2. Add it to `no_proxy`/`NO_PROXY` in `sandbox.yaml`
+3. If the service holds credentials, add a `REDACT_PATTERNS` entry for its token format.
+
+For a service the sandbox reaches **direct** (bypassing the proxy, e.g. Slack):
+1. Add the FQDN to the agent's `networkAllowlist.slackFQDNs` in `values.yaml` (rendered by `charts/agent/templates/networkpolicy.yaml`)
+2. Add it to `no_proxy`/`NO_PROXY` in `charts/agent/templates/_sandbox.tpl`
 
 ---
 
 ## Adding a new secret pattern
 
-Append a compiled regex to `REDACT_PATTERNS` in `charts/egress-proxy/templates/addon-configmap.yaml`, e.g.:
+Append an object to the canonical `images/mcp-cerbos-shim/internal/server/secret-patterns.json`, e.g.:
 
-```python
-re.compile(r"mycorp_tok_[A-Za-z0-9]{32}", re.ASCII),
+```json
+{"name": "mycorp_token", "regex": "mycorp_tok_[A-Za-z0-9]{32}"}
 ```
 
-Add a matching fixture to `scripts/test-scrub-patterns.py`, and mirror the pattern into `mcp-cerbos-shim`'s `secretPatternRegistry` if MCP tool-call payloads should catch it too. Reloader restarts the proxy pod automatically when the ConfigMap changes. (Provider tokens already in gitleaks' default ruleset need no registry entry — they are caught by the sidecar layer.)
+One edit covers both legs: the shim embeds the file via `//go:embed` and the installer/validator inject it into this proxy via `helm --set-file secretPatterns=…`. Keep the regex RE2-safe (no lookaround or backreferences) so it compiles under both Go's `regexp` and Python's `re` — put `(?i)` inline where you need case-insensitivity. Add a matching fixture to `scripts/test-scrub-patterns.py`. Reloader restarts the proxy pod automatically when the rendered ConfigMap changes.

@@ -15,21 +15,19 @@
 # Usage:
 #   bash scripts/test-egress-redaction.sh
 #
-# Override context, namespace, pod selector, or container:
-#   KUBE_CONTEXT=kind-vicegerent AGENT_LABEL=hermes bash scripts/test-egress-redaction.sh
+# Override namespace, pod selector, or container:
+#   AGENT_LABEL=hermes bash scripts/test-egress-redaction.sh
 set -uo pipefail
 
-KUBE_CONTEXT="${KUBE_CONTEXT:-kind-vicegerent}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/kube-context.sh
+source "$SCRIPT_DIR/lib/kube-context.sh"
+
 NAMESPACE="${NAMESPACE:-agent-sandbox}"
 AGENT_LABEL="${AGENT_LABEL:-hermes}"
 
 command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required" >&2; exit 1; }
-
-current_ctx="$(kubectl config current-context 2>/dev/null || true)"
-[[ "$current_ctx" == "$KUBE_CONTEXT" ]] || {
-  echo "ERROR: current kubectl context is '${current_ctx:-<none>}', expected '$KUBE_CONTEXT'. Run: kubectl config use-context $KUBE_CONTEXT" >&2
-  exit 1
-}
+require_kind_context
 CTX=(--context "$KUBE_CONTEXT")
 
 POD="${POD:-$(kubectl "${CTX[@]}" -n "$NAMESPACE" get pods -l "vicegerent.io/dashboard=${AGENT_LABEL}" \
@@ -178,22 +176,6 @@ else
   echo "    body: ${BODY:0:300}"
 fi
 
-# gitleaks-ONLY catch: SendGrid API tokens (gitleaks rule "sendgrid-api-token")
-# are NOT in the regex registry, so redacting one proves the gitleaks sidecar
-# path works end-to-end — not just that regex redaction still works. Same shape
-# the shim's own gitleaks test uses: "SG." + 22 + "." + 43.
-SENDGRID_KEY="SG.$(printf 'a%.0s' $(seq 22)).$(printf 'b%.0s' $(seq 43))"  # pragma: allowlist secret (fake SendGrid key)
-echo -e "  ${YELLOW}probing SendGrid token (gitleaks-only, not in regex registry) ...${NC}"
-run "https://httpbin.io/headers" -H "X-Test-Secret: ${SENDGRID_KEY}"
-if [[ "$BODY" == *"$SENDGRID_KEY"* ]]; then
-  fail "SendGrid token reached httpbin unredacted — gitleaks sidecar not scrubbing?"
-elif [[ "$BODY" == *'<masked>'* ]]; then
-  pass "SendGrid token (SG.…) redacted by the gitleaks sidecar layer"
-else
-  fail "SendGrid token neither present nor visibly redacted — is the gitleaks sidecar up?"
-  echo "    body: ${BODY:0:300}"
-fi
-
 # PII patterns (SSN / credit card / US phone) added for parity with the
 # agentgateway promptGuard PII builtins. Fake fixtures assembled at runtime.
 SSN_FAKE="123-45-6789"  # pragma: allowlist secret (fake SSN)
@@ -307,10 +289,7 @@ fi
 # which DECODES it server-side and returns the raw secret in the RESPONSE body.
 # The base64 blob matches no request-side pattern, so it passes through untouched;
 # the decoded secret then only ever exists in the response, where the response()
-# hook must scrub it. We use a Notion token (ntn_…) on purpose: it's caught by the
-# regex registry but NOT by gitleaks' default ruleset, so even if gitleaks were to
-# base64-decode-and-scan the request URL, it wouldn't pre-empt this — the redaction
-# we observe is unambiguously the RESPONSE-side regex layer.
+# hook must scrub it.
 #
 # Caveat (confirm on first live run): this depends on httpbin.io/base64 returning a
 # text/* (or application/json) Content-Type — the response scrubber deliberately
@@ -321,7 +300,9 @@ fi
 section "6. secrets in the RESPONSE body are redacted (echo-attack guard)"
 
 NOTION_TOKEN="ntn_$(printf 't%.0s' $(seq 24))"  # pragma: allowlist secret (fake Notion token)
-NOTION_B64="$(printf '%s' "$NOTION_TOKEN" | base64 | tr '+/' '-_' | tr -d '=')"
+# Keep base64 padding: go-httpbin's /base64 decode() tries URLEncoding then
+# StdEncoding, both PADDED — stripping '=' triggers "illegal base64 data".
+NOTION_B64="$(printf '%s' "$NOTION_TOKEN" | base64 | tr '+/' '-_')"
 echo -e "  ${YELLOW}probing server-originated secret via httpbin.io/base64 decode ...${NC}"
 run "https://httpbin.io/base64/${NOTION_B64}"
 if [[ "$BODY" == *"$NOTION_TOKEN"* ]]; then

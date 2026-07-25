@@ -1,0 +1,163 @@
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: vmcp
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: vmcp
+        static:
+          host: host.docker.internal
+          port: 8453
+          path: /mcp
+          protocol: StreamableHTTP
+  policies:
+    tcp:
+      connectTimeout: 5s
+    http:
+      # Backstop above the Hermes/Claude/Codex client tool-call timeout (90s)
+      # so the gateway never severs an in-flight request the client still
+      # considers live.
+      requestTimeout: 120s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vmcp
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+      namespace: agentgateway-system
+      sectionName: http
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp/vmcp
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /mcp
+      backendRefs:
+        - name: vmcp
+          namespace: agentgateway-system
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: vmcp-mcp-tools
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: vmcp
+  backend:
+    tls:
+      mtlsCertificateRef:
+        - name: vicegerent-mcp-client
+      caCertificateRefs:
+        - name: ghostunnel-ca
+    mcp:
+      guardrails:
+        processors:
+          - methods:
+              tools/call: Full
+              resources/read: Response
+              prompts/get: Response
+            remote:
+              backendRef:
+                name: mcp-cerbos-shim
+                namespace: cerbos
+                port: 4445
+              failureMode: FailClosed
+---
+# Dedicated request-only path for the shim's OWN re-entrant vMCP lookups (the
+# live-resolved ownership gates in internal/upstream). Its guardrail runs
+# CheckRequest but NOT CheckResponse, so a lookup that fetched attacker
+# controlled content never trips the prompt-injection gate and fails the
+# ownership check closed -- the shim<->agentgateway circular dependency. Two
+# independent locks keep agents off it: it is served only on the :81 listener,
+# which gateway-networkpolicy.yaml restricts to the shim pod (network/port),
+# and CheckRequest requires the shim's secret self-token (app/backend).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: vmcp-internal
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: vmcp
+        static:
+          host: host.docker.internal
+          port: 8453
+          path: /mcp
+          protocol: StreamableHTTP
+  policies:
+    tcp:
+      connectTimeout: 5s
+    http:
+      requestTimeout: 120s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vmcp-internal
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+      namespace: agentgateway-system
+      sectionName: internal
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp/vmcp-internal
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /mcp
+      backendRefs:
+        - name: vmcp-internal
+          namespace: agentgateway-system
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: vmcp-internal-mcp-tools
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: vmcp-internal
+  backend:
+    tls:
+      mtlsCertificateRef:
+        - name: vicegerent-mcp-client
+      caCertificateRefs:
+        - name: ghostunnel-ca
+    mcp:
+      guardrails:
+        processors:
+          - methods:
+              tools/call: Request
+            remote:
+              backendRef:
+                name: mcp-cerbos-shim
+                namespace: cerbos
+                port: 4445
+              failureMode: FailClosed

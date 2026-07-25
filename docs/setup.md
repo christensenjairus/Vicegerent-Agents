@@ -2,37 +2,33 @@
 
 Full step-by-step for standing up your own instance. See the [README](../README.md) for the condensed quickstart and an overview of what you're setting up.
 
-## Forking this repo
+## Configuring for your machine
 
-This repo is meant to be forked, not shared — each person runs their own fork against their own laptop and their own local Kind cluster. Nothing here is multi-tenant: two people bootstrapping the same repo would each try to push Flux's generated manifests back to it and fight over the same git history.
+Each person runs their own clone against their own laptop and their own local Kind cluster. All machine-specific configuration lives in a single gitignored `values.yaml` (cluster vars, the agents you run, egress allowlists) that you copy from the committed `values.example.yaml` — like copying `.env.example` to `.env`. Your `values.yaml` carries only the **deltas** for your machine; it is layered over the committed `values.defaults.yaml` (the full annotated default for every setting) by the installer and `scripts/validate.sh`, so anything you omit falls through to that default. Nothing machine-specific is committed, so a second machine is just a second clone with its own `values.yaml` (see [Adding a second machine](#adding-a-second-machine)).
 
-### Values to change for your fork
+### Values to change for your machine
 
-This repo ships with the original operator's own identity baked into a few files as concrete values, not templated placeholders — Flux will happily reconcile them as-is, so nothing fails loudly if you miss one. Go through this list before (or right after) your first bootstrap:
+`values.example.yaml` is **deltas-only**: it carries just the handful of values that differ from `values.defaults.yaml`, and it ships those as **placeholders** (`your-org/your-repo`, `you@example.com`, `PROJ`, `git.example.com`, …), not a real identity — the installer renders whatever you give it, so nothing fails loudly if you miss a field. Copy it and go through every field before your first install; consult `values.defaults.yaml` for the full annotated menu of settings you can also override. For two complete, filled-in references to model yours on, see `examples/personal.yaml` and `examples/work.yaml` (the maintainer's own personal and work configs, comment-free live code). The example ships Anthropic-only with content moderation and prompt-injection detection off; enable other providers/models and those gates as your machine needs them.
 
-- **`clusters/personal/cluster-vars.yaml`** — every field here is machine/operator-scoped and feeds the Cerbos authorization policies via Flux substitution. Read the inline comment on each field, then replace:
-  - `githubAllowedRepos` — the GitHub `owner/repo` pairs your agents are allowed to touch (`resource_github.yaml`). Currently someone else's repos.
-  - `jiraAllowedProjects` — ships as the literal placeholder `"CHANGE"`; set to a CEL-list-ready set of Jira project keys your agent may WRITE to (reads are unrestricted) — or leave it if you don't use Jira.
-  - `linearAllowedTeams` — your Linear team's UUID, display name, and issue-key prefix (`resource_linear.yaml`).
-  - `cnameChainedFQDN` / `cnameChain` — your git host's FQDN and its full CNAME chain (see step 3 below). Currently the original operator's self-hosted GitLab + dynamic-DNS chain.
-  - `apexWildcardDomains` / `exactOnlyDomains` — the external HTTP(S) destinations your agents' egress-proxy should allow. Add/remove as your workflow needs.
-  - `grafanaDeniedDatasourceUids` / `grafanaDeniedDatasourceNames` — the Grafana datasource(s) (by uid or name) your agents may not read from (`resource_grafana.yaml`), CEL-list-ready. Currently someone else's OpenSearch datasource.
-  - `notionScratchpadPageId` — the Notion page id that `notion-create-pages` force-rewrites every new page's parent to (`infrastructure/controllers/mcp-cerbos-shim/mapping.yaml`'s `force` block, substituted the same way as the Cerbos policy fields above). Currently someone else's Notion page.
-- **`apps/personal/agents/hermes/values.yaml`** — `git.userName` / `git.userEmail` are the identity the agent commits as (e.g. when Flux-driven changes get pushed back). Currently someone else's name and email.
-- **Container registry** (`charts/agent/values.yaml`, `infrastructure/controllers/mcp-cerbos-shim/deployment.yaml`, `apps/base/gateway/gateway.yaml`) — these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave these as-is and bootstrap directly against it. Only repoint them if you want to build and host your own copies of `hermes-agent`, `mcp-cerbos-shim`, or the agentgateway proxy image — see each image's README under `images/*/README.md` for the build & push steps.
-- **`.gitlab-ci.yml` / `renovate.json`** — wired for this repo's own self-hosted GitLab instance (`RENOVATE_PLATFORM: gitlab`, `RENOVATE_REPOSITORIES`, `RENOVATE_ENDPOINT`, the `harbor.hahomelabs.com` CI runner images). If you fork to GitHub or a different GitLab instance, this file won't run as-is — either adapt it to your CI platform or ignore it; nothing in the platform itself depends on it (it's validation/dependency-update tooling, not part of the reconciled cluster state).
+```bash
+cp values.example.yaml values.yaml
+$EDITOR values.yaml
+```
 
-Steps 1-3 below get the cluster up; the fork-identity values above are what make the Cerbos policies, agent commits, and egress allowlist actually reflect *your* setup instead of the original operator's.
+Every setting carries an inline comment in `values.defaults.yaml`; the example carries only the deltas below, which you almost certainly need to change:
+
+- **`clusterVars`** — the machine/operator-scoped tokens that feed the Cerbos authorization policies and the shim mapping. The example ships: `githubAllowedRepos` / `githubUsername` (the repos agents may write to and your GitHub login, `resource_github.yaml`), `jiraAllowedProjects` (ships as `["PROJ"]` — set to your own project key(s), or `["*"]` if you don't scope Jira), `jiraAllowedAssignees`, `linearAllowedTeams` (your Linear team's UUID + name + key prefix), `linearAllowedAssignees`, `notionScratchpadPageId` / `notionUserId` (the page new pages are pinned to and your Notion user id), and `alertmanagerCreatedBy` — all as placeholders you replace. The rest (`grafanaDeniedDatasourceUids` / `grafanaDeniedDatasourceNames`, `elasticDeniedIndexPatterns`, the `webCrawlMax*` caps, …) default to neutral values in `values.defaults.yaml`; add them to your `values.yaml` only to override.
+- **`agents[].git`** — `userName` / `userEmail` are the identity each agent commits as. Ships as `your-git-username` / `you@example.com`.
+- **`egress`** — `apexWildcardDomains` / `exactOnlyDomains` are the external HTTP(S) destinations the egress-proxy allows; `internalAllowlistCIDRs` carves RFC1918 hosts out of the private-network deny (empty = none).
+- **`agents[].networkAllowlist`** — `cnameChainedFQDN` / `cnameChain` are your git host's FQDN and its full CNAME chain (see step 3 below). Ships as placeholders (`git.example.com` + a dummy chain); if your git host is `github.com` you can clear them.
+- **Container registry** (`values.defaults.yaml`'s `agents[].image`, `charts/mcp-cerbos-shim/templates/deployment.yaml`, `charts/platform/templates/gateway.yaml`) — these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave them as-is and install directly against it. Only repoint them if you want to build and host your own copies of `hermes-agent`, `mcp-cerbos-shim`, or the agentgateway proxy image — see each image's README under `images/*/README.md` for the build & push steps.
+- **`.gitlab-ci.yml` / `renovate.json`** — wired for this repo's own self-hosted GitLab instance. If you host this elsewhere, adapt these to your CI platform or ignore them; nothing in the platform itself depends on them (they're validation/dependency-update tooling, not part of the installed cluster state).
 
 To stand up your own instance:
 
-1. Fork the repo (GitHub, your own self-hosted git, wherever) and clone your fork. `./vicegerent bootstrap` / `install.sh` default `REPO_URL` to this checkout's `origin` remote, so cloning your own fork is enough — no env override needed.
-2. Make sure the SSH key you'll bootstrap with (`PRIVATE_KEY_FILE`, default `~/.ssh/id_rsa`) has **write** access to your fork — `flux bootstrap git` commits its generated manifests back to it.
-3. If your git host isn't `github.com`, add it to the agent sandbox's SSH egress allowlist in `charts/agent/templates/networkpolicy.yaml` (the `toFQDNs` block under the "SSH bypasses the HTTP proxy" comment) — otherwise Cilium blocks git-over-SSH from inside the sandbox. If that host itself resolves through a CNAME (common for self-hosted setups behind dynamic DNS or a tunnel), add every name in the chain, not just the one you git-clone with: Cilium's `toFQDNs` DNS proxy strips a CNAME answer unless every name in it is itself allowlisted. Find the chain with `dig +noall +answer <your-host>`.
-
-One fork can drive many machines — each is a separate `clusters/<machine>/` + `apps/<machine>/` pair in the same git history, not a new fork per machine (see [Adding a second machine](#adding-a-second-machine) below). This is still not multi-tenant: each pair is bootstrapped to its own Kind cluster, and only that machine writes Flux's generated manifests back under its own `clusters/<machine>/`.
-
-After your own `flux bootstrap` run, `clusters/personal/flux-system/gotk-*.yaml` will diverge from this repo's copies to point at your fork — that's expected (Flux regenerates them per-target), not something to reconcile back upstream.
+1. Clone this repo. `./vicegerent install` reads `values.yaml` from the checkout root.
+2. Make sure the SSH key your agents will use has access to your git host, so git-over-SSH clone/push works from inside the sandbox.
+3. If your git host isn't `github.com`, its FQDN and CNAME chain go in `agents[].networkAllowlist` (`cnameChainedFQDN` / `cnameChain`) — otherwise Cilium blocks git-over-SSH from inside the sandbox. If that host resolves through a CNAME (common for self-hosted setups behind dynamic DNS or a tunnel), list every name in the chain, not just the one you git-clone with: Cilium's `toFQDNs` DNS proxy strips a CNAME answer unless every name in it is itself allowlisted. Find the chain with `dig +noall +answer <your-host>`.
 
 ## Create the local Kind cluster
 
@@ -42,15 +38,15 @@ Prerequisites:
 - `kind`
 - `cilium-cli`
 - `kubectl`
-- `flux`
 - `helm`
+- `yq` v4
 - `jq`
-- SSH access (with write access) to your fork — see "Forking this repo" above
+- SSH access to your git host — see "Configuring for your machine" above
 
-Create the cluster (creates the Kind cluster on its docker network and installs Cilium):
+Create the cluster (creates the Kind cluster on its docker network, installs Cilium as the CNI, and patches CoreDNS to resolve `host.docker.internal`):
 
 ```bash
-./vicegerent cluster setup
+./vicegerent setup cluster
 ```
 
 Verify the cluster and CNI:
@@ -66,9 +62,9 @@ If metrics are not ready immediately, wait a minute and rerun `kubectl --context
 
 ## Secrets setup
 
-Cluster secrets are plain Kubernetes Secrets — Kind etcd is the source of truth, and no secret values live in git. The setup scripts generate crypto material (CAs, certificates, SSH keys, random tokens) and read user-supplied API keys from the environment or interactive prompts, then `kubectl apply` the Secrets directly. They are provisioned in two passes: **platform-wide** material (shared by the whole cluster) and **per-agent** material (one set per named agent). Both are idempotent — generated material already present is reused, and re-running reseeds a fresh cluster.
+Cluster secrets are plain Kubernetes Secrets — Kind etcd is the source of truth, and no secret values live in git. The setup scripts generate crypto material (CAs, certificates, SSH keys, random tokens) and read user-supplied API keys from the environment or interactive prompts, then `kubectl apply` the Secrets directly. They are provisioned in two passes: **platform-wide** material (shared by the whole cluster) and **per-agent** material (one set per named agent). Both are idempotent — generated material already present is reused, and re-running reseeds a fresh cluster. The installer never creates secrets; it only pre-flights that the ones its workloads block on exist, and fails fast with a pointer if they don't.
 
-MCP-server API keys are the exception: they are `thv` (ToolHive) secrets on the host, not Kubernetes Secrets. Configure them with `vicegerent mcp configure` (see [`host/mcp`](../host/mcp)), not the scripts below.
+MCP-server API keys are the exception: they are `thv` (ToolHive) secrets on the host, not Kubernetes Secrets. Configure them with `./vicegerent setup mcp` (see [`host/mcp`](../host/mcp)), not the scripts below.
 
 > Secrets are treated as disposable/recreatable. There is no external secret store in the loop, so **keep your own copy of any API keys** — re-running a setup script is how you rebuild the cluster's secrets after a `kind delete cluster`. (A Velero backup of the Secrets is a planned follow-up.)
 
@@ -78,7 +74,7 @@ Generates the ghostunnel CA + server/client certificates and the egress-proxy MI
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # set any key to apply it non-interactively
-./vicegerent secrets setup platform
+./vicegerent setup secrets platform
 ```
 
 ```text
@@ -99,16 +95,16 @@ egress-proxy         egress-proxy-ca            ca.crt, ca.key        (MITM CA p
 agent-sandbox        egress-proxy-ca-cert       ca.crt                (MITM CA cert, trust only)
 ```
 
-MCP-server API keys (tavily/firecrawl/gitlab) are **not** here — they are `thv` secrets on the host (`vicegerent mcp configure`); notion/linear use OAuth.
+MCP-server API keys (tavily/firecrawl/gitlab) are **not** here — they are `thv` secrets on the host (`./vicegerent setup mcp`); notion/linear use OAuth.
 
 The host-only ghostunnel files (`~/.vicegerent/ghostunnel`): `ca.cert`, `ca.key`, `server.crt`, `server.key`, `client.crt`, `client.key`. The CA key stays host-side so a re-run can re-issue a leaf without rebuilding the chain, and the host ghostunnel server reads its material from here.
 
 ### Per-agent
 
-Run once per named agent. Each agent gets its own independently generated dashboard credentials and SSH key — no material is shared between agents.
+Run once per named agent, using the name you gave it in `values.yaml`'s `agents:` list. Each agent gets its own independently generated dashboard credentials and SSH key — no material is shared between agents. Run this before `./vicegerent install`, or the install's agents-stage pre-flight will stop and point you here.
 
 ```bash
-./vicegerent secrets setup agent hermes   # accepts -y/--yes
+./vicegerent setup secrets agent hermes   # accepts -y/--yes
 ```
 
 This applies these Kubernetes Secrets in namespace `agent-sandbox` (agent `<name>`):
@@ -120,115 +116,135 @@ This applies these Kubernetes Secrets in namespace `agent-sandbox` (agent `<name
 <name>-ssh-key               hermes_agent_ed25519    (ed25519 private key)
 ```
 
-## Bootstrap Flux
+## Install the platform
 
-Bootstrap the local Kind cluster against this repo. The script runs `flux bootstrap git` and is idempotent — re-runs reconcile cleanly. Provision the secrets (above) before or right after bootstrap so the workloads Flux reconciles have the material they consume. It confirms before each change; pass `-y`/`--yes` for a non-interactive run.
+`./vicegerent install` runs the staged Helm installer in `scripts/install/install.sh`. The control plane (stage order, chart coordinates, pinned versions, image tags) lives in `stages/stages.yaml`; the machine plane (`clusterVars` / `agents` / `egress` / `models`) is your `values.yaml`. It does not run continuously — re-run it yourself after a `git pull` to apply upstream changes.
+
+Each stage runs `helm upgrade --install --wait --rollback-on-failure` (or `kubectl apply -k` for the vendored/CRD manifests) in order and health-gates before moving on, so a re-run delivers upgrades with no gaps. It is idempotent — an immediate re-run with no changes is a no-op. It confirms before each change; pass `-y`/`--yes` for a non-interactive run.
 
 ```bash
-./vicegerent bootstrap
+./vicegerent install
 ```
 
-The script defaults to:
+Flags and env:
 
 ```text
-KUBE_CONTEXT=kind-vicegerent
-REPO_URL=<this checkout's 'origin' remote>
-BRANCH=main
-CLUSTER_PATH=./clusters/personal
-PRIVATE_KEY_FILE=$HOME/.ssh/id_rsa
+-y, --yes            auto-approve every prompt (non-interactive)
+    --values <file>  machine plane values (default: <repo>/values.yaml)
+    --stage <name>   run only this stage
+    --from <name>    run this stage and every stage after it
+RECREATE=1           add `helm --force-replace` (delete/recreate on immutable-field conflict)
+HELM_TIMEOUT=10m     per-release --wait timeout
 ```
 
-Override those with environment variables if needed:
+Stages run in this order: `cni` → `crds` → `storage` → `controllers` → `platform` → `agents`. Use `--stage platform` to re-render just the platform charts after editing a cluster var, or `--from controllers` to resume partway. The `agents` stage also prunes: an agent you remove from `values.yaml` is `helm uninstall`ed on the next run (removing a controller from `stages.yaml`, by contrast, needs a manual `helm uninstall`).
+
+Check the result:
 
 ```bash
-BRANCH=my-test-branch PRIVATE_KEY_FILE=$HOME/.ssh/id_ed25519 ./vicegerent bootstrap
-```
-
-Check reconciliation:
-
-```bash
-flux --context kind-vicegerent get all -A
 kubectl --context kind-vicegerent get pods -A
+helm --kube-context kind-vicegerent list -A
 ```
 
-The committed `gotk-sync.yaml` expects the bootstrap-created `flux-system` Git credential Secret.
+## Back up and restore the cluster
+
+Velero takes a **full-cluster backup** on a daily schedule (`vicegerent-daily` in `stages/values/velero.yaml`, 13:00 America/Denver, 7-day retention): every namespaced and cluster-scoped resource, plus CSI volume snapshots of the CSI-backed PVCs (the agent `data` / `gitrepos` / `models` volumes on `csi-hostpath-sc`) and the Helm release state itself. Backups land in the rclone S3 bucket served on the laptop (`host.docker.internal:9899`), which lives on your host filesystem and survives a cluster nuke.
+
+The commands below use the `velero` CLI (`brew install velero`) against your current kube-context — set it with `kubectl config use-context kind-vicegerent` first. List backups, or trigger one on demand:
+
+```bash
+velero backup get
+velero backup create manual --wait
+```
+
+If an upgrade breaks the cluster, nuke it and restore from the last good backup. The key subtlety: bring up **only** the restore prerequisites before restoring — if you run a full `./vicegerent install` first, the platform recreates its PVCs empty and Velero skips restoring the snapshot data onto them.
+
+```bash
+# 1. Delete the broken cluster and recreate the base (Kind + Cilium).
+kind delete clusters vicegerent
+./vicegerent setup cluster
+
+# 2. Re-seed platform secrets — Velero needs the velero-credentials Secret to
+#    reach the backup bucket, and the CSI stack must exist to restore snapshots.
+./vicegerent setup secrets platform
+
+# 3. Install ONLY the restore prerequisites: CRDs, the storage layer (snapshot
+#    controller + CSI driver), and the controllers stage (which carries Velero).
+#    Stop there.
+./vicegerent install --stage crds
+./vicegerent install --stage storage
+./vicegerent install --stage controllers
+
+# 4. Restore the most recent backup — recreates namespaces, workloads, CRs, and
+#    PVCs-with-data across the whole cluster.
+velero backup get
+velero restore create --from-backup <backup-name> --wait
+```
+
+Because the backup includes the Helm release Secrets, `helm list -A` shows the releases as `deployed` after the restore. Finish with a normal `./vicegerent install` to re-assert every stage and pull the platform back onto its expected chart versions.
 
 ## Adding a second machine
 
-One fork drives as many machines as you like — each is its own Kind cluster with its own `clusters/<machine>/` (Flux entrypoint + `cluster-vars.yaml`) and `apps/<machine>/` (a thin overlay that pulls in `apps/base` plus that machine's own `agents/`). The shared platform under `apps/base/` is not duplicated. The first machine is `personal`; to stand up another — say `macbook-office`:
+A second machine is a second clone with its own gitignored `values.yaml` and its own `kind-vicegerent` cluster. `charts/` + `stages/` are the shared, machine-agnostic platform; everything machine-specific is in `values.yaml`. On the new machine:
 
-1. Copy the two directory trees and rename them:
+```bash
+git clone <repo-ssh-url> && cd vicegerent-agents
+cp values.example.yaml values.yaml
+$EDITOR values.yaml                    # this machine's cluster vars + agents
+./vicegerent setup cluster
+./vicegerent setup secrets platform
+./vicegerent setup secrets agent hermes
+./vicegerent install
+```
 
-   ```bash
-   cp -r clusters/personal clusters/macbook-office
-   cp -r apps/personal apps/macbook-office
-   ```
-
-2. Repoint and re-scope the copy:
-
-   - In `clusters/macbook-office/apps.yaml`, set `path: ./apps/macbook-office`.
-   - In `clusters/macbook-office/cluster-vars.yaml`, set this machine's GitHub repos, Jira project, Linear team, and git host (each value is documented inline in that file).
-   - Add or remove agent folders under `apps/macbook-office/agents/` as that machine needs (copy `hermes` for a new agent).
-
-3. Create the cluster, provision secrets, and bootstrap Flux against the new path. The `vicegerent` CLI honors `CLUSTER_NAME` / `CLUSTER_PATH` / `KUBE_CONTEXT` overrides, and `kind create --name` (from `CLUSTER_NAME`) names the cluster regardless of `kind-config.yaml`'s `name:`:
-
-   ```bash
-   export CLUSTER_NAME=macbook-office
-   export CLUSTER_PATH=./clusters/macbook-office
-   export KUBE_CONTEXT=kind-macbook-office
-   ./vicegerent cluster setup
-   ./vicegerent secrets setup platform
-   ./vicegerent secrets setup agent hermes
-   ./vicegerent bootstrap
-   ```
-
-The new `clusters/macbook-office/flux-system/gotk-*.yaml` are placeholders until that machine's own `flux bootstrap` regenerates them. `scripts/install/kind-config.yaml`'s NodePort pool (`30119-30128`) only needs editing if two of your clusters run on the same host at once — a single laptop running one cluster can leave it as-is.
+`scripts/install/kind-config.yaml`'s NodePort pool (`30119-30128`) only needs editing if you run two clusters on the same host at once — a single laptop running one cluster can leave it as-is.
 
 ## Host-side MCP control plane
 
-Every MCP server runs on the laptop under ToolHive (`thv`) and is aggregated behind a single Virtual MCP Server (vMCP) that ghostunnel exposes to the cluster over mTLS. The control plane lives in [`host/mcp`](../host/mcp): `vicegerent-mcp` brings up the 11 ToolHive workloads declared in `toolhive-servers.json` (kubernetes, github, gitlab, tavily, firecrawl, notion, linear, jira, grafana, alertmanager, pagerduty — all off by default) and supervises the three long-lived host processes — `thv vmcp serve` (aggregates the group on `127.0.0.1:4483`), `ghostunnel` (terminates cluster mTLS, listens `127.0.0.1:8453`, forwards to the vMCP), and an opt-in `caffeinate` that keeps macOS awake while the stack runs.
+Every MCP server runs on the laptop under ToolHive (`thv`) and is aggregated behind a single Virtual MCP Server (vMCP) that ghostunnel exposes to the cluster over mTLS. The control plane lives in [`host/mcp`](../host/mcp): `vicegerent mcp` brings up the 17 ToolHive workloads declared in `toolhive-servers.json` (kubernetes, github, gitlab, tavily, firecrawl, notion, linear, jira, grafana, alertmanager, pagerduty, elastic, aws — plus the `aws_profiles` companion and three regional `_gov` variants — all off by default) and supervises the three long-lived host processes — `thv vmcp serve` (aggregates the group on `127.0.0.1:4483`), `ghostunnel` (terminates cluster mTLS, listens `127.0.0.1:8453`, forwards to the vMCP), and an opt-in `caffeinate` that keeps macOS awake while the stack runs.
 
 The cluster reaches the vMCP at `host.docker.internal:8453`; agentgateway carries a `vmcp` `AgentgatewayBackend` and a single `/mcp/vmcp` HTTPRoute. Through the vMCP, tools are named `{workload}_<tool>` (e.g. `kubernetes_resources_get`).
 
-First-time setup installs the host prerequisites (`thv`, `ghostunnel`, `supervisor`, and the Python venv `vicegerent-mcp` runs under):
+First-time setup installs the host prerequisites (`thv`, `ghostunnel`, `supervisor`, and the Python venv `vicegerent mcp` runs under), then walks you through enabling and configuring servers interactively (API keys become `thv` secrets; notion/linear use browser OAuth), and links the `vicegerent` CLI onto your `PATH`:
 
 ```bash
-./vicegerent mcp setup
+./vicegerent setup mcp
 ```
 
-Then enable and configure servers interactively (API keys become `thv` secrets; notion/linear use browser OAuth):
-
-```bash
-./vicegerent mcp configure
-```
+Re-run it any time to reconfigure, or toggle an individual server later with `./vicegerent mcp enable <key>` / `disable <key>`.
 
 Start and stop the whole local platform — the Kind cluster and the host MCP stack together — with the top-level commands:
 
 ```bash
-./vicegerent start   # resume the Kind cluster, then bring up the host MCP stack
-./vicegerent stop    # stop the host MCP stack (including ToolHive workloads), then pause the cluster
+./vicegerent start   # start the Kind cluster, then bring up the host MCP stack
+./vicegerent stop    # stop the host MCP stack (including ToolHive workloads), then stop the cluster
 ```
 
-For finer control of just the host stack, drive it with `./vicegerent-mcp` (`start [--caffeinate]`, `stop`, `status`, `logs`, `doctor`, `configure`, `enable`/`disable`, `tui`); see [`host/mcp/README.md`](../host/mcp/README.md) for the full reference.
+For finer control of just the host stack, drive it with `./vicegerent mcp` (`start [--caffeinate]`, `stop`, `status`, `logs`, `doctor`, `enable`/`disable`); the interactive TUI is the top-level `./vicegerent tui`. See [`host/mcp/README.md`](../host/mcp/README.md) for the full reference.
 
 ```bash
-./vicegerent-mcp start
-./vicegerent-mcp status
+./vicegerent mcp start
+./vicegerent mcp status
 ```
 
 ## Dashboards
 
-Each agent's Hermes dashboard is published on a Kind NodePort (pool `30119-30128`, mapped to the host via kind `extraPortMappings`) and reachable directly at `http://127.0.0.1:<nodePort>/`. Print the URL + basic-auth credentials, or open it:
+Each agent's Hermes dashboard is published on a Kind NodePort — derived as 30119 plus the agent's index in your `agents:` list (pool `30119-30128`, mapped to the host via kind `extraPortMappings`) — and reachable directly at `http://127.0.0.1:<nodePort>/`. Print its URL + basic-auth credentials, then open the URL in a browser:
 
 ```bash
-./vicegerent agent creds hermes       # print URL + credentials
-./vicegerent agent dashboard hermes   # open in a browser
+./vicegerent creds hermes   # print dashboard URL + login
 ```
 
-VictoriaLogs (cluster-wide log aggregation) has no NodePort — it's opened via an auto-torn-down port-forward instead:
+To get a shell inside a running agent's container — it drops you into a shell in `/workspace`:
 
 ```bash
-./vicegerent logs dashboard   # port-forward + open the VictoriaLogs web UI (vmui)
+./vicegerent ssh hermes
+```
+
+VictoriaLogs (cluster-wide log aggregation) has no NodePort — port-forward its server Service and open the web UI (vmui) at `http://127.0.0.1:9428/select/vmui/`:
+
+```bash
+kubectl --context kind-vicegerent -n victoria-logs port-forward svc/victoria-logs-server 9428:9428
 ```
 
 ## Development
@@ -240,4 +256,4 @@ pre-commit install
 pre-commit run --all-files
 ```
 
-The local Flux validation hook expects `yq` v4, `kustomize`, `kubeconform`, and `curl` on `PATH`.
+The local validation hook (`scripts/validate.sh`) expects `helm`, `yq` v4, `kubeconform`, and `python3` on `PATH` (plus `cerbos` for the policy-compile pass, which is skipped if it's absent).

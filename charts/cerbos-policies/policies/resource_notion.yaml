@@ -1,0 +1,111 @@
+---
+# notion_page policy: allow-all except (a) a hard deny on destructive update-page
+# commands, and (b) a hard deny on create-pages calls whose parent isn't the
+# Scratchpad folder.
+#
+# create-pages: mapping.yaml used to `force`-rewrite every call's `parent` to
+# the Scratchpad page id, so a wrong/omitted parent silently landed under
+# Scratchpad anyway instead of erroring. That taught a calling agent nothing —
+# it never saw feedback that its intended parent was ignored, so it kept
+# guessing wrong on future calls. This denies instead, with a message naming
+# the correct page_id, so the agent corrects itself going forward.
+# parentKind/parentPageId come from notionCreateAttr (helpers_notion.go);
+# parentKind is "" when parent was omitted (creates a private workspace-level
+# page, also not under Scratchpad) or set to database_id/data_source_id
+# (never Scratchpad, which is a plain page).
+#
+# update-page/create-comment: TWO complementary gates apply (extended
+# to create-comment and multi-parent scoping). The shim runs a live ancestry
+# lookup BEFORE this policy is consulted (it calls notion-fetch back through
+# vMCP -- Cerbos itself has no I/O and can't resolve a page's parent) and
+# denies any write to a page not under ANY of the allowed parent folders
+# (NOTION_ALLOWED_PARENT_PAGE_IDS env var on the shim Deployment: Scratchpad
+# always implicit, plus ${notionAllowedParentPageIds} -- a per-machine list of
+# additional team folders, e.g. DEVOPS/DevSecOps but not Finance -- see
+# deployment.yaml/main.go/values.yaml). notion-create-pages is NOT part
+# of this multi-parent list -- it stays pinned to Scratchpad-only via this
+# policy's own create rule below (${notionScratchpadPageId}), a narrower,
+# separate check. This Cerbos policy is the second gate for update-page: for
+# pages that DO pass the ancestry check, it still blocks the destructive
+# commands -- `command == replace_content` (overwrites the entire page body)
+# or `allow_deleting_content: true` (lets replace_content delete child
+# pages/databases outright). update_properties, update_content (targeted
+# search-and-replace), insert_content, apply_template, and update_verification
+# remain allowed -- the tool's own docs already steer toward preferring
+# update_content/insert_content over replace_content, this just makes that
+# guidance load-bearing. create-comment has no destructive-command surface, so
+# the ancestry gate is its only check; it always reaches this policy's
+# allow-all rule once past that gate.
+#
+# update-page/create-comment ALSO get a third gate: the shim resolves the
+# page's real author via a live notion-fetch+notion-search lookup (same
+# rationale as the ancestry gate -- Cerbos has no I/O) and, only on a
+# mismatch, injects pageAuthorMismatch=true, which deny-not-own-page below
+# denies. has()-guarded so a page the shim couldn't resolve authorship for
+# and legitimately-authored pages (no attr set at all) both fall through to
+# allow -- the mismatch attr is only ever present and true, never present and
+# false. See mcp-cerbos-shim's PageAuthoredByOperator doc comment for why
+# this is a semantic search match (fail-closed-safe on a false negative, never
+# a false positive) rather than an exact field comparison. PageAuthoredByOperator
+# also checks the page's own "Owner"-named property (case-insensitive; a
+# database row's person-type column) BEFORE the creator search, ORing that
+# match in -- a page the operator didn't CREATE but is nonetheless the
+# current Owner of (e.g. reassigned after creation) still resolves as
+# operator-authored, so pageAuthorMismatch never gets set for it. This is
+# purely additional signal into the same single boolean Cerbos already
+# consumes -- no separate attr or rule needed here for the fallback itself.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: notion_page
+  rules:
+    - name: deny-destructive-update
+      actions: [update]
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            request.resource.attr.command == "replace_content" ||
+            request.resource.attr.allowDeletingContent == "true"
+      output:
+        when:
+          ruleActivated: >-
+            "This agent may not replace_content or allow_deleting_content on an existing"
+            + " Notion page. Use update_content (targeted search-and-replace) or"
+            + " insert_content instead."
+    - name: deny-create-outside-scratchpad
+      actions: [create]
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            request.resource.attr.parentKind != "page_id" ||
+            request.resource.attr.parentPageId != "{{ .Values.clusterVars.notionScratchpadPageId }}"
+      output:
+        when:
+          ruleActivated: >-
+            "New Notion pages may only be created with parent.page_id set to the"
+            + " Scratchpad folder (page_id {{ .Values.clusterVars.notionScratchpadPageId }}). Pass that id"
+            + " as parent.page_id, or omit new pages from this call and use"
+            + " update-page on an existing page under Scratchpad instead."
+    - name: deny-not-own-page
+      actions: [update, comment]
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.pageAuthorMismatch) &&
+            request.resource.attr.pageAuthorMismatch == true
+      output:
+        when:
+          ruleActivated: >-
+            "This agent may only update-page/create-comment on Notion pages it"
+            + " authored itself. This page's real author does not match the"
+            + " operator, so the write is denied."
+    - name: allow-all
+      actions: ['*']
+      effect: EFFECT_ALLOW
+      roles: ['*']

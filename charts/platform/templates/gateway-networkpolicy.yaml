@@ -1,0 +1,34 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentgateway-ingress-from-agent-sandbox
+  namespace: agentgateway-system
+spec:
+  endpointSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: agentgateway-proxy
+  ingress:
+    # Traffic from hermes arrives via the scrubbing egress-proxy, not directly.
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: egress-proxy
+      toPorts:
+        - ports:
+            - port: '80'
+              protocol: TCP
+    # The shim reaches :80 for its own OpenAI calls (prompt-injection judge,
+    # content-moderation, via the /openai route) and :81 for its re-entrant
+    # vMCP lookups (the vmcp-internal route). Only this shim rule grants :81 --
+    # the agent path above (egress-proxy) gets :80 only -- so the shim is the
+    # sole client of the internal listener (the network half of its two locks).
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: cerbos
+            app.kubernetes.io/name: mcp-cerbos-shim
+      toPorts:
+        - ports:
+            - port: '80'
+              protocol: TCP
+            - port: '81'
+              protocol: TCP

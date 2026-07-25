@@ -1,0 +1,32 @@
+---
+# grafana_datasource policy: deny reads targeting any denied datasource
+# (${grafanaDeniedDatasourceUids}/${grafanaDeniedDatasourceNames}, from
+# values.yaml (clusterVars) — matched by uid or name, CEL-list-ready
+# same as githubAllowedRepos/linearAllowedTeams); allow everything else. The
+# shim maps every datasource-bearing Grafana tool to this resource, carrying
+# uid+name attrs. Do NOT add tools/kinds here to permit them; that belongs in
+# the gateway allowlist.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: grafana_datasource
+  rules:
+    - name: deny-blocked-datasource
+      actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            (has(request.resource.attr.uid) && request.resource.attr.uid in [{{ include "cerbos-policies.celList" .Values.clusterVars.grafanaDeniedDatasourceUids }}])
+            ||
+            (has(request.resource.attr.name) && request.resource.attr.name in [{{ include "cerbos-policies.celList" .Values.clusterVars.grafanaDeniedDatasourceNames }}])
+      output:
+        when:
+          ruleActivated: >-
+            "This agent is not allowed to query this Grafana datasource. Choose a"
+            + " different datasource."
+    - name: allow-all
+      actions: ['*']
+      effect: EFFECT_ALLOW
+      roles: ['*']

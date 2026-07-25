@@ -44,35 +44,56 @@ func main() {
 	}
 
 	// Notion existing-page-write ancestry gate (update-page, create-comment):
-	// NOTION_ALLOWED_PARENT_PAGE_IDS is Flux's ${notionAllowedParentPageIds}
-	// substituted directly into this Deployment's env (see deployment.yaml) --
+	// NOTION_ALLOWED_PARENT_PAGE_IDS carries the ${notionAllowedParentPageIds}
+	// cluster var, Helm-rendered into this Deployment's env (see deployment.yaml) --
 	// a comma-joined multi-parent allowlist (Scratchpad plus any additional
 	// team folders the operator scopes this machine's agent down to), NOT the
 	// same value notion-create-pages's Cerbos deny rule checks
 	// (${notionScratchpadPageId}, still Scratchpad-only -- create-pages has
-	// its own narrower policy, see defs/resource_notion.yaml). A plain env var
-	// is a stable, independent source, parsed here rather than read back out
+	// its own narrower policy, see
+	// charts/cerbos-policies/policies/resource_notion.yaml). A plain env var is
+	// a stable, independent source, parsed here rather than read back out
 	// of the mapping (which no longer carries a `force` block for
 	// create-pages -- see mapping.yaml). If it's absent, leave the gate
 	// unconfigured -- the server then fails every update-page/create-comment
 	// closed (deny), never silently open.
+	// Every live-resolution gate below re-enters the shim through agentgateway
+	// to fetch a resource's real state. Those lookups go to the dedicated
+	// vmcp-internal route (upstream.DefaultVMCPURL), whose guardrail runs
+	// CheckRequest but not CheckResponse, so the shim's own prompt-injection
+	// gate never fires on a lookup of injection-bearing content and fails the
+	// ownership gate closed (the circular dependency this whole path breaks).
+	// newUpstream stamps the shim's secret self-token (upstream.WithSelfToken)
+	// so that route's CheckRequest admits the shim and denies any other caller.
+	// See server.WithSelfToken and charts/platform/templates/vmcp.yaml.
+	newUpstream := func() *upstream.Client {
+		return upstream.New(upstream.DefaultVMCPURL, nil, upstream.WithSelfToken(cfg.selfToken))
+	}
+
 	var opts []server.Option
+	if cfg.selfToken != "" {
+		opts = append(opts, server.WithSelfToken(cfg.selfToken))
+		log.Printf("vmcp-internal backend token gate enabled (re-entrant lookups authenticated by secret self-token)")
+	} else {
+		log.Printf("WARNING: SHIM_SELF_TOKEN unset/empty; vmcp-internal backend admits on the CiliumNetworkPolicy network lock alone (no app-layer token check). Run 'vicegerent setup secrets platform' and redeploy to enable it.")
+	}
+
 	if ids := splitNonEmpty(cfg.notionAllowedParentPageIDs, ","); len(ids) > 0 {
-		opts = append(opts, server.WithNotionAncestry(upstream.New(upstream.DefaultVMCPURL, nil), ids))
+		opts = append(opts, server.WithNotionAncestry(newUpstream(), ids))
 		log.Printf("notion existing-page-write ancestry gate enabled (%d allowed parent(s))", len(ids))
 	} else {
 		log.Printf("WARNING: NOTION_ALLOWED_PARENT_PAGE_IDS unset/empty; notion update-page/create-comment will fail closed")
 	}
 
 	// Notion existing-page-write author-resolution gate (update-page,
-	// create-comment): NOTION_USER_ID is Flux's ${notionUserId} substituted
-	// directly into this Deployment's env -- the operator's own Notion user
+	// create-comment): NOTION_USER_ID carries the ${notionUserId} cluster var,
+	// Helm-rendered into this Deployment's env -- the operator's own Notion user
 	// id, resolved once via a manual notion-fetch {"id":"self"} call per
 	// machine. Optional/fail-closed-if-absent, same posture as the ancestry
 	// gate above: a machine that hasn't had this configured yet denies every
 	// update-page/create-comment rather than silently skipping the check.
 	if uid := cfg.notionUserID; uid != "" {
-		opts = append(opts, server.WithNotionPageAuthor(upstream.New(upstream.DefaultVMCPURL, nil), uid))
+		opts = append(opts, server.WithNotionPageAuthor(newUpstream(), uid))
 		log.Printf("notion existing-page-write author gate enabled (operator user id configured)")
 	} else {
 		log.Printf("WARNING: NOTION_USER_ID unset/empty; notion update-page/create-comment will fail closed")
@@ -86,7 +107,7 @@ func main() {
 	// to gate on; a lookup failure at call time fails closed on its own
 	// (checkLinearIssueTeam), same posture as the Notion gate's per-call
 	// failure path.
-	opts = append(opts, server.WithLinearIssueTeam(upstream.New(upstream.DefaultVMCPURL, nil)))
+	opts = append(opts, server.WithLinearIssueTeam(newUpstream()))
 	log.Printf("linear issue team-resolution gate enabled (save_comment always; save_issue updates without an explicit team arg)")
 
 	// Linear save_project UPDATE team-resolution gate: same
@@ -94,7 +115,7 @@ func main() {
 	// of its own, hands off to the same ${linearAllowedTeams} Cerbos rule
 	// via the teams attr save_project already populates via linearProjectAttr
 	// when the call sets addTeams/setTeams itself.
-	opts = append(opts, server.WithLinearProjectTeam(upstream.New(upstream.DefaultVMCPURL, nil)))
+	opts = append(opts, server.WithLinearProjectTeam(newUpstream()))
 	log.Printf("linear project team-resolution gate enabled (save_project updates without addTeams/setTeams)")
 
 	// PagerDuty incident service-resolution gate: same
@@ -102,7 +123,7 @@ func main() {
 	// of its own, hands off to the ${pagerdutyAllowedServiceIds} Cerbos rule
 	// (resource_pagerduty.yaml) via the serviceIds attr this gate resolves
 	// for every manage_incidents/add_note_to_incident call.
-	opts = append(opts, server.WithPagerdutyIncidentService(upstream.New(upstream.DefaultVMCPURL, nil)))
+	opts = append(opts, server.WithPagerdutyIncidentService(newUpstream()))
 	log.Printf("pagerduty incident service-resolution gate enabled (manage_incidents, add_note_to_incident)")
 
 	// GitHub existing-PR-write author-resolution gate: same unconditional-
@@ -110,7 +131,7 @@ func main() {
 	// to the ${githubUsername} Cerbos rule (resource_github.yaml) via the
 	// prAuthor attr this gate resolves for every update_pull_request/
 	// update_pull_request_branch/request_copilot_review call.
-	opts = append(opts, server.WithGithubPRAuthor(upstream.New(upstream.DefaultVMCPURL, nil)))
+	opts = append(opts, server.WithGithubPRAuthor(newUpstream()))
 	log.Printf("github PR author-resolution gate enabled (update_pull_request, update_pull_request_branch, request_copilot_review)")
 
 	// Jira ticket-assignee resolution gate: same unconditional-enable
@@ -118,7 +139,7 @@ func main() {
 	// the ${jiraAllowedAssignees} Cerbos rule (resource_jira.yaml) via the
 	// assignee attr this gate resolves for update_issue/add_comment/
 	// transition_issue calls that don't carry their own assignee signal.
-	opts = append(opts, server.WithJiraIssueAssignee(upstream.New(upstream.DefaultVMCPURL, nil)))
+	opts = append(opts, server.WithJiraIssueAssignee(newUpstream()))
 	log.Printf("jira issue assignee-resolution gate enabled (update_issue, add_comment, transition_issue)")
 
 	// Alertmanager deleteSilence owner-resolution gate: same unconditional-
@@ -127,7 +148,7 @@ func main() {
 	// via the createdBy attr this gate resolves for every deleteSilence call.
 	// mapping.yaml's `force` block stamps that same value onto every
 	// createSilence call, so the two halves stay in sync by construction.
-	opts = append(opts, server.WithAlertmanagerSilenceOwner(upstream.New(upstream.DefaultVMCPURL, nil)))
+	opts = append(opts, server.WithAlertmanagerSilenceOwner(newUpstream()))
 	log.Printf("alertmanager silence owner-resolution gate enabled (deleteSilence)")
 
 	// Outbound content-moderation gate, toggled per-cluster via CONTENT_MODERATION.
@@ -186,6 +207,7 @@ type envConfig struct {
 	moderationWriteVerbs       string
 	promptInjectionDetection   bool
 	promptInjectionJudgeModel  string
+	selfToken                  string
 }
 
 func loadEnv() envConfig {
@@ -201,12 +223,17 @@ func loadEnv() envConfig {
 		// Empty values fall back to the package defaults.
 		moderationModel:      envOr("MODERATION_MODEL", ""),
 		moderationWriteVerbs: envOr("MODERATION_WRITE_VERBS", ""),
-		// "enabled", never "true"/"false" -- same Flux substituteFrom/kustomize
-		// YAML-emitter gotcha as CONTENT_MODERATION, see README's "Prompt
-		// Injection Detection".
+		// "enabled", never "true"/"false" -- same as CONTENT_MODERATION, see
+		// README's "Prompt Injection Detection".
 		promptInjectionDetection: envOr("PROMPT_INJECTION_DETECTION", "") == "enabled",
 		// Empty falls back to promptinjection.DefaultJudgeModel.
 		promptInjectionJudgeModel: envOr("PROMPT_INJECTION_JUDGE_MODEL", ""),
+		// High-entropy secret the shim presents on its own re-entrant lookups so
+		// the vmcp-internal backend's CheckRequest gate can authenticate them
+		// (see server.WithSelfToken). Auto-generated into a Secret by
+		// setup-secrets-platform.sh; empty falls back to the CNP network lock
+		// alone (fail-safe).
+		selfToken: envOr("SHIM_SELF_TOKEN", ""),
 	}
 }
 

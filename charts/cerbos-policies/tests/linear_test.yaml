@@ -1,0 +1,280 @@
+---
+# Fixtures use the literal team forms matching test-values.yaml's linearAllowedTeams —
+# validate.sh compiles the rendered policy against them, so keep the two in sync.
+name: linear_devops_team_block_test
+description: >-
+  Linear save_issue calls that supply a team other than DEVOPS are denied;
+  calls confined to the DEVOPS team (by uuid, name, or key), and calls that
+  supply no team at all, are allowed. Linear save_project calls whose
+  addTeams/setTeams contain any team other than DEVOPS are denied;
+  calls confined to DEVOPS, or that supply neither addTeams nor setTeams, are
+  allowed. These same allow/deny rules also cover the live-resolved
+  case (an ordinary save_issue/save_project update's CURRENT team, injected
+  by the shim as this same teamId/teams attr) -- Cerbos itself can't tell the
+  difference between an explicit and a resolved team, by design (see
+  resource_linear.yaml's doc). create_issue_label with a teamId other
+  than DEVOPS is denied; a team-scoped label confined to DEVOPS, or a
+  workspace-scoped label (no teamId at all), is allowed.
+  force-self-assignee: a save_issue CREATE call (isCreate true) with no
+  assignee is denied; an ordinary update that doesn't touch assignee is
+  unaffected; any call that sets assignee to someone outside
+  linearAllowedAssignees is denied, but the literal value me is always
+  allowed regardless of the allowlist. A write whose assignee was
+  live-resolved (assigneeVerified=true) and came back genuinely unassigned
+  is denied.
+options:
+  now: '2026-07-02T00:00:00Z'
+principals:
+  hermes:
+    id: hermes
+    roles: [agent]
+resources:
+  devops_team_uuid:
+    id: 6deab0c5-9bda-4f82-b552-41f4aa9e449b
+    kind: linear_team
+    attr: {teamId: 6deab0c5-9bda-4f82-b552-41f4aa9e449b}
+  devops_team_name:
+    id: DevOps
+    kind: linear_team
+    attr: {teamId: DevOps}
+  devops_team_key:
+    id: DEVOPS
+    kind: linear_team
+    attr: {teamId: DEVOPS}
+  other_team:
+    id: some-other-team-id
+    kind: linear_team
+    attr: {teamId: some-other-team-id}
+  no_team_supplied:
+    id: '*'
+    kind: linear_team
+  project_addteams_devops_only:
+    id: '*'
+    kind: linear_team
+    attr: {teams: [DEVOPS]}
+  project_addteams_devops_and_other:
+    id: '*'
+    kind: linear_team
+    attr: {teams: [DEVOPS, some-other-team-id]}
+  project_setteams_other_only:
+    id: '*'
+    kind: linear_team
+    attr: {teams: [some-other-team-id]}
+  project_no_teams_args:
+    id: '*'
+    kind: linear_team
+  create_with_no_assignee:
+    id: '*'
+    kind: linear_team
+    attr: {isCreate: 'true'}
+  create_with_allowed_assignee:
+    id: '*'
+    kind: linear_team
+    attr: {isCreate: 'true', assignee: jchristensen@moveworks.ai}
+  create_with_me_assignee:
+    id: '*'
+    kind: linear_team
+    attr: {isCreate: 'true', assignee: me}
+  create_with_disallowed_assignee:
+    id: '*'
+    kind: linear_team
+    attr: {isCreate: 'true', assignee: someone-else@example.com}
+  update_with_no_assignee:
+    id: LIN-123
+    kind: linear_team
+    attr: {isCreate: 'false'}
+  update_with_disallowed_assignee:
+    id: LIN-123
+    kind: linear_team
+    attr: {isCreate: 'false', assignee: someone-else@example.com}
+  update_verified_unassigned:
+    id: LIN-124
+    kind: linear_team
+    attr: {isCreate: 'false', assignee: '', assigneeVerified: true}
+  # A live-resolved assignee is the get_issue DISPLAY NAME, not an email -- this is the
+  # exact path that regressed when linearAllowedAssignees held only the email form.
+  update_verified_with_allowed_assignee:
+    id: LIN-124
+    kind: linear_team
+    attr: {isCreate: 'false', assignee: Jairus Christensen, assigneeVerified: true}
+  # A live-resolved CURRENT assignee that's out of scope, on a call that asked
+  # for no assignee change (e.g. a save_comment carrying only body+issueId) --
+  # the exact path that used to surface the "requested assignee" message even
+  # though nothing was requested. Now owned by deny-existing-assignee-outside-allowed.
+  update_verified_disallowed_assignee:
+    id: LIN-125
+    kind: linear_team
+    attr: {isCreate: 'false', assignee: Someone Else, assigneeVerified: true}
+  # create_issue_label -- a team-scoped label's teamId is checked
+  # exactly like save_issue/save_project's team(s); a workspace-scoped label
+  # (no teamId arg at all) has nothing to verify and is allowed.
+  label_devops_team:
+    id: DEVOPS
+    kind: linear_team
+    attr: {teamId: DEVOPS}
+  label_other_team:
+    id: some-other-team-id
+    kind: linear_team
+    attr: {teamId: some-other-team-id}
+  label_no_team_supplied:
+    id: '*'
+    kind: linear_team
+tests:
+  - name: save_issue confined to DEVOPS (uuid, name, or key), or with no team supplied,
+      is allowed
+    input:
+      principals: [hermes]
+      resources:
+        - devops_team_uuid
+        - devops_team_name
+        - devops_team_key
+        - no_team_supplied
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: devops_team_uuid
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: devops_team_name
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: devops_team_key
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: no_team_supplied
+        actions: {access: EFFECT_ALLOW}
+  - name: save_issue targeting another team is denied
+    input:
+      principals: [hermes]
+      resources: [other_team]
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: other_team
+        actions: {access: EFFECT_DENY}
+  - name: save_project addTeams confined to DEVOPS, or with no addTeams/setTeams supplied,
+      is allowed
+    input:
+      principals: [hermes]
+      resources: [project_addteams_devops_only, project_no_teams_args]
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: project_addteams_devops_only
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: project_no_teams_args
+        actions: {access: EFFECT_ALLOW}
+  - name: save_project addTeams/setTeams containing any non-DEVOPS team is denied
+    input:
+      principals: [hermes]
+      resources:
+        - project_addteams_devops_and_other
+        - project_setteams_other_only
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: project_addteams_devops_and_other
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: project_setteams_other_only
+        actions: {access: EFFECT_DENY}
+  - name: force-self-assignee -- create requires an allowed assignee (or "me"), ordinary
+      update untouched, reassignment still scoped
+    input:
+      principals: [hermes]
+      resources:
+        - create_with_no_assignee
+        - create_with_allowed_assignee
+        - create_with_me_assignee
+        - create_with_disallowed_assignee
+        - update_with_no_assignee
+        - update_with_disallowed_assignee
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: create_with_no_assignee
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_with_allowed_assignee
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: create_with_me_assignee
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: create_with_disallowed_assignee
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_with_no_assignee
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: update_with_disallowed_assignee
+        actions: {access: EFFECT_DENY}
+  - name: a live-verified unassigned issue (assigneeVerified=true, assignee empty
+      -- the shim's team/assignee-resolution gate actually ran and confirmed no current
+      assignee) is denied, unlike the unverified update_with_no_assignee case above
+      where the gate never resolved an assignee at all; a verified issue with an allowed
+      assignee is unaffected
+    input:
+      principals: [hermes]
+      resources:
+        - update_verified_unassigned
+        - update_verified_with_allowed_assignee
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: update_verified_unassigned
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_verified_with_allowed_assignee
+        actions: {access: EFFECT_ALLOW}
+  - name: assignee-scope denials carry situation-accurate messages -- an explicitly
+      requested out-of-scope assignee (no assigneeVerified) says "the requested assignee
+      is outside that scope", while a live-resolved out-of-scope CURRENT assignee
+      (assigneeVerified=true, e.g. a comment on someone else's issue) says the issue
+      is already assigned outside that scope
+    input:
+      principals: [hermes]
+      resources:
+        - update_with_disallowed_assignee
+        - update_verified_disallowed_assignee
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: update_with_disallowed_assignee
+        actions: {access: EFFECT_DENY}
+        outputs:
+          - action: access
+            expected:
+              - src: resource.linear_team.vdefault#deny-assignee-outside-allowed
+                val: This agent may only assign Linear issues to an allowed user.
+                  The requested assignee is outside that scope.
+      - principal: hermes
+        resource: update_verified_disallowed_assignee
+        actions: {access: EFFECT_DENY}
+        outputs:
+          - action: access
+            expected:
+              - src: resource.linear_team.vdefault#deny-existing-assignee-outside-allowed
+                val: This agent may only comment on/update Linear issues assigned
+                  to an allowed user. This issue is currently assigned to someone
+                  outside that scope -- reassign it to an allowed user first.
+  - name: create_issue_label confined to DEVOPS, or workspace-scoped (no teamId),
+      is allowed; targeting another team is denied
+    input:
+      principals: [hermes]
+      resources:
+        - label_devops_team
+        - label_no_team_supplied
+        - label_other_team
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: label_devops_team
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: label_no_team_supplied
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: label_other_team
+        actions: {access: EFFECT_DENY}

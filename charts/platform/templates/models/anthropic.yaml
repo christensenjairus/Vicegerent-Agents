@@ -1,0 +1,50 @@
+{{- if .Values.models.anthropic.enabled }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  ai:
+    groups:
+      - providers:
+          - name: anthropic
+            anthropic: {}
+            policies:
+              auth:
+                secretRef:
+                  name: vicegerent-anthropic-secrets
+              ai:
+                routes:
+                  /v1/messages: Messages
+                  /v1/messages/count_tokens: AnthropicTokenCount
+                  '*': Passthrough
+                {{- include "platform.promptGuard" . | nindent 16 }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /anthropic
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: anthropic
+          namespace: agentgateway-system
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+{{- end }}

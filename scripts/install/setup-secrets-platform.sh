@@ -18,6 +18,7 @@
 #   agentgateway-system  ghostunnel-ca (ConfigMap)    ca.crt               (ghostunnel CA cert)
 #   agentgateway-system  ghostunnel-server            server.crt/key,ca.crt (host recovery copy)
 #   searxng              searxng-secret               secret_key           (generated)
+#   cerbos               mcp-cerbos-shim-self-token   token                (generated)
 #   egress-proxy         egress-proxy-ca              ca.crt, ca.key       (MITM proxy CA)
 #   agent-sandbox        egress-proxy-ca-cert         ca.crt               (MITM proxy CA cert only)
 #   velero               velero-credentials           cloud                (generated S3 creds)
@@ -39,14 +40,17 @@
 #   --force       rebuild the ghostunnel CA + leaf certs even if they already exist
 #   -h, --help    show this help
 #
-# Env overrides: KUBE_CONTEXT, GHOSTUNNEL_HOST_DIR, RCLONE_S3_HOST_DIR, SERVER_IP,
+# Env overrides: GHOSTUNNEL_HOST_DIR, RCLONE_S3_HOST_DIR, SERVER_IP,
 #   SERVER_CN, CLIENT_CN, ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY,
 #   ZAI_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY,
 #   GITLAB_PERSONAL_ACCESS_TOKEN
 
 set -euo pipefail
 
-KUBE_CONTEXT="${KUBE_CONTEXT:-kind-vicegerent}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/kube-context.sh
+source "$SCRIPT_DIR/../lib/kube-context.sh"
+
 GHOSTUNNEL_HOST_DIR="${GHOSTUNNEL_HOST_DIR:-$HOME/.vicegerent/ghostunnel}"
 RCLONE_S3_HOST_DIR="${RCLONE_S3_HOST_DIR:-$HOME/.vicegerent/rclone-s3}"
 
@@ -62,7 +66,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -y|--yes) ASSUME_YES=1 ;;
     --force) FORCE=1 ;;
-    -h|--help) sed -n '2,44p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -168,11 +172,7 @@ ensure_velero_credentials() {
 for cmd in kubectl openssl jq; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not on PATH"
 done
-kubectl config get-contexts "$KUBE_CONTEXT" >/dev/null 2>&1 \
-  || die "kubectl context '$KUBE_CONTEXT' does not exist"
-current_ctx="$(kubectl config current-context 2>/dev/null || true)"
-[[ "$current_ctx" == "$KUBE_CONTEXT" ]] \
-  || die "current kubectl context is '${current_ctx:-<none>}', expected '$KUBE_CONTEXT' (run: kubectl config use-context $KUBE_CONTEXT)"
+require_kind_context
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vicegerent-setup.XXXXXX")"
 chmod 700 "$WORK"
@@ -182,9 +182,9 @@ trap cleanup EXIT INT TERM
 echo "${B}vicegerent platform secret setup${N}  (context: $KUBE_CONTEXT)"
 [[ "$FORCE" == "1" ]] && warn "--force: the ghostunnel CA and all leaf certificates will be rebuilt."
 
-# Ensure target namespaces exist so Secrets can be applied before Flux creates them.
+# Ensure target namespaces exist so Secrets can be applied before the install stages run.
 step "Namespaces"
-for ns in agentgateway-system searxng egress-proxy agent-sandbox velero; do
+for ns in agentgateway-system searxng egress-proxy agent-sandbox velero cerbos; do
   ensure_ns "$ns"
 done
 info "Target namespaces present."
@@ -252,7 +252,7 @@ info "Applied vicegerent-mcp-client Secret + ghostunnel-ca ConfigMap."
 
 # Mirror the ghostunnel SERVER material (cert + key + CA cert) into the cluster so a
 # host missing ~/.vicegerent/ghostunnel can recover it before ghostunnel starts
-# (vicegerent-mcp start -> ensure_ghostunnel_material). The CA *key* is NOT mirrored —
+# (vicegerent mcp start -> ensure_ghostunnel_material). The CA *key* is NOT mirrored —
 # it only signs new certs, so a full rebuild still means re-running this script.
 apply_secret ghostunnel-server agentgateway-system \
   --from-file=server.crt="$HD/server.crt" --from-file=server.key="$HD/server.key" \
@@ -286,6 +286,23 @@ else
   confirm "Generate a SearXNG secret key (searxng/searxng-secret)." || die "SearXNG secret key is required; aborting."
   apply_secret searxng-secret searxng --from-literal="secret_key=$(openssl rand -hex 32)"
   info "Generated searxng/searxng-secret."
+fi
+
+# --- mcp-cerbos-shim self-token --------------------------------------------
+# High-entropy token the shim presents on its own re-entrant lookups (to the
+# dedicated :81 vmcp-internal route), so that route's CheckRequest gate can
+# authenticate the shim and deny any other caller -- the app-layer half of the
+# two locks that reserve that route for the shim (the :81 CiliumNetworkPolicy
+# is the network half; together they break the shim<->agentgateway circular
+# dependency). Lives only in the cerbos namespace (unreadable by agents), so the
+# header can't be forged. Generate-once so it stays stable across restarts.
+step "MCP shim self-token"
+if secret_has mcp-cerbos-shim-self-token cerbos token; then
+  info "cerbos/mcp-cerbos-shim-self-token (token) already set; reusing."
+else
+  confirm "Generate an MCP shim self-token (cerbos/mcp-cerbos-shim-self-token)." || die "MCP shim self-token is required; aborting."
+  apply_secret mcp-cerbos-shim-self-token cerbos --from-literal="token=$(openssl rand -hex 32)"
+  info "Generated cerbos/mcp-cerbos-shim-self-token."
 fi
 
 # --- egress proxy CA -------------------------------------------------------
@@ -336,6 +353,7 @@ check ghostunnel-server agentgateway-system server.crt
 check ghostunnel-server agentgateway-system server.key
 check_optional vicegerent-anthropic-secrets agentgateway-system Authorization
 check searxng-secret searxng secret_key
+check mcp-cerbos-shim-self-token cerbos token
 check egress-proxy-ca egress-proxy ca.crt
 check egress-proxy-ca egress-proxy ca.key
 check egress-proxy-ca-cert agent-sandbox ca.crt

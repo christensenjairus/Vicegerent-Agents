@@ -14,12 +14,7 @@ package server
 // This closes that gap at the one place that sees every tool call in both
 // directions regardless of destination backend: CheckRequest (before a
 // call reaches vMCP) and CheckResponse (before a tool's result reaches the
-// model). Reuses the exact same pattern set the egress-proxy's scrub.py
-// already carries (SSH private keys, Slack tokens) so there's one canonical
-// definition of "what a secret looks like" to keep in sync, plus a Bearer/
-// Basic/API-key-header-shaped pattern (egress-proxy scrubs those from HTTP
-// headers directly; this shim only ever sees JSON-RPC bodies, so the same
-// shapes are matched as plain substrings instead).
+// model).
 //
 // Deliberately mutate, never deny: a false-positive match on a
 // legitimate-looking-but-harmless string (e.g. a Bearer-token-shaped test
@@ -27,37 +22,29 @@ package server
 // should not break an otherwise-valid call. This mirrors the egress-proxy's
 // own posture (redact and forward, never 403 on a matched pattern alone)
 // and the existing mutate() path already used for GitHub's forced-draft
-// override -- redaction is just another argument rewrite. Same caveat as
-// the egress-proxy's own doc comment: this is pattern-based and does NOT
-// catch encoded forms (base64, hex, rot13, etc.) -- it raises the bar
-// against copy-pasted plaintext secrets, not a determined exfiltration
-// attempt. Cerbos-level project/team/service scoping is still the primary
-// control against a MISDIRECTED call; this is a defense-in-depth layer
-// against a plaintext secret riding along inside an otherwise-authorized
-// one.
+// override -- redaction is just another argument rewrite. This is
+// pattern-based and does NOT catch encoded forms (base64, hex, rot13, etc.)
+// -- it raises the bar against copy-pasted plaintext secrets, not a
+// determined exfiltration attempt. Cerbos-level project/team/service scoping
+// is still the primary control against a MISDIRECTED call; this is a
+// defense-in-depth layer against a plaintext secret riding along inside an
+// otherwise-authorized one.
 //
-// Two layers run on every string: gitleaks' embedded default ruleset
-// (github.com/zricethezav/gitleaks/v8, ~180 rules covering the broad
-// universe of provider tokens/keys/connection strings) AND the hand-rolled
-// secretPatternRegistry below. gitleaks is the primary net; the local
-// registry is a deliberately-kept supplement for provider-specific shapes we
-// want to guarantee are caught regardless of what the upstream ruleset does
-// or doesn't cover, and the escape hatch for adding an arbitrary custom
-// pattern the moment a new leak vector shows up (no dependency bump or
-// upstream PR required). Both passes run and their counts sum; because each
-// pass replaces a matched secret with the <masked> placeholder before the
-// next pass sees the string, a token both layers recognize is only counted
-// once (the second pass finds the placeholder, not the secret).
+// The pattern set is the single source of truth in secret-patterns.json (this
+// directory), embedded here at build time via //go:embed and rendered into the
+// egress-proxy scrub.py at install time via `helm --set-file secretPatterns=...`
+// -- so this Go shim and the Python egress scrubber compile the identical shapes
+// from one file, with no hand-sync between the two runtimes. (The egress proxy
+// additionally scrubs raw HTTP Authorization / API-key HEADERS with its own
+// Python-only logic; this shim only ever sees JSON-RPC bodies, so it carries
+// only the body pattern set.)
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
-	"log"
+	"fmt"
 	"regexp"
-	"strings"
-
-	"github.com/rs/zerolog"
-	"github.com/zricethezav/gitleaks/v8/detect"
 )
 
 // secretPattern is one named, independently-testable entry in the redaction
@@ -70,266 +57,64 @@ type secretPattern struct {
 	re   *regexp.Regexp
 }
 
-// secretPatternRegistry is the list every redaction call walks. To add a new
-// well-known secret type: append ONE secretPattern{name, regexp.MustCompile(...)}
-// entry below and add ONE corresponding case to TestRedactString's table
-// (internal/server/server_test.go) with a fake-but-shaped fixture built via
-// string concatenation (see that test's own fixtures for the pattern --
-// literal secret-shaped constants trip this sandbox's own commit-time
-// scanner and CI's detect-secrets/detect-private-key hooks). Nothing else
-// needs touching: redactString/redactValue/redactRawJSON all iterate this
+//go:embed secret-patterns.json
+var secretPatternsJSON []byte
+
+// secretPatternRegistry is the compiled pattern list every redaction call walks,
+// loaded once at package load from the embedded secret-patterns.json (this
+// directory). That JSON is the single source of truth: it is embedded here for
+// the Go shim and rendered into the egress-proxy scrub.py at install time via
+// `helm --set-file secretPatterns=...`, so both runtimes match the identical
+// shapes from one file.
+//
+// To add a new well-known secret type: append ONE {"name","regex"} entry to
+// secret-patterns.json (RE2-safe: no lookaround/backreferences, so the same
+// string compiles in Go regexp and Python re) and add ONE corresponding case to
+// TestRedactString's table (internal/server/server_test.go) with a
+// fake-but-shaped fixture built via string concatenation (see that test's own
+// fixtures -- literal secret-shaped constants trip this sandbox's own
+// commit-time scanner and CI's detect-secrets/detect-private-key hooks). Nothing
+// else needs touching: redactString/redactValue/redactRawJSON all iterate this
 // slice generically.
 //
-// This list is NOT exhaustive and isn't meant to be -- it's deliberately
-// biased toward the credential shapes most likely to leak through an agent's
-// own tool calls (API keys/tokens copied from a file, a log, or a prior tool
-// result and pasted into a Jira comment, GitHub PR body, Linear issue, etc.),
-// not a general-purpose secret scanner. Add an entry whenever a new leak
-// vector shows up in practice; don't hold out for a "complete" list first.
-//
-// This whole registry is mirrored, pattern-for-pattern, in
-// charts/egress-proxy/templates/addon-configmap.yaml's REDACT_PATTERNS list
-// (the egress-proxy scrubs the same shapes from outbound HTTP, and pairs them
-// with the same gitleaks second layer via its localhost sidecar). Keep both
-// lists in sync by hand when either changes -- there is no shared source
-// between the Python (mitmproxy addon) and Go (this shim) copies, since they
-// run in genuinely different runtimes with no natural place to share a literal.
-var secretPatternRegistry = []secretPattern{
-	{
-		name: "ssh_private_key",
-		re: regexp.MustCompile(
-			`-----BEGIN (?:RSA |EC |OPENSSH |DSA |ED25519 |ENCRYPTED )?PRIVATE KEY-----` +
-				`[\s\S]+?` +
-				`-----END (?:RSA |EC |OPENSSH |DSA |ED25519 |ENCRYPTED )?PRIVATE KEY-----`,
-		),
-	},
-	{
-		// Slack bot/app-level/user/refresh/socket/client tokens.
-		name: "slack_bot_token",
-		re:   regexp.MustCompile(`xox[bpraescd]-[A-Za-z0-9\-_]+`),
-	},
-	{
-		name: "slack_app_token",
-		re:   regexp.MustCompile(`xapp-[A-Za-z0-9\-_]+`),
-	},
-	{
-		// Bearer/Basic auth header VALUES that ended up inside a tool-call
-		// argument or result body rather than an actual HTTP Authorization
-		// header (which the egress-proxy already scrubs at the transport
-		// layer for external destinations). Matched as plain substrings
-		// since this shim only ever sees JSON-RPC payloads, never raw
-		// headers.
-		name: "http_bearer_token",
-		re:   regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9\-._~+/]+=*`),
-	},
-	{
-		name: "http_basic_auth",
-		re:   regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9+/]+=*`),
-	},
-	{
-		// AWS access key IDs (IAM users, roles, EC2 instance profiles,
-		// temporary STS creds all share this 20-char prefix shape). This
-		// catches the identifying key ID, not the accompanying secret
-		// access key -- that's a bare base64-ish string with no fixed
-		// prefix and would need a much higher false-positive tolerance to
-		// match generically.
-		name: "aws_access_key_id",
-		re:   regexp.MustCompile(`\b(?:AKIA|ASIA|AROA|AIDA)[A-Z0-9]{16}\b`),
-	},
-	{
-		// GitHub personal access tokens (classic + fine-grained), OAuth
-		// tokens, and server-to-server/user-to-server app tokens all share
-		// the `gh_`-prefixed 2020+ token format.
-		name: "github_token",
-		re:   regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,255}\b`),
-	},
-	{
-		// GitLab personal/project/group access tokens and CI job tokens.
-		name: "gitlab_token",
-		re:   regexp.MustCompile(`\bglpat-[A-Za-z0-9_\-]{20,}\b`),
-	},
-	{
-		// Google API keys (Maps, etc. -- not OAuth client secrets, which
-		// have no fixed recognizable prefix).
-		name: "google_api_key",
-		re:   regexp.MustCompile(`\bAIza[A-Za-z0-9_\-]{35}\b`),
-	},
-	{
-		// OpenAI API keys (legacy sk-... and project-scoped sk-proj-...).
-		name: "openai_api_key",
-		re:   regexp.MustCompile(`\bsk-(?:proj-)?[A-Za-z0-9_\-]{20,}\b`),
-	},
-	{
-		// Anthropic API keys.
-		name: "anthropic_api_key",
-		re:   regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_\-]{20,}\b`),
-	},
-	{
-		// Stripe live/test secret and restricted keys.
-		name: "stripe_api_key",
-		re:   regexp.MustCompile(`\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b`),
-	},
-	{
-		// Notion integration tokens (internal + OAuth-issued).
-		name: "notion_token",
-		re:   regexp.MustCompile(`\bntn_[A-Za-z0-9]{20,}\b`),
-	},
-	{
-		// Twilio account SID-adjacent auth token / API key SIDs.
-		name: "twilio_api_key",
-		re:   regexp.MustCompile(`\bSK[a-f0-9]{32}\b`),
-	},
-	{
-		// npm automation/publish tokens.
-		name: "npm_token",
-		re:   regexp.MustCompile(`\bnpm_[A-Za-z0-9]{36}\b`),
-	},
-	{
-		// Generic JWT (header.payload.signature, each segment base64url).
-		// Deliberately loose -- this matches ANY well-formed JWT regardless
-		// of issuer, since the shape itself (not a fixed prefix) is the
-		// signal. Higher false-positive risk than the prefixed patterns
-		// above (a non-secret JWT, e.g. a public ID token, would also
-		// match) -- acceptable given this gate only ever mutates, never
-		// denies.
-		name: "generic_jwt",
-		re:   regexp.MustCompile(`\beyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b`),
-	},
-	// PII entries below mirror the SSN/CreditCard/PhoneNumber promptGuard
-	// builtins the agentgateway AI backends carry (MR !426,
-	// feat/ai-backend-regex-scrubbing). Email is deliberately NOT matched
-	// anywhere -- it breaks Jira ticket assignment-by-email. All prefix/range
-	// based, no Luhn checksum (that needs digit arithmetic, not a regex, and
-	// nothing else in this registry does post-match validation), no lookaround
-	// (RE2 has none, and the egress-proxy Python mirror stays identical).
-	{
-		// US SSN NNN-NN-NNNN, excluding the well-known invalid ranges (area
-		// 000/666/900-999, group 00, serial 0000) expressed as alternation
-		// since RE2 has no lookahead.
-		name: "us_ssn",
-		re: regexp.MustCompile(
-			`\b(?:0(?:0[1-9]|[1-9][0-9])|[1-5][0-9]{2}|6(?:[0-5][0-9]|6[0-57-9]|[7-9][0-9])|[78][0-9]{2})` +
-				`-(?:0[1-9]|[1-9][0-9])` +
-				`-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})\b`,
-		),
-	},
-	{
-		// Visa -- starts 4, 13/16/19 digits. Digits only (contiguous runs, like
-		// every other entry); space/dash-grouped cards are a known gap.
-		name: "credit_card_visa",
-		re:   regexp.MustCompile(`\b4(?:[0-9]{12}|[0-9]{15}|[0-9]{18})\b`),
-	},
-	{
-		// Mastercard -- 51-55 or 2221-2720, 16 digits.
-		name: "credit_card_mastercard",
-		re: regexp.MustCompile(
-			`\b(?:5[1-5][0-9]{14}|(?:222[1-9]|22[3-9][0-9]|2[3-6][0-9]{2}|27[01][0-9]|2720)[0-9]{12})\b`,
-		),
-	},
-	{
-		// American Express -- starts 34/37, 15 digits.
-		name: "credit_card_amex",
-		re:   regexp.MustCompile(`\b3[47][0-9]{13}\b`),
-	},
-	{
-		// Discover -- 6011, 65, 644-649, or 622126-622925, 16 digits.
-		name: "credit_card_discover",
-		re: regexp.MustCompile(
-			`\b(?:6011[0-9]{12}|65[0-9]{14}|64[4-9][0-9]{13}` +
-				`|622(?:12[6-9]|1[3-9][0-9]|[2-8][0-9]{2}|9(?:[01][0-9]|2[0-5]))[0-9]{10})\b`,
-		),
-	},
-	{
-		// US/NANP phone -- (NNN) NNN-NNNN, NNN-NNN-NNNN, NNN.NNN.NNNN,
-		// +1 NNN NNN NNNN. Requires separators (a bare 10-digit run does not
-		// match) to hold down false positives; no international coverage.
-		name: "us_phone_number",
-		re: regexp.MustCompile(
-			`(?:\+?1[-.\s]?)?(?:\([0-9]{3}\)[-.\s]?|[0-9]{3}[-.\s])[0-9]{3}[-.\s][0-9]{4}\b`,
-		),
-	},
+// The list is NOT exhaustive and isn't meant to be -- it's deliberately biased
+// toward the credential shapes most likely to leak through an agent's own tool
+// calls (API keys/tokens copied from a file, a log, or a prior tool result and
+// pasted into a Jira comment, GitHub PR body, Linear issue, etc.), not a
+// general-purpose secret scanner. Add an entry whenever a new leak vector shows
+// up in practice; don't hold out for a "complete" list first.
+var secretPatternRegistry = mustCompilePatterns(secretPatternsJSON)
+
+// mustCompilePatterns unmarshals the embedded pattern JSON and compiles every
+// regex. It panics on a malformed file or an uncompilable pattern: that can only
+// be a build/release-time bug in secret-patterns.json, caught immediately by the
+// Go tests (and never reachable at runtime, since the input is embedded, not
+// user-supplied).
+func mustCompilePatterns(raw []byte) []secretPattern {
+	var defs []struct {
+		Name  string `json:"name"`
+		Regex string `json:"regex"`
+	}
+	if err := json.Unmarshal(raw, &defs); err != nil {
+		panic(fmt.Sprintf("secrets_redact: parsing embedded secret-patterns.json: %v", err))
+	}
+	out := make([]secretPattern, len(defs))
+	for i, d := range defs {
+		out[i] = secretPattern{name: d.Name, re: regexp.MustCompile(d.Regex)}
+	}
+	return out
 }
 
 const redactedPlaceholder = "<masked>"
 
-// gitleaksDetector is the single, process-wide gitleaks Detector shared across
-// every redaction call. It MUST be built exactly once: NewDetectorDefaultConfig
-// mutates a global viper singleton (the only data race in the whole flow), and
-// construction costs ~20ms -- fine as one-time init, ruinous per-request. Once
-// built, DetectString is safe for concurrent use (it accumulates into a local
-// slice with no shared mutable state), which matters because redaction runs
-// synchronously on every CheckRequest/CheckResponse across all backends behind
-// vMCP. If construction fails, this stays nil and redactStringGitleaks degrades
-// to a no-op -- the secretPatternRegistry sweep still runs, so a broken gitleaks
-// init weakens coverage but never takes redaction (or the shim) down.
-var gitleaksDetector *detect.Detector
-
-func init() {
-	// gitleaks logs through zerolog's global logger (e.g. a Debug line about a
-	// missing .gitleaksignore). Silence it once so none of it leaks into the
-	// shim's own stdlib-log container output. The shim itself logs via the
-	// standard "log" package, not zerolog, so this only gags gitleaks.
-	zerolog.SetGlobalLevel(zerolog.Disabled)
-
-	d, err := detect.NewDetectorDefaultConfig()
-	if err != nil {
-		log.Printf("secrets_redact: gitleaks detector init failed, "+
-			"falling back to the secretPatternRegistry sweep only: %v", err)
-		return
-	}
-	gitleaksDetector = d
-}
-
-// redactString scrubs s with BOTH layers -- the hand-rolled
-// secretPatternRegistry AND gitleaks' embedded default ruleset -- returning the
-// scrubbed string and the total number of replacements across both passes. The
-// registry sweep runs first, then gitleaks; because each pass overwrites a
-// matched secret with redactedPlaceholder before the next pass sees the string,
-// a token both layers recognize is counted exactly once (whichever pass reaches
-// it first redacts it; the other finds only the placeholder).
+// redactString scrubs s by walking the secretPatternRegistry, returning the
+// scrubbed string and the total number of replacements. Each pattern overwrites
+// its matches with redactedPlaceholder before the next pattern sees the string.
 func redactString(s string) (string, int) {
 	total := 0
 	for _, p := range secretPatternRegistry {
 		var n int
 		s, n = redactPattern(p.re, s)
-		total += n
-	}
-	var gn int
-	s, gn = redactStringGitleaks(s)
-	total += gn
-	return s, total
-}
-
-// redactStringGitleaks runs the shared gitleaks Detector over s and replaces
-// every finding's secret substring with redactedPlaceholder, returning the
-// scrubbed string and the replacement count. It prefers Finding.Secret (the
-// exact matched credential) and falls back to Finding.Match when Secret is
-// empty. A finding whose secret text is empty, is already the placeholder, or
-// no longer appears in s (because an earlier finding's replacement removed a
-// shared/overlapping substring) contributes nothing -- so two findings pointing
-// at the same secret can't double-count.
-func redactStringGitleaks(s string) (string, int) {
-	if gitleaksDetector == nil {
-		return s, 0
-	}
-	findings := gitleaksDetector.DetectString(s)
-	if len(findings) == 0 {
-		return s, 0
-	}
-	total := 0
-	for _, f := range findings {
-		matched := f.Secret
-		if matched == "" {
-			matched = f.Match
-		}
-		if matched == "" || matched == redactedPlaceholder {
-			continue
-		}
-		n := strings.Count(s, matched)
-		if n == 0 {
-			continue
-		}
-		s = strings.ReplaceAll(s, matched, redactedPlaceholder)
 		total += n
 	}
 	return s, total
@@ -415,16 +200,8 @@ func redactStringValue(s string) (string, int) {
 	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
 		var nested any
 		if err := json.Unmarshal([]byte(s), &nested); err == nil {
-			if _, isMap := nested.(map[string]any); isMap {
-				redacted, n := redactValue(nested)
-				if n > 0 {
-					if reEncoded, err := marshalNoHTMLEscape(redacted); err == nil {
-						return string(reEncoded), n
-					}
-				}
-				return s, 0
-			}
-			if _, isSlice := nested.([]any); isSlice {
+			switch nested.(type) {
+			case map[string]any, []any:
 				redacted, n := redactValue(nested)
 				if n > 0 {
 					if reEncoded, err := marshalNoHTMLEscape(redacted); err == nil {

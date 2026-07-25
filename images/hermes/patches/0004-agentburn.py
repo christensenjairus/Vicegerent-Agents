@@ -88,6 +88,7 @@ _EXTRA_PRICES = {
     "anthropic/claude-opus-4-5-20251101":   (5.00, 25.00),
     "anthropic/claude-opus-4-7":            (5.00, 25.00),
     "anthropic/claude-opus-4-8":            (5.00, 25.00),
+    "anthropic/claude-opus-5":              (5.00, 25.00),
     "anthropic/claude-fable-5":             (10.00, 50.00),
     # OpenAI — https://platform.openai.com/docs/pricing (2026-06)
     # Short-context price (<272K tokens); long-context roughly doubles both

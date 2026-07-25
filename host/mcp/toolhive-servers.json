@@ -4,7 +4,7 @@
   "servers": [
     {
       "name": "kubernetes",
-      "description": "Read-only Kubernetes access (resources, pods, logs, Helm release listing). --read-only exposes only readOnlyHint tools at the source; the allowlist pins the exact set. Cerbos blocks reading Secrets. Runs on the 'vicegerent' docker network to reach the API, which widens the host trust boundary to that network (see host/mcp/README). configuration_view is excluded despite being read-only: it returns the full kubeconfig with client cert/key in plaintext (a usable cluster credential); configuration_contexts_list covers context discovery without key material. Custom image (images/kubernetes-mcp-server) bundles the AWS CLI so a real EKS cluster's exec-plugin kubeconfig auth works; see host/mcp/README.md \"Kubernetes networking\" for details.",
+      "description": "Read-only Kubernetes access \u2014 inspect resources, pods, logs, and Helm releases across the local kind cluster and, via an exec-plugin kubeconfig, a real EKS cluster.",
       "enabled": false,
       "type": "registry",
       "registry": "harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server:v0.1.0",
@@ -36,7 +36,7 @@
     },
     {
       "name": "gitlab",
-      "description": "GitLab MCP scoped to issues (read+write) and the merge-request lifecycle short of merging or approving (create/update/review/comment/labels), plus read-only pipeline status/logs and retrying a failed/canceled pipeline job (retry_pipeline_job) — re-running CI, not touching repo content, so it's in the same 'operator isn't picky about GitLab' bucket as the issue/MR tools rather than something needing a Cerbos scope. No generic git file/branch-write tools and no repo/project allowlist: the bot has direct SSH to gitlab.hahomelabs.com, so routine git goes through git itself and MCP is only for MR-object actions git can't do. approve/unapprove and merge are excluded (HAH-64) so the bot can't rubber-stamp or merge any MR. execute_graphql is excluded (arbitrary API access would bypass every other exclusion).",
+      "description": "GitLab issues and merge-request lifecycle (create/update/review/comment/labels, pipeline status/logs, retry a failed job) \u2014 the MR-object actions that plain git over SSH can't do.",
       "enabled": false,
       "type": "npx",
       "package": "@zereight/mcp-gitlab@2.1.42",
@@ -79,7 +79,7 @@
     },
     {
       "name": "github",
-      "description": "GitHub MCP scoped to PRs only — no issue tools (this operator doesn't use GitHub issues at work) and no generic git file/branch-write tools, since the bot has direct SSH to github.com and does routine git with git itself. Surface: get_me and the PR lifecycle short of merging or leaving any review/comment text. All comment-reply and review-write tools (add_reply_to_pull_request_comment, add_comment_to_pending_review, pull_request_review_write) are excluded on operator instruction — the bot leaves NO comment/review text on PRs, and there's no argument-level signal to distinguish acceptable from not, so the capability is removed rather than partially enforced. Cerbos (defs/resource_github.yaml) hard-enforces the target owner/repo and branch regardless of token scope, and forces every create/update_pull_request to draft:true. GITHUB_TOOLSETS=all is deliberately maximal (the container's own tool listing is never the restriction point, so e.g. probe-mcp-tools.py shows every tool the server can offer) — the tools list below is what actually scopes what the agent can call. PINNED BELOW THE LATEST RELEASE (v1.6.0) ON PURPOSE: v1.6.0 rejects a second `initialize` on the same stdio connection as a protocol error ({\"error\":{\"message\":\"duplicate \\\"initialize\\\" received\"}}), which ToolHive's vMCP triggers routinely (a fresh initialize per incoming client session/health-check over the one shared stdio pipe) — confirmed live with a controlled A/B (fresh v1.5.0 container: 15/15 consecutive initializes succeed; fresh v1.6.0 container: 2nd initialize ever already fails), so v1.6.0 never successfully aggregates through the vMCP at all. v1.5.0 is otherwise config-identical (same env vars, same stdio transport per stacklok/toolhive-catalog's own server.json) and has the same 8 allowlisted tools with identical argument schemas. Do not bump this past v1.6.0 (Renovate or otherwise) without first re-running this exact A/B test against the target version.",
+      "description": "GitHub pull-request lifecycle \u2014 inspect and manage PRs (routine git goes over SSH, not MCP).",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/github/github-mcp-server:v1.5.0",
@@ -101,7 +101,7 @@
     },
     {
       "name": "tavily",
-      "description": "Tavily web search and content extraction. No write capability exists (search/extract/crawl/map/research against arbitrary public URLs, nothing that touches anything this platform owns), so the tools list below is the full live set pinned explicitly rather than a restriction.",
+      "description": "Tavily web search and content extraction over arbitrary public URLs.",
       "enabled": false,
       "type": "npx",
       "package": "tavily-mcp@0.2.21",
@@ -113,7 +113,7 @@
     },
     {
       "name": "firecrawl",
-      "description": "Firecrawl web scraping, crawling, and extraction. No write capability exists (every tool reads/scrapes/monitors an arbitrary public URL you supply; nothing touches anything this platform owns), so the tools list below is the full live set pinned explicitly rather than a restriction.",
+      "description": "Firecrawl web scraping, crawling, and extraction over arbitrary public URLs.",
       "enabled": false,
       "type": "npx",
       "package": "firecrawl-mcp@3.22.4",
@@ -134,7 +134,7 @@
     },
     {
       "name": "notion",
-      "description": "Notion workspace (official remote MCP; OAuth, browser consent on first start). Read broad (search/fetch/comments/teams/users); write narrow (create-pages/update-page/create-comment; no database/move/duplicate). Cerbos (defs/resource_notion.yaml) pins create-pages to the Scratchpad folder, and gates update-page/create-comment via a live shim ancestry lookup against ${notionAllowedParentPageIds} (Scratchpad always implicit), additionally denying replace_content/allow_deleting_content on pages that pass. A read-broad/write-narrow integration split was infeasible — the org blocks internal-integration tokens.",
+      "description": "Notion workspace \u2014 search and read pages, comments, teams, and users, and create/update pages and comments.",
       "enabled": false,
       "type": "remote",
       "registry": "notion-remote",
@@ -150,7 +150,7 @@
     },
     {
       "name": "linear",
-      "description": "Linear issues and projects (OAuth; browser consent on first start). Scoped to the platform's original functional set — issues/comments/projects/labels/statuses/teams/users/docs, read+write, no deletes — out of Linear's full 55-tool surface. save_issue/save_comment/save_project are Linear's merged create+update tools (an `id` arg picks which). Cerbos (defs/resource_linear.yaml) confines save_issue calls that supply a team to DEVOPS. Newer feature categories and destructive deletes are excluded pending a follow-up decision.",
+      "description": "Linear issue and project tracking \u2014 issues, comments, projects, labels, statuses, teams, users, and docs (read+write, no deletes).",
       "enabled": false,
       "type": "remote",
       "registry": "linear",
@@ -168,7 +168,7 @@
     },
     {
       "name": "jira",
-      "description": "Jira (sooperset/mcp-atlassian container), confined to the CHANGE project. Jira-only (no Confluence creds, so Confluence tools are unreachable regardless of any toolset setting — mcp-atlassian gates those by service-credential availability, a separate mechanism from tool selection). JIRA_PROJECTS_FILTER=CHANGE scopes search results server-side. TOOLSETS=all is deliberately maximal (e.g. for probe-mcp-tools.py visibility) — the tools list below, not any server-side tool filter, is what actually limits this agent to these 12 out of mcp-atlassian's full native catalog. Read+write (issues, JQL, transitions, comments), no deletes. Cerbos (defs/resource_jira.yaml) hard-enforces the CHANGE boundary by project_key or issue/epic-key prefix. NB the official remote (io.github.stacklok/atlassian-remote) does NOT work through our vMCP — it advertises the resources capability but returns method-not-found for resources/list, so the health probe drops it from aggregation.",
+      "description": "Jira issue tracking \u2014 issues, JQL search, transitions, and comments (read+write, no deletes).",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/sooperset/mcp-atlassian:0.22.1",
@@ -195,7 +195,7 @@
     },
     {
       "name": "grafana",
-      "description": "Grafana observability, read-only (search/datasource/dashboard/prometheus/loki+victorialogs/asserts/annotations/rendering reads). --disable-write is the fail-closed write kill-switch. --disable-proxied turns off Tempo-datasource MCP discovery (unused): without it, being off-VPN makes every session across ALL vMCP backends hang on a live call to Grafana, not just this one. Cerbos additionally blocks reads of OpenSearch datasources (defs/resource_grafana.yaml), which also covers the Loki/VictoriaLogs tools below via the same grafana_datasource mapping.",
+      "description": "Grafana observability, read-only \u2014 search dashboards and datasources and query Prometheus, Loki, VictoriaLogs, asserts, and annotations.",
       "enabled": false,
       "type": "registry",
       "registry": "docker.io/grafana/mcp-grafana:0.17.2",
@@ -220,7 +220,7 @@
     },
     {
       "name": "grafana_gov",
-      "description": "Grafana observability (gov-cloud instance) -- otherwise identical to 'grafana' (see that entry for the tool/write-lockdown, --disable-proxied, and Loki/VictoriaLogs Cerbos-guardrail rationale). Separate secrets (grafana_gov_url/grafana_gov_service_account_token) so it points at its own instance.",
+      "description": "Grafana observability (gov-cloud instance) \u2014 same as 'grafana', pointed at its own instance via separate secrets.",
       "enabled": false,
       "type": "registry",
       "registry": "docker.io/grafana/mcp-grafana:0.17.2",
@@ -245,7 +245,7 @@
     },
     {
       "name": "alertmanager",
-      "description": "Prometheus Alertmanager (alerts, silences, alert groups, status). Full read+write, including createSilence/deleteSilence — the tools list below is the full live 12-tool set pinned explicitly rather than a restriction.",
+      "description": "Prometheus Alertmanager \u2014 alerts, silences, alert groups, and status (read+write, including create/delete silence).",
       "enabled": false,
       "type": "npx",
       "package": "mcp-alertmanager@2.1.1",
@@ -271,7 +271,7 @@
     },
     {
       "name": "alertmanager_gov",
-      "description": "Prometheus Alertmanager (gov-cloud instance) -- otherwise identical to 'alertmanager' (see that entry for the tool-set rationale). The url param is secret-backed and auto-namespaced (alertmanager_gov_url), so it can't collide with alertmanager's.",
+      "description": "Prometheus Alertmanager (gov-cloud instance) \u2014 same as 'alertmanager', pointed at its own instance via a separate secret.",
       "enabled": false,
       "type": "npx",
       "package": "mcp-alertmanager@2.1.1",
@@ -297,7 +297,7 @@
     },
     {
       "name": "pagerduty",
-      "description": "PagerDuty, read-only incident/schedule (v2+v3)/on-call/service/team/user lookups and analytics (incident/responder metrics) plus ack/resolve/note on existing incidents (manage_incidents, add_note_to_incident). create_incident, add_responders, and start_incident_workflow are NOT exposed — triage only, no incident creation or responder escalation from the agent. Cerbos (defs/resource_pagerduty.yaml) scopes manage_incidents to ack/resolve-only field changes.",
+      "description": "PagerDuty incident triage \u2014 read incidents, schedules, on-call, services, teams, users, and analytics, plus acknowledge/resolve/note on existing incidents (no incident creation).",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/stacklok/dockyard/uvx/pagerduty-mcp:1.1.0",
@@ -322,7 +322,7 @@
     },
     {
       "name": "pagerduty_gov",
-      "description": "PagerDuty (gov-cloud instance) -- otherwise identical to 'pagerduty' (see that entry for the tool/scoping rationale). Separate secret (pagerduty_gov_user_api_key) so it authenticates against its own account.",
+      "description": "PagerDuty (gov-cloud instance) \u2014 same as 'pagerduty', authenticated against its own account via a separate secret.",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/stacklok/dockyard/uvx/pagerduty-mcp:1.1.0",
@@ -347,7 +347,7 @@
     },
     {
       "name": "elastic",
-      "description": "Elastic Agent Builder (Kibana) via ToolHive's native `remote` streamable-http transport, pointed at /api/agent_builder/mcp and authed by a static `Authorization: ApiKey <key>` header injected from the thv secret store (--remote-forward-headers-secret, api_key's apply:remote_header) so the credential never enters argv. Uses the native remote transport, NOT the mcp-remote npx bridge: mcp-remote's mandatory MCP-SDK OAuth discovery GETs /.well-known/oauth-* which this Kibana 302-redirects to an HTML login page, crashing its JSON parser; ToolHive's transport only runs discovery under --remote-auth (never passed here), so plain header auth connects directly. kibana_url is both the run positional (registry_from_param) and the egress allow_host; the api_key secret is injected verbatim as the Authorization header, so it must carry the 'ApiKey ' scheme prefix -- `configure` prepends that automatically (the param's value_prefix), so the operator pastes just the bare key. Kibana serves on 443. Read/search/analysis tools only — the 3 write tools (platform_core_create_visualization, security_create_detection_rule, platform_core_resume_workflow_execution) are excluded, so no Cerbos guardrail is needed yet.",
+      "description": "Elastic Agent Builder (Kibana) \u2014 read-only search and analysis over Elastic data.",
       "enabled": false,
       "type": "remote",
       "registry_from_param": "kibana_url",
@@ -390,7 +390,7 @@
     },
     {
       "name": "aws",
-      "description": "AWS access via awslabs aws-api-mcp-server, read-only and multi-profile. Runs a thin non-blocking patch of the upstream image (images/aws-api-mcp-server): the upstream server executes the AWS call synchronously on its asyncio event loop, so a long call (e.g. list-secrets paginating a whole account) blocks its MCP protocol and freezes the vMCP's shared-deadline aggregation for every backend; the patch offloads that work to a worker thread via asyncio.to_thread. READ_OPERATIONS_ONLY=true restricts call_aws to read operations (allowlist-enforced at the source; pair each profile with a ReadOnlyAccess-scoped IAM role -- the README is explicit that IAM is the primary control). The host ~/.aws is mounted READ-ONLY at /app/.aws (apply:aws_config, HOME pinned to /app so the SSO token cache resolves; the server's own writable state dir is overlaid separately), exposing every installed profile; the agent selects one per call with `aws ... --profile <name>` (AWS_API_MCP_PROFILE_NAME left unset, so there's no default). SSO tokens are refreshed host-side with `aws sso login` -- the read-only mount means the sandbox never writes the operator's AWS creds, matching how every other backend's credentials are maintained outside the sandbox. Exposes call_aws (executes an AWS CLI command string, or a batch list of up to 20) and suggest_aws_commands (natural-language -> suggested CLI; note it sends the query to an AWS-hosted endpoint under api.aws); get_execution_plan stays off (EXPERIMENTAL_AGENT_SCRIPTS unset). Egress is allowlisted to .amazonaws.com and .api.aws (leading-dot suffix -- ToolHive's squid does dstdomain matching, so this one suffix covers every <service>.<region>.amazonaws.com across all regions incl. gov, the SSO oidc/portal endpoints, and the read-only-classification endpoint; .api.aws covers newer endpoints + the suggest_aws_commands endpoint api-mcp.global.api.aws). Verified live via the egress proxy's access log: sts/ec2/etc. across regions tunnel through, while aws.amazon.com and non-AWS hosts are denied. The mcp-cerbos-shim guardrail (resource_aws.yaml) denies call_aws commands that mint credentials/tokens/access (eks get-token, sts assume-role, ecr/rds/redshift auth tokens, kms decrypt, private-key/cert exports, console-credential creation, ...) or read secret values (Secrets Manager get/batch-get-secret-value, SSM get-parameter*) -- verified live that READ_OPERATIONS_ONLY does NOT block these (it even force-allows some minters, e.g. eks get-token returns a real Kubernetes bearer token). Scoping each profile's IAM permission set is the airtight complement.",
+      "description": "AWS access via aws-api-mcp-server \u2014 read-only, multi-profile AWS CLI execution (call_aws) and natural-language command suggestions across the operator's configured profiles.",
       "enabled": false,
       "type": "registry",
       "registry": "harbor.hahomelabs.com/vicegerent/aws-api-mcp-server:v0.1.0",
@@ -421,7 +421,7 @@
     },
     {
       "name": "aws_profiles",
-      "description": "Hidden companion to the `aws` backend (companion_of: aws) -- enabled/disabled with it as one unit, never shown or configured on its own, so a developer doesn't need to know it exists. One tool, `list`, returning the AWS profile names from the mounted read-only ~/.aws/config so the agent can discover which --profile values call_aws accepts (aws-api-mcp-server can't enumerate profiles -- its validator rejects `aws configure`). Read-only, network.none (makes no outbound calls -- reads the local config and serves stdio through ToolHive's bridge), returns profile NAMES only, never credentials. Reuses the same apply:aws_config read-only ~/.aws mount as the aws backend (its aws_config_dir param value is inherited from the parent). Tiny custom image (images/aws-profiles-mcp). Workload named `aws_profiles` with tool `list` so the vMCP's {workload}_ prefix surfaces it as `aws_profiles_list`, sitting naturally in the aws_ tool family next to aws_call_aws / aws_suggest_aws_commands (two workloads can't share the exact `aws` prefix -- names are unique per group -- so this is the closest natural fit).",
+      "description": "Hidden companion to the `aws` backend \u2014 lists the available AWS profile names so the agent knows which --profile values call_aws accepts (enabled/disabled together with aws, never configured on its own).",
       "enabled": false,
       "companion_of": "aws",
       "type": "registry",

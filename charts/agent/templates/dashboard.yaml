@@ -12,4 +12,4 @@ spec:
     - name: dashboard
       port: 9119
       targetPort: dashboard
-      nodePort: {{ .Values.dashboard.nodePort }}
+      nodePort: {{ add 30119 (dig "index" 0 (.Values.dashboard | default dict) | int) }}

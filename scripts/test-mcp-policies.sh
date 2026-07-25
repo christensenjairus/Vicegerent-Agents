@@ -22,13 +22,14 @@
 #   GATEWAY_URL=http://localhost:8080 MY_KEY=hermes bash scripts/test-mcp-policies.sh
 set -uo pipefail
 
-KUBE_CONTEXT="${KUBE_CONTEXT:-kind-vicegerent}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/kube-context.sh
+source "$SCRIPT_DIR/lib/kube-context.sh"
+
+# kubectl is optional here (the suite mainly drives the gateway URL); resolve the
+# context only when kubectl is present, since a few checks shell out to it.
 if command -v kubectl >/dev/null 2>&1; then
-  current_ctx="$(kubectl config current-context 2>/dev/null || true)"
-  [[ "$current_ctx" == "$KUBE_CONTEXT" ]] || {
-    echo "ERROR: current kubectl context is '${current_ctx:-<none>}', expected '$KUBE_CONTEXT'. Run: kubectl config use-context $KUBE_CONTEXT" >&2
-    exit 1
-  }
+  require_kind_context
 fi
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
@@ -63,17 +64,6 @@ mcp_post() {
   SESSION_ID=$(grep -i '^mcp-session-id:' "$hdr" | awk '{print $2}' | tr -d '\r' || true)
   rm -f "$hdr"
   printf '%s' "$body"
-}
-
-mcp_http_code() {
-  local url="$1" payload="$2" session="${3:-}"
-  local extra=(); [[ -n "$session" ]] && extra=(-H "Mcp-Session-Id: $session")
-  curl -o /dev/null -s --max-time 20 -w "%{http_code}" \
-    -H "Authorization: Bearer ${API_KEY}" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json, text/event-stream" \
-    "${extra[@]+"${extra[@]}"}" \
-    -X POST "$url" -d "$payload" 2>/dev/null || echo "000"
 }
 
 # Open a session to an MCP endpoint. Prints the session ID and sets SESSION_ID.
@@ -150,15 +140,10 @@ print(json.dumps({'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': p
 " "$tool" "$args_json"
 }
 
-# Call a tool. Prints raw SSE/JSON response. Returns the HTTP status code via stdout of mcp_http_code.
+# Call a tool. Prints raw SSE/JSON response.
 call_tool() {
   local url="$1" tool="$2" args_json="$3"
   mcp_post "$url" "$(_tool_call_payload "$tool" "$args_json")" "$SESSION_ID"
-}
-
-call_tool_code() {
-  local url="$1" tool="$2" args_json="$3"
-  mcp_http_code "$url" "$(_tool_call_payload "$tool" "$args_json")" "$SESSION_ID"
 }
 
 # Parse "is this a Cerbos-denied response?" from a tools/call SSE response.

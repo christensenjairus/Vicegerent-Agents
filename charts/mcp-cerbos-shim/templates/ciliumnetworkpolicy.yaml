@@ -1,0 +1,55 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: mcp-cerbos-shim
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-cerbos-shim
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: agentgateway-system
+            gateway.networking.k8s.io/gateway-name: agentgateway-proxy
+      toPorts:
+        - ports:
+            - port: '4445'
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: cerbos
+            app.kubernetes.io/name: cerbos
+      toPorts:
+        - ports:
+            - port: '3593'
+              protocol: TCP
+    # :80 carries the shim's own OpenAI calls (the prompt-injection judge and
+    # content-moderation, via the /openai route); :81 carries its re-entrant
+    # vMCP lookups (the request-only /mcp/vmcp-internal route). Both terminate
+    # on the same gateway pod, so one toEndpoints rule lists both ports.
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: agentgateway-system
+            gateway.networking.k8s.io/gateway-name: agentgateway-proxy
+      toPorts:
+        - ports:
+            - port: '80'
+              protocol: TCP
+            - port: '81'
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: '53'
+              protocol: UDP
+            - port: '53'
+              protocol: TCP
+          rules:
+            dns:
+              - matchName: cerbos.cerbos.svc.cluster.local
+              - matchName: agentgateway-proxy.agentgateway-system.svc.cluster.local

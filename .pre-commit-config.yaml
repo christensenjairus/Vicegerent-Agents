@@ -6,7 +6,7 @@ repos:
       - id: check-merge-conflict
       - id: check-yaml
         args: [--allow-multiple-documents]
-        exclude: ^charts/.+/templates/.+\.ya?ml$
+        exclude: ^charts/.+/(templates|policies|files)/.+\.ya?ml$
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-added-large-files
@@ -19,8 +19,7 @@ repos:
         exclude: >-
           (?x)^(
             \.gitlab-ci\.yml|
-            charts/.+/templates/.+\.ya?ml|
-            clusters/[^/]+/flux-system/gotk-(components|sync)\.yaml|
+            charts/.+/(templates|policies|files)/.+\.ya?ml|
             docs/available-mcp-tools/.+\.yaml
           )$
   - repo: https://github.com/Yelp/detect-secrets
@@ -31,10 +30,10 @@ repos:
         args: [--baseline, .secrets.baseline]
   - repo: local
     hooks:
-      - id: validate-flux-manifests
-        name: validate Flux manifests and kustomize overlays
+      - id: validate-manifests
+        name: helm lint + render + kubeconform + cerbos compile
         language: system
         entry: scripts/validate.sh
-        files: \.(ya?ml)$
+        files: \.(ya?ml|tpl)$
         exclude: ^docs/available-mcp-tools/.+\.ya?ml$
         pass_filenames: false

@@ -1,0 +1,66 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway-proxy
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    - protocol: HTTP
+      port: 80
+      name: http
+      allowedRoutes:
+        namespaces:
+          from: Same
+    # Reserved for the mcp-cerbos-shim's own re-entrant vMCP lookups (the
+    # vmcp-internal route/backend). Locked to the shim pod by
+    # gateway-networkpolicy.yaml; no agent-facing route attaches here.
+    - protocol: HTTP
+      port: 81
+      name: internal
+      allowedRoutes:
+        namespaces:
+          from: Same
+  infrastructure:
+    parametersRef:
+      name: agentgateway-config
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: agentgateway-config
+  namespace: agentgateway-system
+spec:
+  image:
+    registry: harbor.hahomelabs.com/vicegerent
+    repository: agentgateway
+    tag: v1.3.1
+  logging:
+    format: json
+  deployment:
+    spec:
+      replicas: 2
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  service:
+    spec:
+      ports:
+        - name: listener-80
+          port: 80
+          targetPort: 80
+        - name: listener-81
+          port: 81
+          targetPort: 81
+        - name: metrics
+          port: 15020
+          targetPort: 15020

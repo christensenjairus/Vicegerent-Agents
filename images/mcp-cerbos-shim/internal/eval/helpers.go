@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"reflect"
 	"strings"
 
 	"github.com/google/cel-go/cel"
@@ -97,4 +98,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-var mapStringAnyType = mapStringAnyReflect()
+// mapStringAnyType coaxes CEL map values into a native Go map for
+// case-insensitive key handling.
+var mapStringAnyType = reflect.TypeOf(map[string]any{})

@@ -6,6 +6,10 @@ __pycache__/
 # Python venv
 host/mcp/.venv/
 
+# Machine plane copied from values.example.yaml (per-machine, never committed).
+# Anchored to repo root so chart-internal charts/*/values.yaml stay tracked.
+/values.yaml
+
 # Git worktrees for branch work (see AGENTS.md worktree convention)
 .worktrees/
 

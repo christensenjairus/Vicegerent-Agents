@@ -1,0 +1,53 @@
+{{- if .Values.models.deepseek.enabled }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: deepseek
+  namespace: agentgateway-system
+spec:
+  ai:
+    groups:
+      - providers:
+          - name: deepseek
+            openai: {}
+            host: api.deepseek.com
+            port: 443
+            policies:
+              auth:
+                secretRef:
+                  name: vicegerent-deepseek-secrets
+              tls:
+                sni: api.deepseek.com
+              ai:
+                routes:
+                  /v1/chat/completions: Completions
+                  '*': Passthrough
+                {{- include "platform.promptGuard" . | nindent 16 }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: deepseek
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /deepseek
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: deepseek
+          namespace: agentgateway-system
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+{{- end }}
