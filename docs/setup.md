@@ -60,6 +60,12 @@ cilium status --context kind-vicegerent
 kubectl --context kind-vicegerent top nodes
 ```
 
+Kind normally auto-installs Rancher's local-path-provisioner and marks its `standard`
+StorageClass default; `kind-config.yaml` overrides kind's `/kind/manifests/default-storage.yaml`
+with an empty file so neither is installed — every PVC here pins `csi-hostpath-sc` explicitly,
+so it would sit unused. `kubectl --context kind-vicegerent get storageclass` should show only
+`csi-hostpath-sc`, no `standard`.
+
 If metrics are not ready immediately, wait a minute and rerun `kubectl --context kind-vicegerent top nodes`.
 
 ## Secrets setup

@@ -1,8 +1,8 @@
 {{- $name := include "vicegerent-agent.name" . -}}
 {{- range $claim := list
-      (dict "name" "data" "size" $.Values.storage.data "class" $.Values.storage.dataStorageClassName)
-      (dict "name" "gitrepos" "size" $.Values.storage.gitrepos "class" $.Values.storage.gitreposStorageClassName)
-      (dict "name" "models" "size" $.Values.storage.models "class" $.Values.storage.modelsStorageClassName "excludeFromBackup" true) }}
+      (dict "name" "data" "size" $.Values.storage.data)
+      (dict "name" "gitrepos" "size" $.Values.storage.gitrepos)
+      (dict "name" "models" "size" $.Values.storage.models "excludeFromBackup" true) }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -17,7 +17,8 @@ metadata:
     helm.sh/resource-policy: keep
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: {{ $claim.class }}
+  # Hardcoded, not values-driven -- csi-hostpath-sc is the cluster's only StorageClass.
+  storageClassName: csi-hostpath-sc
   resources:
     requests:
       storage: {{ $claim.size }}
