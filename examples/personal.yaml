@@ -26,6 +26,7 @@ agents:
     git:
       userName: felix
       userEmail: felix@hahomelabs.com
+    timezone: America/Denver
     providers:
       deepseek:
         enabled: true

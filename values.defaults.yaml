@@ -133,7 +133,7 @@ agents:
       userName: ''
       userEmail: ''
     # IANA timezone for the agent's config.yaml (timestamps, clarify/scheduling).
-    timezone: America/Denver
+    timezone: America/Los_Angeles
     # Per-agent model-provider opt-in. anthropic/openai default enabled; deepseek/zai are opt-in.
     # Each provider carries the models Hermes reads from it: model (primary), auxiliaryModel
     # (cheap aux: vision/titles/compression/approval), mnemosyneModel (memory consolidation --

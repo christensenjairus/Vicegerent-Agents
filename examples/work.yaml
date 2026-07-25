@@ -47,6 +47,7 @@ agents:
     git:
       userName: jchristensen_movester
       userEmail: jchristensen@moveworks.ai
+    timezone: America/Denver
     networkAllowlist:
       cnameChainedFQDN: gitlab.hahomelabs.com
       cnameChain: uw1-ddns.hahomelabs.com,uw1-hahomelabs.ddns.net
