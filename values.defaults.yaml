@@ -229,11 +229,15 @@ agents:
 # apexWildcardDomains get an exact + *.<domain> wildcard match; exactOnlyDomains
 # get an exact match only. internalAllowlistCIDRs carves RFC1918 hosts out of the
 # private-network deny. All empty by default so the allowlist is opt-in.
+# replicaCount lives inside this block (rather than top-level replicas: below)
+# because the installer/validate.sh feed charts/egress-proxy only the egress:
+# subtree, re-rooted to top level (machineValues: egress).
 # ----------------------------------------------------------------------------
 egress:
   apexWildcardDomains: ''
   exactOnlyDomains: ''
   internalAllowlistCIDRs: ''
+  replicaCount: 1
 # ----------------------------------------------------------------------------
 # models — platform model backends+routes to render (charts/platform). Disable
 # one to drop its AgentgatewayBackend + HTTPRoute; the per-agent providers toggle
@@ -248,3 +252,20 @@ models:
     enabled: true
   zai:
     enabled: true
+# ----------------------------------------------------------------------------
+# replicas — per-component replica counts. agentgatewayProxy/mcpCerbosShim/
+# searxng render via charts/platform + charts/mcp-cerbos-shim (both fed the
+# whole values.yaml, machineValues: full). cerbos is the upstream
+# oci://ghcr.io/cerbos/helm-charts/cerbos chart, which has no per-machine
+# override mechanism otherwise — the installer reads this value out of
+# values.yaml/values.defaults.yaml and passes it as `--set replicaCount=<n>`
+# alongside the static stages/values/cerbos.yaml (see stages/stages.yaml's
+# cerbos action `replicasValuePath`/`replicasSetKey` and
+# scripts/install/lib/helm.sh's helm_oci). egress-proxy's replica count is
+# NOT here -- see egress.replicaCount above.
+# ----------------------------------------------------------------------------
+replicas:
+  agentgatewayProxy: 1
+  mcpCerbosShim: 1
+  searxng: 1
+  cerbos: 1

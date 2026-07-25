@@ -42,7 +42,7 @@ spec:
     format: json
   deployment:
     spec:
-      replicas: 2
+      replicas: {{ .Values.replicas.agentgatewayProxy }}
       strategy:
         type: RollingUpdate
         rollingUpdate:

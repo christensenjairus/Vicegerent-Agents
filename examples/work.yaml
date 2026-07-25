@@ -92,9 +92,15 @@ egress:
   apexWildcardDomains: github.com,githubusercontent.com
   exactOnlyDomains: pypi.org,files.pythonhosted.org,proxy.golang.org,sum.golang.org,storage.googleapis.com,artifactory.global.mgmt.moveworks.io
   internalAllowlistCIDRs: 10.230.0.0/16
+  replicaCount: 2
 # Defaults render all four model backends; this machine drops deepseek and zai.
 models:
   deepseek:
     enabled: false
   zai:
     enabled: false
+replicas:
+  agentgatewayProxy: 2
+  mcpCerbosShim: 2
+  searxng: 2
+  cerbos: 2
