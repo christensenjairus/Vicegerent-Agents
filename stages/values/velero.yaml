@@ -16,8 +16,12 @@ snapshotsEnabled: false
 credentials:
   useSecret: false
 configuration:
-  # Enable Velero's built-in CSI snapshotting for CSI-backed PVCs (the agent data PVC).
+  # Enable Velero's built-in CSI snapshotting for CSI-backed PVCs (the agent data/gitrepos PVCs).
   features: EnableCSI
+  # csi-hostpath keeps its snapshots inside the Kind node container, so a CSI snapshot alone
+  # dies with the cluster; data movement uploads the snapshot contents to the bucket via
+  # node-agent/kopia. Applies to the schedule below and to ad-hoc `velero backup create`.
+  defaultSnapshotMoveData: true
   backupStorageLocation:
     - name: vicegerent
       provider: aws
