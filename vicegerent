@@ -155,10 +155,8 @@ cluster_setup() {
     echo "${B}Kind cluster '${cluster_name}' already exists; skipping create.${N}"
   else
     echo "${B}Creating Kind cluster '${cluster_name}' on docker network '${docker_network}'…${N}"
-    # kind resolves extraMounts.hostPath against the invocation CWD, not the --config path, so cd there first.
-    ( cd "$(dirname "$kind_config")" \
-      && KIND_EXPERIMENTAL_DOCKER_NETWORK="$docker_network" \
-        kind create cluster --name "$cluster_name" --config "$(basename "$kind_config")" )
+    KIND_EXPERIMENTAL_DOCKER_NETWORK="$docker_network" \
+      kind create cluster --name "$cluster_name" --config "$kind_config"
   fi
 
   echo "${B}Installing Cilium ${cilium_version} as the CNI…${N}"

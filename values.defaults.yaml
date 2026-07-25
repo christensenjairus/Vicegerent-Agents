@@ -120,6 +120,9 @@ agents:
       gitrepos: 50Gi
       # Mnemosyne embedding-model weights, reseeded from the image; excluded from Velero backup.
       models: 2Gi
+      dataStorageClassName: csi-hostpath-sc
+      gitreposStorageClassName: csi-hostpath-sc
+      modelsStorageClassName: csi-hostpath-sc
     obsidian:
       # Absolute path to a git-synced Obsidian vault under /opt/data or /workspace. Empty disables
       # Obsidian entirely: no env var is set and the Environment section omits Obsidian guidance.

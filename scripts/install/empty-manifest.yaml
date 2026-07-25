@@ -1,4 +1,0 @@
-# Mounted over /kind/manifests/default-storage.yaml on the control-plane node (see
-# kind-config.yaml extraMounts) so kind's node-image entrypoint applies nothing here
-# instead of local-path-provisioner + its `standard` default StorageClass. We don't
-# use it — every PVC in this repo pins csi-hostpath-sc explicitly.
