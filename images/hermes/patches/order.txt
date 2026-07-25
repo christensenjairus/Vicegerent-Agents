@@ -1,0 +1,43 @@
+# Apply order for the patches/ scripts, consumed by the Dockerfile's single
+# patch-runner layer. One filename per line; blank lines and full-line comments
+# are ignored. The Dockerfile fails the build if a patches/[0-9]*.py file is
+# missing from this list, so adding a patch means adding a line here.
+#
+# Order is LOAD-BEARING and is NOT plain numeric order:
+#
+#   0019 runs first. It deletes mnemosyne-memory's stray site-packages/tools/
+#   namespace-package directory, which otherwise shadows Hermes' real `tools`
+#   package. Every patch that locates its target via
+#   importlib.util.find_spec("tools.<mod>") -- 0008, 0011, 0012, 0018, 0022,
+#   0023, 0024, 0027 -- would resolve against the wrong `tools` without it.
+#
+#   0016 and 0020 must follow 0014 (they import helpers it adds).
+#   0039 must follow 0028 and 0036 (it rewrites their shared call site).
+#
+0019-remove-mnemosyne-tools-namespace-collision.py
+0004-agentburn.py
+0007-slack-bypass-egress-proxy.py
+0008-approval-tirith-only-mode.py
+0009-mcp-circuit-breaker.py
+0011-web-extract-capability-check.py
+0012-execute-code-pattern-silence.py
+0014-auxiliary-anthropic-gateway-host.py
+0016-credential-pool-anthropic-base-url.py
+0020-anthropic-gateway-placeholder-credential.py
+0018-check-fn-exception-traceback.py
+0022-mcp-parked-retry-interval-60s.py
+0023-mcp-circuit-breaker-threshold-15.py
+0024-mcp-connection-lost-diagnostics.py
+0025-curator-skill-read-marks-contextvar-isolation.py
+0027-mcp-parked-tools-stay-registered.py
+0028-runtime-footer-effort-field.py
+0030-per-platform-verifier-and-memory-notifications.py
+0031-slack-thread-context-command-detection.py
+0034-agentburn-per-model-cost-attribution.py
+0035-slack-flat-text-table-rendering.py
+0036-slack-runtime-footer-dm-only.py
+0037-jiter-streaming-parse-error-retryable.py
+0038-glm-usage-pricing.py
+0039-runtime-footer-cost-field.py
+0040-custom-provider-drop-unconditional-think-field.py
+0041-interim-assistant-messages-session-toggle.py
