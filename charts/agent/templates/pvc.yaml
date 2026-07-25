@@ -1,0 +1,24 @@
+{{- $name := include "vicegerent-agent.name" . -}}
+{{- range $claim := list
+      (dict "name" "data" "size" $.Values.storage.data "class" $.Values.storage.dataStorageClassName)
+      (dict "name" "gitrepos" "size" $.Values.storage.gitrepos "class" $.Values.storage.gitreposStorageClassName)
+      (dict "name" "models" "size" $.Values.storage.models "class" $.Values.storage.modelsStorageClassName "excludeFromBackup" true) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $claim.name }}-{{ $name }}
+  namespace: agent-sandbox
+  {{- if $claim.excludeFromBackup }}
+  labels:
+    velero.io/exclude-from-backup: 'true'
+  {{- end }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ $claim.class }}
+  resources:
+    requests:
+      storage: {{ $claim.size }}
+{{- end }}

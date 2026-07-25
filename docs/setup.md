@@ -156,7 +156,11 @@ helm --kube-context kind-vicegerent list -A
 
 ## Back up and restore the cluster
 
-Velero takes a **full-cluster backup** on a daily schedule (`vicegerent-daily` in `stages/values/velero.yaml`, 13:00 America/Denver, 7-day retention): every namespaced and cluster-scoped resource, the Helm release state itself, and the contents of the agent `data` and `gitrepos` PVCs. The `models` PVC is deliberately skipped (`velero.io/exclude-from-backup` in `charts/agent/templates/_sandbox.tpl`) because it is reseeded from the image. Everything lands in the rclone S3 bucket served on the laptop (`host.docker.internal:9899`), which lives on your host filesystem and survives a cluster nuke.
+Velero takes a **full-cluster backup** on a daily schedule (`vicegerent-daily` in `stages/values/velero.yaml`, 13:00 America/Denver, 7-day retention): every namespaced and cluster-scoped resource, the Helm release state itself, and the contents of the agent `data` and `gitrepos` PVCs. Everything lands in the rclone S3 bucket served on the laptop (`host.docker.internal:9899`), which lives on your host filesystem and survives a cluster nuke.
+
+Two volumes are deliberately skipped, both carrying `velero.io/exclude-from-backup: 'true'` on the **claim**: the agent `models` PVC (`charts/agent/templates/pvc.yaml`), reseeded from the image by the `seed-data` initContainer, and the victoria-logs PVC (`server.persistentVolume.extraLabels` in `stages/values/victoria-logs.yaml`), 7-day-retention observability data that a reinstall reconstructs. The label has to be on the claim, not the PV: Velero's CSI snapshot and data movement run as a PVC-level `BackupItemAction`, so the PVC's label is what suppresses the snapshot and upload. Each PV object still lands in the backup as bare metadata, which is harmless — on restore Velero discards a PV that has no snapshot and a `Delete` reclaim policy and lets the claim re-provision. Were these volumes ever switched to `Retain`, that stops being true and the PVs would need excluding too.
+
+Volume data is also skipped for anything the agent Pod lists in `backup.velero.io/backup-volumes-excludes` (`charts/agent/templates/_sandbox.tpl`), but that annotation only governs the file-system-backup path, which the daily schedule does not use (`defaultVolumesToFsBackup: false`).
 
 Volume contents get there via **CSI snapshot data movement** (`configuration.defaultSnapshotMoveData`): Velero takes a CSI snapshot, then node-agent/kopia uploads the snapshot contents to the bucket and drops the local snapshot. This is load-bearing on Kind — `csi-hostpath` stores its snapshots inside the node container, so a CSI snapshot on its own is destroyed by `kind delete cluster` and leaves you with a backup that restores every object but no data.
 
@@ -202,6 +206,20 @@ velero restore create --from-backup <backup-name> --wait
 ```
 
 Because the backup includes the Helm release Secrets, `helm list -A` shows the releases as `deployed` after the restore. Finish with a normal `./vicegerent install` to re-assert every stage and pull the platform back onto its expected chart versions.
+
+## Agent volume lifecycle
+
+The three agent PVCs (`data-<agent>`, `gitrepos-<agent>`, `models-<agent>`) are declared by the agent chart in `charts/agent/templates/pvc.yaml` and referenced from the Sandbox pod template as ordinary `persistentVolumeClaim` volumes. They are deliberately **not** Sandbox `volumeClaimTemplates`: the sandbox controller makes itself controller-owner of any claim it creates, so `kubectl delete sandbox <agent>` would garbage-collect all three claims and — since `csi-hostpath-sc` reclaims with `Delete` — take the PVs and their data with them. Chart-owned claims are unowned by the Sandbox, so deleting and recreating the Sandbox CR reattaches the same volumes. They also carry `helm.sh/resource-policy: keep`, so `helm uninstall` leaves them behind.
+
+The second reason to own them in the chart is that labels are then re-asserted on every `helm upgrade`. A claim template's metadata is read only when the controller first creates the PVC, so a label added later never reaches an existing volume — and a Velero restore, which recreates the PVC from a backup taken before the label existed, silently drops it.
+
+Because the data no longer depends on the Sandbox surviving, **the Sandbox CR itself is freely disposable**. It carries no `helm.sh/resource-policy: keep`, so Helm deletes and recreates it like any other object: an agent removed from `values.yaml` is `helm uninstall`ed and its Sandbox really goes away, and `kubectl delete sandbox <agent>` followed by `./vicegerent install` is a clean way to rebuild an agent from scratch. The replacement Pod remounts the same three claims; only `runtime` and `tmp` are lost, and both are `emptyDir` that the Pod rebuilds anyway.
+
+Deleting a volume's data is therefore an explicit act:
+
+```bash
+kubectl -n agent-sandbox delete pvc models-<agent>   # then delete the Sandbox pod to have it reseed
+```
 
 ## Adding a second machine
 

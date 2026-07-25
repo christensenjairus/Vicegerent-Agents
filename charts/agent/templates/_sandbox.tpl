@@ -4,18 +4,12 @@ kind: Sandbox
 metadata:
   name: {{ include "vicegerent-agent.name" . }}
   namespace: agent-sandbox
-  annotations:
-    helm.sh/resource-policy: keep
 spec:
   podTemplate:
     metadata:
       labels:
         vicegerent.io/dashboard: {{ include "vicegerent-agent.name" . }}
       annotations:
-        # Excluding data/gitrepos from Velero's file-system-backup path routes them to CSI
-        # snapshot + data movement into the backup bucket instead (not "no backup"); models
-        # carries velero.io/exclude-from-backup below and really is skipped. runtime/tmp are
-        # emptyDir and get no backup either way.
         backup.velero.io/backup-volumes-excludes: gitrepos,models,runtime,tmp,data
     spec:
       # ndots:1 so exact-matchName DNS egress (networkpolicy.yaml) works for musl (codex) —
@@ -466,6 +460,15 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: data-{{ include "vicegerent-agent.name" . }}
+        - name: gitrepos
+          persistentVolumeClaim:
+            claimName: gitrepos-{{ include "vicegerent-agent.name" . }}
+        - name: models
+          persistentVolumeClaim:
+            claimName: models-{{ include "vicegerent-agent.name" . }}
         - name: config
           configMap:
             name: {{ include "vicegerent-agent.name" . }}-config
@@ -493,34 +496,4 @@ spec:
           secret:
             secretName: egress-proxy-ca-cert  # pragma: allowlist secret
             optional: false
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: [ReadWriteOnce]
-        storageClassName: {{ .Values.storage.dataStorageClassName }}
-        resources:
-          requests:
-            storage: {{ .Values.storage.data }}
-    - metadata:
-        name: gitrepos
-      spec:
-        accessModes: [ReadWriteOnce]
-        storageClassName: {{ .Values.storage.gitreposStorageClassName }}
-        resources:
-          requests:
-            storage: {{ .Values.storage.gitrepos }}
-    - metadata:
-        name: models
-        labels:
-          # Reseeded from the image, so never worth a snapshot+upload. Set on the claim
-          # template, which the Sandbox controller only reads when it first creates the PVC —
-          # an existing models PVC needs the label applied by hand once.
-          velero.io/exclude-from-backup: 'true'
-      spec:
-        accessModes: [ReadWriteOnce]
-        storageClassName: {{ .Values.storage.modelsStorageClassName }}
-        resources:
-          requests:
-            storage: {{ .Values.storage.models }}
 {{- end -}}
