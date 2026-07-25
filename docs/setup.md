@@ -104,7 +104,7 @@ The host-only ghostunnel files (`~/.vicegerent/ghostunnel`): `ca.cert`, `ca.key`
 Run once per named agent, using the name you gave it in `values.yaml`'s `agents:` list. Each agent gets its own independently generated dashboard credentials and SSH key — no material is shared between agents. Run this before `./vicegerent install`, or the install's agents-stage pre-flight will stop and point you here.
 
 ```bash
-./vicegerent setup secrets agent hermes   # accepts -y/--yes
+./vicegerent setup secrets agent <name>   # accepts -y/--yes
 ```
 
 This applies these Kubernetes Secrets in namespace `agent-sandbox` (agent `<name>`):
@@ -205,7 +205,7 @@ cp values.example.yaml values.yaml
 $EDITOR values.yaml                    # this machine's cluster vars + agents
 ./vicegerent setup cluster
 ./vicegerent setup secrets platform
-./vicegerent setup secrets agent hermes
+./vicegerent setup secrets agent <name>
 ./vicegerent install
 ```
 
@@ -244,13 +244,13 @@ For finer control of just the host stack, drive it with `./vicegerent mcp` (`sta
 Each agent's Hermes dashboard is published on a Kind NodePort — derived as 30119 plus the agent's index in your `agents:` list (pool `30119-30128`, mapped to the host via kind `extraPortMappings`) — and reachable directly at `http://127.0.0.1:<nodePort>/`. Print its URL + basic-auth credentials, then open the URL in a browser:
 
 ```bash
-./vicegerent creds hermes   # print dashboard URL + login
+./vicegerent creds <name>   # print dashboard URL + login
 ```
 
 To get a shell inside a running agent's container — it drops you into a shell in `/workspace`:
 
 ```bash
-./vicegerent ssh hermes
+./vicegerent ssh <name>
 ```
 
 VictoriaLogs (cluster-wide log aggregation) has no NodePort — port-forward its server Service and open the web UI (vmui) at `http://127.0.0.1:9428/select/vmui/`:

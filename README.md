@@ -65,8 +65,8 @@ export ANTHROPIC_API_KEY=***
 
 # 4. Configure this machine, then provision each agent's secrets
 cp values.example.yaml values.yaml
-$EDITOR values.yaml          # cluster vars + the agents you want (start with the hermes example)
-./vicegerent setup secrets agent hermes
+$EDITOR values.yaml          # cluster vars + the agents you want (start with the example agent)
+./vicegerent setup secrets agent <name>
 
 # 5. Install the platform (staged helm upgrade --install --wait; idempotent, re-run after any git pull)
 ./vicegerent install
@@ -76,7 +76,7 @@ $EDITOR values.yaml          # cluster vars + the agents you want (start with th
 ./vicegerent start
 
 # 7. Show the agent's dashboard URL + login
-./vicegerent creds hermes
+./vicegerent creds <name>
 ```
 
 Requires `kind`, `cilium-cli`, `kubectl`, `helm`, `yq`, `jq` on `PATH`, and an SSH key with access to your git host.

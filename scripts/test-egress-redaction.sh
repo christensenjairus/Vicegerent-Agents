@@ -15,8 +15,9 @@
 # Usage:
 #   bash scripts/test-egress-redaction.sh
 #
-# Override namespace, pod selector, or container:
-#   AGENT_LABEL=hermes bash scripts/test-egress-redaction.sh
+# Any running agent sandbox is picked automatically. Override namespace, agent name,
+# pod, or container:
+#   AGENT_LABEL=<name> bash scripts/test-egress-redaction.sh
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,20 +25,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/kube-context.sh"
 
 NAMESPACE="${NAMESPACE:-agent-sandbox}"
-AGENT_LABEL="${AGENT_LABEL:-hermes}"
+# Operators name their own agents, so match on the label's presence and narrow to one
+# name only when AGENT_LABEL is set.
+AGENT_LABEL="${AGENT_LABEL:-}"
+SELECTOR="vicegerent.io/dashboard${AGENT_LABEL:+=${AGENT_LABEL}}"
 
 command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required" >&2; exit 1; }
 require_kind_context
 CTX=(--context "$KUBE_CONTEXT")
 
-POD="${POD:-$(kubectl "${CTX[@]}" -n "$NAMESPACE" get pods -l "vicegerent.io/dashboard=${AGENT_LABEL}" \
+POD="${POD:-$(kubectl "${CTX[@]}" -n "$NAMESPACE" get pods -l "$SELECTOR" \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)}"
 [[ -n "$POD" ]] || {
-  echo "ERROR: no running pod found in namespace '${NAMESPACE}' with label vicegerent.io/dashboard=${AGENT_LABEL}." >&2
-  echo "  Is the ${AGENT_LABEL} sandbox up? kubectl -n ${NAMESPACE} get pods" >&2
+  echo "ERROR: no running pod found in namespace '${NAMESPACE}' with label ${SELECTOR}." >&2
+  echo "  Is an agent sandbox up? kubectl -n ${NAMESPACE} get pods" >&2
   exit 1
 }
-CONTAINER="${CONTAINER:-$AGENT_LABEL}"
+# The sandbox's single non-init container is named after the agent.
+CONTAINER="${CONTAINER:-$(kubectl "${CTX[@]}" -n "$NAMESPACE" get pod "$POD" \
+  -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || true)}"
+[[ -n "$CONTAINER" ]] || {
+  echo "ERROR: could not resolve the agent container in pod '${POD}'." >&2
+  exit 1
+}
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 PASS=0; FAIL=0
