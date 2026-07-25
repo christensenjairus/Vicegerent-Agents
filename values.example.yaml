@@ -26,7 +26,7 @@ clusterVars:
 # One charts/agent release per entry (max 10). The dashboard NodePort is derived as
 # 30119 + the agent's index in this list (host-published pool 30119-30128).
 agents:
-  - name: hermes
+  - name: my-first-agent
     obsidian:
       vaultPath: /workspace/knowledge-vault
     git:

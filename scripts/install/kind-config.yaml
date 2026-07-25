@@ -9,7 +9,7 @@ nodes:
   - role: control-plane
     # Agent dashboard NodePort pool published to the host loopback. Each agent's port
     # is 30119 + its `dashboard.index` (0-9) in the values.yaml agents[] list; the
-    # dashboard is then at http://127.0.0.1:<nodePort>/. hermes uses index 0 -> 30119.
+    # dashboard is then at http://127.0.0.1:<nodePort>/. The first agent gets index 0 -> 30119.
     # extraPortMappings are creation-time only, so this pool is fixed at cluster setup —
     # to run more than 10 agents, widen the range and recreate the cluster.
     extraPortMappings:
