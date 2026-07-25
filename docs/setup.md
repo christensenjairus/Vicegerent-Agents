@@ -156,56 +156,9 @@ helm --kube-context kind-vicegerent list -A
 
 ## Back up and restore the cluster
 
-Velero takes a **full-cluster backup** on a daily schedule (`vicegerent-daily` in `stages/values/velero.yaml`, 13:00 America/Denver, 7-day retention): every namespaced and cluster-scoped resource, the Helm release state itself, and the contents of the agent `data` and `gitrepos` PVCs. Everything lands in the rclone S3 bucket served on the laptop (`host.docker.internal:9899`), which lives on your host filesystem and survives a cluster nuke.
+Velero takes a full-cluster backup daily (13:00 America/Denver, 7-day retention) — every namespaced and cluster-scoped object, the Helm release state, and the contents of the agent `data` and `gitrepos` PVCs — into an rclone S3 bucket on your laptop that survives a cluster nuke. It is the failsafe for a lost agent volume, a botched `./vicegerent install`, and an unrecoverable cluster alike.
 
-Two volumes are deliberately skipped, both carrying `velero.io/exclude-from-backup: 'true'` on the **claim**: the agent `models` PVC (`charts/agent/templates/pvc.yaml`), reseeded from the image by the `seed-data` initContainer, and the victoria-logs PVC (`server.persistentVolume.extraLabels` in `stages/values/victoria-logs.yaml`), 7-day-retention observability data that a reinstall reconstructs. The label has to be on the claim, not the PV: Velero's CSI snapshot and data movement run as a PVC-level `BackupItemAction`, so the PVC's label is what suppresses the snapshot and upload. Each PV object still lands in the backup as bare metadata, which is harmless — on restore Velero discards a PV that has no snapshot and a `Delete` reclaim policy and lets the claim re-provision. Were these volumes ever switched to `Retain`, that stops being true and the PVs would need excluding too.
-
-Volume data is also skipped for anything the agent Pod lists in `backup.velero.io/backup-volumes-excludes` (`charts/agent/templates/_sandbox.tpl`), but that annotation only governs the file-system-backup path, which the daily schedule does not use (`defaultVolumesToFsBackup: false`).
-
-Volume contents get there via **CSI snapshot data movement** (`configuration.defaultSnapshotMoveData`): Velero takes a CSI snapshot, then node-agent/kopia uploads the snapshot contents to the bucket and drops the local snapshot. This is load-bearing on Kind — `csi-hostpath` stores its snapshots inside the node container, so a CSI snapshot on its own is destroyed by `kind delete cluster` and leaves you with a backup that restores every object but no data.
-
-The commands below use the `velero` CLI (`brew install velero`) against your current kube-context — set it with `kubectl config use-context kind-vicegerent` first. List backups, or trigger one on demand:
-
-```bash
-velero backup get
-velero backup create manual --wait
-```
-
-Because a hollow backup still reports `Completed`, confirm the volume data actually moved:
-
-```bash
-velero backup describe manual --details   # expect a Data Movement entry per PVC
-kubectl -n velero get datauploads         # expect one Completed per backed-up PVC
-du -sh ~/.vicegerent/rclone-s3/vicegerent # expect this to grow, not just tick over
-```
-
-The first backup after a volume is created uploads its full contents; later ones are kopia-incremental. Data movement provisions a temporary PVC from each snapshot while it runs, so a backup transiently needs a second copy of the volume's actual data on the node.
-
-If an upgrade breaks the cluster, nuke it and restore from the last good backup. The key subtlety: bring up **only** the restore prerequisites before restoring — if you run a full `./vicegerent install` first, the platform recreates its PVCs empty and Velero skips restoring the snapshot data onto them.
-
-```bash
-# 1. Delete the broken cluster and recreate the base (Kind + Cilium).
-kind delete clusters vicegerent
-./vicegerent setup cluster
-
-# 2. Re-seed platform secrets — Velero needs the velero-credentials Secret to
-#    reach the backup bucket, and the CSI stack must exist to restore snapshots.
-./vicegerent setup secrets platform
-
-# 3. Install ONLY the restore prerequisites: CRDs, the storage layer (snapshot
-#    controller + CSI driver), and the controllers stage (which carries Velero).
-#    Stop there.
-./vicegerent install --stage crds
-./vicegerent install --stage storage
-./vicegerent install --stage controllers
-
-# 4. Restore the most recent backup — recreates namespaces, workloads, CRs, and
-#    PVCs-with-data across the whole cluster.
-velero backup get
-velero restore create --from-backup <backup-name> --wait
-```
-
-Because the backup includes the Helm release Secrets, `helm list -A` shows the releases as `deployed` after the restore. Finish with a normal `./vicegerent install` to re-assert every stage and pull the platform back onto its expected chart versions.
+**See [`docs/backup-and-restore.md`](backup-and-restore.md)** for the full guide: why it is built on CSI snapshots + data movement instead of a hostPath copy, which volumes are skipped, ad-hoc backups, per-agent volume restores, object-only repair restores, full-cluster restores, and the `/etc/hosts` gotcha that breaks the `velero` CLI.
 
 ## Agent volume lifecycle
 

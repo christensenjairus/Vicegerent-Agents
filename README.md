@@ -33,7 +33,8 @@ charts/*/values.yaml  intentionally empty pointer files — the platform default
 host/mcp/             host-side MCP control plane (ToolHive + vMCP) — see docs/setup.md
 images/               source-built container images (hermes, agentgateway-proxy, mcp-cerbos-shim, kubernetes-mcp-server, aws-api-mcp-server, aws-profiles-mcp)
 scripts/              install, secrets, validation, and test scripts driven by ./vicegerent
-docs/                 design rationale (docs/design.md) and full setup walkthrough (docs/setup.md)
+docs/                 design rationale (docs/design.md), full setup walkthrough (docs/setup.md),
+                      and backup/restore runbook (docs/backup-and-restore.md)
 ```
 
 `AGENTS.md` (symlinked as `CLAUDE.md`/`HERMES.md`) is the authoritative conventions doc for anyone — human or agent — changing this repo; read it before opening an MR.
