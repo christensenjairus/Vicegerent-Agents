@@ -159,6 +159,18 @@ cluster_setup() {
       kind create cluster --name "$cluster_name" --config "$kind_config"
   fi
 
+  # kind always installs local-path-provisioner + the `standard` default StorageClass on
+  # create (pkg/cluster/internal/create/actions/installstorage), with no config flag to skip
+  # it (kubernetes-sigs/kind#3176, still open). We don't use it -- every agent PVC pins
+  # csi-hostpath-sc, installed by the `storage` stage of `./vicegerent install` -- so remove
+  # it post-creation instead. --ignore-not-found makes this safe to rerun on an existing
+  # cluster; the namespace delete cascades onto its Deployment/ServiceAccount/Role/RoleBinding.
+  echo "${B}Removing kind's local-path-provisioner and 'standard' default StorageClass…${N}"
+  kubectl --context "kind-${cluster_name}" delete storageclass standard --ignore-not-found
+  kubectl --context "kind-${cluster_name}" delete clusterrole local-path-provisioner-role --ignore-not-found
+  kubectl --context "kind-${cluster_name}" delete clusterrolebinding local-path-provisioner-bind --ignore-not-found
+  kubectl --context "kind-${cluster_name}" delete namespace local-path-storage --ignore-not-found
+
   echo "${B}Installing Cilium ${cilium_version} as the CNI…${N}"
   cilium install --version "$cilium_version" --context "kind-${cluster_name}" 2>/dev/null \
     || echo "${B}Cilium already installed or install skipped; checking status…${N}"
