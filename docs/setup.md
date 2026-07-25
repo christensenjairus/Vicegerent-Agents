@@ -148,7 +148,9 @@ helm --kube-context kind-vicegerent list -A
 
 ## Back up and restore the cluster
 
-Velero takes a **full-cluster backup** on a daily schedule (`vicegerent-daily` in `stages/values/velero.yaml`, 13:00 America/Denver, 7-day retention): every namespaced and cluster-scoped resource, plus CSI volume snapshots of the CSI-backed PVCs (the agent `data` / `gitrepos` / `models` volumes on `csi-hostpath-sc`) and the Helm release state itself. Backups land in the rclone S3 bucket served on the laptop (`host.docker.internal:9899`), which lives on your host filesystem and survives a cluster nuke.
+Velero takes a **full-cluster backup** on a daily schedule (`vicegerent-daily` in `stages/values/velero.yaml`, 13:00 America/Denver, 7-day retention): every namespaced and cluster-scoped resource, the Helm release state itself, and the contents of the agent `data` and `gitrepos` PVCs. The `models` PVC is deliberately skipped (`velero.io/exclude-from-backup` in `charts/agent/templates/_sandbox.tpl`) because it is reseeded from the image. Everything lands in the rclone S3 bucket served on the laptop (`host.docker.internal:9899`), which lives on your host filesystem and survives a cluster nuke.
+
+Volume contents get there via **CSI snapshot data movement** (`configuration.defaultSnapshotMoveData`): Velero takes a CSI snapshot, then node-agent/kopia uploads the snapshot contents to the bucket and drops the local snapshot. This is load-bearing on Kind — `csi-hostpath` stores its snapshots inside the node container, so a CSI snapshot on its own is destroyed by `kind delete cluster` and leaves you with a backup that restores every object but no data.
 
 The commands below use the `velero` CLI (`brew install velero`) against your current kube-context — set it with `kubectl config use-context kind-vicegerent` first. List backups, or trigger one on demand:
 
@@ -156,6 +158,16 @@ The commands below use the `velero` CLI (`brew install velero`) against your cur
 velero backup get
 velero backup create manual --wait
 ```
+
+Because a hollow backup still reports `Completed`, confirm the volume data actually moved:
+
+```bash
+velero backup describe manual --details   # expect a Data Movement entry per PVC
+kubectl -n velero get datauploads         # expect one Completed per backed-up PVC
+du -sh ~/.vicegerent/rclone-s3/vicegerent # expect this to grow, not just tick over
+```
+
+The first backup after a volume is created uploads its full contents; later ones are kopia-incremental. Data movement provisions a temporary PVC from each snapshot while it runs, so a backup transiently needs a second copy of the volume's actual data on the node.
 
 If an upgrade breaks the cluster, nuke it and restore from the last good backup. The key subtlety: bring up **only** the restore prerequisites before restoring — if you run a full `./vicegerent install` first, the platform recreates its PVCs empty and Velero skips restoring the snapshot data onto them.
 

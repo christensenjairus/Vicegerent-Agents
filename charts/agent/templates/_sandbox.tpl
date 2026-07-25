@@ -12,9 +12,10 @@ spec:
       labels:
         vicegerent.io/dashboard: {{ include "vicegerent-agent.name" . }}
       annotations:
-        # data/gitrepos/models are all on the CSI StorageClass now, so excluding them from
-        # Velero's file-system-backup path routes them to CSI snapshot instead (not "no backup").
-        # runtime/tmp are emptyDir and genuinely get no backup either way.
+        # Excluding data/gitrepos from Velero's file-system-backup path routes them to CSI
+        # snapshot + data movement into the backup bucket instead (not "no backup"); models
+        # carries velero.io/exclude-from-backup below and really is skipped. runtime/tmp are
+        # emptyDir and get no backup either way.
         backup.velero.io/backup-volumes-excludes: gitrepos,models,runtime,tmp,data
     spec:
       # ndots:1 so exact-matchName DNS egress (networkpolicy.yaml) works for musl (codex) —
@@ -42,7 +43,7 @@ spec:
               # chown -R: stale uid-0 dirs from old subPath design cause EPERM on reseed; idempotent on fresh PVCs.
               mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/home/.config/opencode
               chown -R 10000:10000 /opt/data/.codex /opt/data/.claude /opt/data/home/.config/opencode
-              # models PVC mount forces kubelet to scaffold /opt/data/home as root:hermes with no group-write; fix it here (non-recursive, skips the mounted models content) before seed-data (uid 10000) needs to write under $HOME.
+              # models PVC mount forces kubelet to scaffold /opt/data/home as root:hermes with no group-write; fix it here (non-recursive, skips the mounted models content) before seed-data (uid 10000) reseeds the model weights under it.
               mkdir -p /opt/data/home/.hermes/mnemosyne
               chown 10000:10000 /opt/data/home /opt/data/home/.hermes /opt/data/home/.hermes/mnemosyne
           securityContext:
@@ -62,8 +63,8 @@ spec:
           args:
             - |-
               set -euo pipefail
-              # /etc/passwd gives uid 10000 a home of /opt/data, but the main container's HOME is /opt/data/home -- match it so git config --global lands where it's actually read.
-              export HOME=/opt/data/home
+              # No container sets a HOME env, so the runtime HOME is uid 10000's /etc/passwd home, /opt/data -- pin it so git config --global and ~/.bazelrc below land where git and bazel actually read them. /opt/data/home is reached only by absolute path (XDG_CONFIG_HOME, the models mount), never as $HOME.
+              export HOME=/opt/data
               # fastembed reads HERMES_HOME/cache; the local LLM reads ~/.hermes; faster-whisper
               # reads the default HF_HUB_CACHE (~/.cache/huggingface/hub) — three different dirs.
               fastembed_dest="/opt/data/cache/fastembed"
@@ -511,6 +512,11 @@ spec:
             storage: {{ .Values.storage.gitrepos }}
     - metadata:
         name: models
+        labels:
+          # Reseeded from the image, so never worth a snapshot+upload. Set on the claim
+          # template, which the Sandbox controller only reads when it first creates the PVC —
+          # an existing models PVC needs the label applied by hand once.
+          velero.io/exclude-from-backup: 'true'
       spec:
         accessModes: [ReadWriteOnce]
         storageClassName: {{ .Values.storage.modelsStorageClassName }}
