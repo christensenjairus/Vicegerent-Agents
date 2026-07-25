@@ -103,7 +103,7 @@ stages:
       - name: agents-sandbox-controller
         type: helm-git
         gitRepo: https://github.com/kubernetes-sigs/agent-sandbox
-        ref: v0.5.2
+        ref: v0.5.3
         chartPath: helm
         namespace: agent-sandbox-system
         crds: true
