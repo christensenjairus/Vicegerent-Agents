@@ -35,7 +35,7 @@ ARG TARGETARCH
 
 # terraform-ls is downloaded from HashiCorp releases; strip leading v for URL.
 # renovate: datasource=github-releases depName=hashicorp/terraform-ls
-ARG TERRAFORM_LS_VERSION=v0.38.8
+ARG TERRAFORM_LS_VERSION=v0.39.0
 RUN TFLS_VER="${TERRAFORM_LS_VERSION#v}" \
     && curl -fsSL -o /tmp/terraform-ls.zip \
         "https://releases.hashicorp.com/terraform-ls/${TFLS_VER}/terraform-ls_${TFLS_VER}_linux_${TARGETARCH}.zip" \
