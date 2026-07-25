@@ -123,12 +123,20 @@ run_action() {
         "$(yq "$a.crds // false" "$STAGES_FILE")"
       ;;
     helm-oci)
+      local extra_set="" rvp rsk rv
+      rvp="$(yq "$a.replicasValuePath // \"\"" "$STAGES_FILE")"
+      rsk="$(yq "$a.replicasSetKey // \"\"" "$STAGES_FILE")"
+      if [[ -n "$rvp" && -n "$rsk" ]]; then
+        rv="$(resolve_value_or_default "$rvp")"
+        [[ -n "$rv" ]] && extra_set="${rsk}=${rv}"
+      fi
       helm_oci "$name" \
         "$(yq "$a.chart" "$STAGES_FILE")" \
         "$(yq "$a.version" "$STAGES_FILE")" \
         "$(yq "$a.namespace" "$STAGES_FILE")" \
         "$(yq "$a.values // \"\"" "$STAGES_FILE")" \
-        "$(yq "$a.crds // false" "$STAGES_FILE")"
+        "$(yq "$a.crds // false" "$STAGES_FILE")" \
+        "$extra_set"
       ;;
     helm-git)
       helm_git "$name" \

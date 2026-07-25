@@ -6,6 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: mcp-cerbos-shim
 spec:
+  replicas: {{ .Values.replicas.mcpCerbosShim }}
   selector:
     matchLabels:
       app.kubernetes.io/name: mcp-cerbos-shim

@@ -66,6 +66,19 @@ defaults_slice_agent() {
   printf '%s' "$out"
 }
 
+# Resolve a dotted value path from the machine values.yaml, falling back to
+# values.defaults.yaml when the machine file doesn't set it (mirrors the Helm
+# `-f defaults -f machine` layering for charts that have no such layering of
+# their own, e.g. an upstream OCI chart passed only a single -f). Prints the
+# resolved scalar, or "" if neither file sets it.
+resolve_value_or_default() {
+  local path="$1" v
+  v="$(yq eval "$path // \"\"" "$VALUES_FILE")"
+  [[ -n "$v" && "$v" != "null" ]] || v="$(yq eval "$path // \"\"" "$DEFAULTS_FILE")"
+  [[ "$v" != "null" ]] || v=""
+  printf '%s' "$v"
+}
+
 # Fail fast if a Secret the next stage's workloads block on is absent, so the
 # operator gets a one-line pointer instead of a 10-minute `helm --wait` hang.
 # Secrets are owned by the setup scripts; the installer never creates them.

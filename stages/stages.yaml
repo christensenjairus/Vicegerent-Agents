@@ -124,6 +124,14 @@ stages:
         version: 0.53.0
         namespace: cerbos
         values: cerbos.yaml
+        # Upstream chart has no per-machine values.yaml layering (a single fixed
+        # -f is passed); this key names the machine value read out of
+        # $VALUES_FILE/$DEFAULTS_FILE (via yq) and passed as `--set
+        # replicaCount=<n>` (upstream's own values.yaml key, confirmed against
+        # the pinned version's deploy/charts/cerbos/values.yaml above). See
+        # install.sh's run_action (type helm-oci) and helm_oci's extraSet param.
+        replicasValuePath: .replicas.cerbos
+        replicasSetKey: replicaCount
       - name: mcp-cerbos-shim
         type: local
         namespace: cerbos

@@ -50,11 +50,15 @@ helm_remote() {
   _do_helm "$name" "$namespace" "$crds"
 }
 
-# helm_oci <name> <chart-oci-ref> <version> <namespace> <values> <crds>
+# helm_oci <name> <chart-oci-ref> <version> <namespace> <values> <crds> [extraSet]
+# extraSet (optional): a single "key=value" appended as `--set` after the values
+# file, e.g. the cerbos stage's machine-configurable replicaCount (upstream
+# charts have no values.yaml layering here, unlike the local charts).
 helm_oci() {
-  local name="$1" chart="$2" version="$3" namespace="$4" values="$5" crds="$6"
+  local name="$1" chart="$2" version="$3" namespace="$4" values="$5" crds="$6" extraSet="${7:-}"
   LOC=("$chart" --version "$version")
   _vals_from_file "$values"
+  [[ -n "$extraSet" ]] && VALS+=(--set "$extraSet")
   _do_helm "$name" "$namespace" "$crds"
 }
 
