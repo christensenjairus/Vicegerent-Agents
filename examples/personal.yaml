@@ -24,8 +24,8 @@ agents:
     obsidian:
       vaultPath: /workspace/knowledge-vault
     git:
-      userName: felix
-      userEmail: felix@hahomelabs.com
+      userName: jchristensen
+      userEmail: christensenjairus@gmail.com
     timezone: America/Denver
     providers:
       deepseek:
