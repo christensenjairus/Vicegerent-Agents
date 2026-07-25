@@ -112,12 +112,24 @@ spec:
                 'startup --host_jvm_args=-Djavax.net.ssl.trustStoreType=PKCS12' \
                 'startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit' \
                 > "${HOME}/.bazelrc"
-              # digest-gated reseed (rm-first); layout=v2 forces reseed off old dest paths;
-              # also reseed if llm_dest is empty (its own PVC, excluded from Velero backup).
+              # Reseed when the marker is stale or any dest lost content: a
+              # marker-only gate latches shut once a dest is wiped out from under it.
+              # Compared against the seed's own entries, not a hardcoded model dir.
               seed="/opt/hermes/mnemosyne-seed"
               marker="${marker_dir}/.mnemosyne-seed.sha256"
-              want="$(cat "${seed}.sha256"):layout=v2"
-              if [ "$(cat "${marker}" 2>/dev/null || true)" != "${want}" ] || [ -z "$(ls -A "${llm_dest}" 2>/dev/null)" ]; then
+              want="$(cat "${seed}.sha256"):layout=v3"
+              seed_complete() {
+                for entry in "$1"/* "$1"/.[!.]*; do
+                  [ -e "${entry}" ] || continue
+                  [ -e "$2/$(basename "${entry}")" ] || return 1
+                done
+              }
+              reseed=no
+              [ "$(cat "${marker}" 2>/dev/null || true)" = "${want}" ] || reseed=yes
+              seed_complete "${seed}/mnemosyne/models" "${llm_dest}" || reseed=yes
+              seed_complete "${seed}/cache/fastembed" "${fastembed_dest}" || reseed=yes
+              seed_complete "${seed}/cache/faster-whisper" "${whisper_dest}" || reseed=yes
+              if [ "${reseed}" = yes ]; then
                 rm -rf "${fastembed_dest}" "${whisper_dest}"
                 # llm_dest is a mountpoint; rm -rf on it errors EBUSY under set -e.
                 find "${llm_dest}" -mindepth 1 -delete 2>/dev/null || true
@@ -126,6 +138,15 @@ spec:
                 cp -dR "${seed}/cache/fastembed/." "${fastembed_dest}/"
                 cp -dR "${seed}/cache/faster-whisper/." "${whisper_dest}/"
                 printf '%s\n' "${want}" > "${marker}"
+                # Fail the pod rather than start an agent whose model can't load.
+                for pair in "mnemosyne/models=${llm_dest}" \
+                            "cache/fastembed=${fastembed_dest}" \
+                            "cache/faster-whisper=${whisper_dest}"; do
+                  if ! seed_complete "${seed}/${pair%%=*}" "${pair#*=}"; then
+                    echo "seed-data: reseed of ${pair#*=} incomplete vs ${seed}/${pair%%=*}" >&2
+                    exit 1
+                  fi
+                done
               fi
               pkg="$(/opt/hermes/.venv/bin/python -c 'import mnemosyne_hermes, os; print(os.path.dirname(mnemosyne_hermes.__file__))')"
               ln -sfn "${pkg}" /opt/data/plugins/mnemosyne
