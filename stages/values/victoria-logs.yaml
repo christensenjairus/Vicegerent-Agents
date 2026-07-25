@@ -12,6 +12,8 @@ server:
   persistentVolume:
     size: 10Gi
     storageClassName: csi-hostpath-sc
+    extraLabels:
+      velero.io/exclude-from-backup: 'true'
   resources:
     requests:
       cpu: 50m
