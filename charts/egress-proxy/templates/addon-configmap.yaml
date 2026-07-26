@@ -12,9 +12,10 @@
 # scripts/validate.sh both pass it; a bare `helm template` without it fails the
 # `required` guard). The Go shim (images/mcp-cerbos-shim) embeds the SAME file via
 # //go:embed, so both runtimes compile identical shapes with no hand-sync. Coverage:
-# SSH private keys, Slack xox*/xapp-*, Bearer/Basic auth values, AWS, GitHub, GitLab,
-# Google, OpenAI, Anthropic, Stripe, Notion, Twilio, npm, generic JWTs, and PII (US
-# SSN, Visa/Mastercard/Amex/Discover card numbers, US phone numbers — Email excluded).
+# SSH private keys, cloud/provider API keys and tokens, HTTP auth header values,
+# database/broker URIs carrying an inline password, and PII (US SSN,
+# Visa/Mastercard/Amex/Discover card numbers, US phone numbers - Email excluded).
+# The canonical JSON itself is the authoritative per-pattern list.
 # The Authorization header itself (Bearer/Basic/x-api-key) is scrubbed on every
 # request regardless of destination: the agent has no legitimate token to send to
 # any host (agentgateway injects the real upstream provider key on its own outbound

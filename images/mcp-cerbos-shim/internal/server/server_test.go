@@ -970,6 +970,29 @@ func TestRedactString(t *testing.T) {
 	discoverCard := "6011" + strings.Repeat("0", 12) // 16-digit Discover (starts 6011)
 	phoneVal := "(" + "555" + ") " + "123" + "-" + "4567"
 
+	// Newly covered provider shapes. Same construction rule as above: every
+	// structural marker (prefix, header keyword) is fragmented via concatenation
+	// so no credential-shaped literal sits in this source file.
+	oktaTok := "SS" + "WS " + "00" + strings.Repeat("k", 40)                                   // pragma: allowlist secret
+	atlassianTok := "ATA" + "TT" + strings.Repeat("j", 40)                                     // pragma: allowlist secret
+	atlassianScoped := "ATC" + "TT" + strings.Repeat("c", 30)                                  // pragma: allowlist secret
+	databricksTok := "dap" + "i" + strings.Repeat("a", 32)                                     // pragma: allowlist secret
+	azureStorageKey := "Account" + "Key=" + strings.Repeat("Z", 86) + "=="                     // pragma: allowlist secret
+	entraSecret := "Abc" + "1" + "Q~" + strings.Repeat("e", 33)                                // pragma: allowlist secret
+	elasticKey := "Api" + "Key " + strings.Repeat("W", 40)                                     // pragma: allowlist secret
+	dbURI := "postgres" + "ql://" + "appuser" + ":" + strings.Repeat("p", 16) + "@db.internal" // pragma: allowlist secret
+	ghFineGrained := "github" + "_pat_" + strings.Repeat("F", 82)                              // pragma: allowlist secret
+	jfrogAPIKey := "AK" + "Cp" + strings.Repeat("J", 69)                                       // pragma: allowlist secret
+	jfrogRefTok := "cmVm" + "dGtu" + strings.Repeat("R", 24)                                   // pragma: allowlist secret
+	grafanaSA := "gls" + "a_" + strings.Repeat("G", 32) + "_" + strings.Repeat("a", 8)         // pragma: allowlist secret
+	grafanaCloud := "gl" + "c_" + strings.Repeat("C", 40)                                      // pragma: allowlist secret
+	dockerPAT := "dckr" + "_pat_" + strings.Repeat("d", 27)                                    // pragma: allowlist secret
+	pypiTok := "py" + "pi-" + strings.Repeat("P", 85)                                          // pragma: allowlist secret
+	hfTok := "h" + "f_" + strings.Repeat("h", 34)                                              // pragma: allowlist secret
+	onePasswordTok := "ops" + "_eyJ" + strings.Repeat("O", 120)                                // pragma: allowlist secret
+	linearKey := "lin" + "_api_" + strings.Repeat("L", 40)                                     // pragma: allowlist secret
+	pagerdutyTok := "Tok" + "en " + "token=" + strings.Repeat("y", 20)                         // pragma: allowlist secret
+
 	cases := []struct {
 		name       string
 		in         string
@@ -1115,6 +1138,120 @@ func TestRedactString(t *testing.T) {
 			wantAbsent: phoneVal,
 		},
 		{
+			name:       "okta api token",
+			in:         "Authorization: " + oktaTok,
+			wantRedact: true,
+			wantAbsent: oktaTok,
+		},
+		{
+			name:       "atlassian api token",
+			in:         "ATLASSIAN_API_TOKEN=" + atlassianTok,
+			wantRedact: true,
+			wantAbsent: atlassianTok,
+		},
+		{
+			name:       "atlassian scoped token",
+			in:         "token: " + atlassianScoped,
+			wantRedact: true,
+			wantAbsent: atlassianScoped,
+		},
+		{
+			name:       "databricks pat",
+			in:         "DATABRICKS_TOKEN=" + databricksTok,
+			wantRedact: true,
+			wantAbsent: databricksTok,
+		},
+		{
+			name:       "azure storage account key",
+			in:         "conn: " + azureStorageKey,
+			wantRedact: true,
+			wantAbsent: azureStorageKey,
+		},
+		{
+			name:       "azure entra client secret",
+			in:         "client_secret=" + entraSecret,
+			wantRedact: true,
+			wantAbsent: entraSecret,
+		},
+		{
+			name:       "elastic api key header",
+			in:         "Authorization: " + elasticKey,
+			wantRedact: true,
+			wantAbsent: elasticKey,
+		},
+		{
+			name:       "database uri with inline password",
+			in:         "DSN=" + dbURI,
+			wantRedact: true,
+			wantAbsent: dbURI,
+		},
+		{
+			name:       "github fine-grained pat",
+			in:         "GH_TOKEN=" + ghFineGrained,
+			wantRedact: true,
+			wantAbsent: ghFineGrained,
+		},
+		{
+			name:       "jfrog api key",
+			in:         "artifactory key: " + jfrogAPIKey,
+			wantRedact: true,
+			wantAbsent: jfrogAPIKey,
+		},
+		{
+			name:       "jfrog reference token",
+			in:         "reference token: " + jfrogRefTok,
+			wantRedact: true,
+			wantAbsent: jfrogRefTok,
+		},
+		{
+			name:       "grafana service account token",
+			in:         "GRAFANA_TOKEN=" + grafanaSA,
+			wantRedact: true,
+			wantAbsent: grafanaSA,
+		},
+		{
+			name:       "grafana cloud access policy token",
+			in:         "policy token: " + grafanaCloud,
+			wantRedact: true,
+			wantAbsent: grafanaCloud,
+		},
+		{
+			name:       "docker hub pat",
+			in:         "docker login -p " + dockerPAT,
+			wantRedact: true,
+			wantAbsent: dockerPAT,
+		},
+		{
+			name:       "pypi upload token",
+			in:         "TWINE_PASSWORD=" + pypiTok,
+			wantRedact: true,
+			wantAbsent: pypiTok,
+		},
+		{
+			name:       "huggingface token",
+			in:         "HF_TOKEN=" + hfTok,
+			wantRedact: true,
+			wantAbsent: hfTok,
+		},
+		{
+			name:       "1password service account token",
+			in:         "OP_SERVICE_ACCOUNT_TOKEN=" + onePasswordTok,
+			wantRedact: true,
+			wantAbsent: onePasswordTok,
+		},
+		{
+			name:       "linear api key",
+			in:         "LINEAR_API_KEY=" + linearKey,
+			wantRedact: true,
+			wantAbsent: linearKey,
+		},
+		{
+			name:       "pagerduty api token header",
+			in:         "Authorization: " + pagerdutyTok,
+			wantRedact: true,
+			wantAbsent: pagerdutyTok,
+		},
+		{
 			name:       "ordinary text is untouched",
 			in:         "This PR closes the auth bug, no credentials involved.",
 			wantRedact: false,
@@ -1144,6 +1281,51 @@ func TestRedactString(t *testing.T) {
 		{
 			name:       "bare 10-digit run without separators is not a phone",
 			in:         "id 5551234567 here",
+			wantRedact: false,
+			wantAbsent: "",
+		},
+		// The newly added provider patterns must be prefix/length scoped, not
+		// catch-alls: each of these is the near-miss that a loose pattern would
+		// wrongly redact out of ordinary developer traffic.
+		{
+			name:       "connection uri without a password is not redacted",
+			in:         "postgres" + "ql://" + "readonly" + "@db.internal:5432/app",
+			wantRedact: false,
+			wantAbsent: "",
+		},
+		{
+			name:       "https url with a colon in the path is not a connection uri",
+			in:         "see https://example.com/docs/a:b@c for details",
+			wantRedact: false,
+			wantAbsent: "",
+		},
+		{
+			name:       "databricks legacy token keeps its shard suffix inside the mask",
+			in:         "dap" + "i" + strings.Repeat("a", 32) + "-" + "2",
+			wantRedact: true,
+			wantAbsent: "-" + "2",
+		},
+		{
+			name:       "databricks prefix with a non-hex body is not a token",
+			in:         "dap" + "i" + strings.Repeat("z", 32),
+			wantRedact: false,
+			wantAbsent: "",
+		},
+		{
+			name:       "grafana service account with a non-hex checksum is not a token",
+			in:         "gls" + "a_" + strings.Repeat("G", 32) + "_" + strings.Repeat("z", 8),
+			wantRedact: false,
+			wantAbsent: "",
+		},
+		{
+			name:       "github fine-grained prefix below the fixed length is not a token",
+			in:         "github" + "_pat_" + strings.Repeat("F", 40),
+			wantRedact: false,
+			wantAbsent: "",
+		},
+		{
+			name:       "an ordinary word ending in Q~ is not an entra client secret",
+			in:         "prefixQ~short",
 			wantRedact: false,
 			wantAbsent: "",
 		},
@@ -1264,7 +1446,7 @@ func TestRedactRawJSON_InvalidJSONPassesThroughUnchanged(t *testing.T) {
 // test already proves compilation -- assert the count (so a silently-truncated
 // file is caught) and that every entry is usable.
 func TestSecretPatternRegistry_LoadedFromEmbeddedJSON(t *testing.T) {
-	const wantPatterns = 22
+	const wantPatterns = 41
 	if got := len(secretPatternRegistry); got != wantPatterns {
 		t.Fatalf("secretPatternRegistry has %d patterns, want %d "+
 			"(did secret-patterns.json change? update this count)", got, wantPatterns)
