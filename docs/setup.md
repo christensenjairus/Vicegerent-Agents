@@ -126,6 +126,8 @@ This applies these Kubernetes Secrets in namespace `agent-sandbox` (agent `<name
 <name>-ssh-key               hermes_agent_ed25519    (ed25519 private key)
 ```
 
+Slack remains optional. If any Slack value is configured, all four Slack values are required: `SLACK_ALLOWED_USERS` must be exactly one Slack user ID (`U…` or `W…`), and `SLACK_HOME_CHANNEL` must be a direct-message channel ID (`D…`). The rendered Sandbox repeats this check at startup and rejects `SLACK_ALLOW_ALL_USERS`, `GATEWAY_ALLOWED_USERS`, and `GATEWAY_ALLOW_ALL_USERS` overrides that could broaden access.
+
 ## Install the platform
 
 `./vicegerent install` runs the staged Helm installer in `scripts/install/install.sh`. The control plane (stage order, chart coordinates, pinned versions, image tags) lives in `stages/stages.yaml`; the machine plane (`policy` / `agents` / `egress` / `models` / `replicas`) is your `values.yaml`. It does not run continuously — re-run it yourself after a `git pull` to apply upstream changes.
