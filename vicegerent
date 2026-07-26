@@ -95,8 +95,11 @@ patch_coredns() {
   # bake a wrong IP into CoreDNS and break agentgateway -> host ghostunnel silently.
   local host_ip="${VICEGERENT_HOST_IP:-}"
   if [[ -z "$host_ip" ]]; then
+    # getent on a dual-stack network can return an IPv6 row before the IPv4 one;
+    # filter for IPv4 only so an AAAA hit doesn't get baked into the Corefile.
     host_ip="$(docker run --rm --network "$docker_network" alpine \
-      sh -c 'getent hosts host.docker.internal 2>/dev/null | awk "{print \$1; exit}"' 2>/dev/null || true)"
+      sh -c 'getent hosts host.docker.internal 2>/dev/null' 2>/dev/null \
+      | awk '/^([0-9]+\.){3}[0-9]+ / {print $1; exit}')"
   fi
   if [[ -z "$host_ip" ]]; then
     # println: kind's network is dual-stack, and range with no separator would glue
