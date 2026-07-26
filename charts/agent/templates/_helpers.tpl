@@ -147,7 +147,7 @@ providers:
     transport: anthropic_messages
 {{- end }}
 {{- if .Values.providers.openai.enabled }}
-  openai-api:
+  openai:
     name: Agentgateway-OpenAI
     api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
     key_env: OPENAI_API_KEY
@@ -197,7 +197,7 @@ model_catalog:
 {{- $primaryModel := "" -}}
 {{- $primaryAuxiliaryModel := "" -}}
 {{- if .Values.providers.anthropic.enabled }}{{- $primaryProvider = "anthropic" -}}{{- $primaryModel = .Values.providers.anthropic.model -}}{{- $primaryAuxiliaryModel = .Values.providers.anthropic.auxiliaryModel -}}
-{{- else if .Values.providers.openai.enabled }}{{- $primaryProvider = "openai-api" -}}{{- $primaryModel = .Values.providers.openai.model -}}{{- $primaryAuxiliaryModel = .Values.providers.openai.auxiliaryModel -}}
+{{- else if .Values.providers.openai.enabled }}{{- $primaryProvider = "openai" -}}{{- $primaryModel = .Values.providers.openai.model -}}{{- $primaryAuxiliaryModel = .Values.providers.openai.auxiliaryModel -}}
 {{- else if .Values.providers.deepseek.enabled }}{{- $primaryProvider = "deepseek" -}}{{- $primaryModel = .Values.providers.deepseek.model -}}{{- $primaryAuxiliaryModel = .Values.providers.deepseek.auxiliaryModel -}}
 {{- else if .Values.providers.zai.enabled }}{{- $primaryProvider = "zai" -}}{{- $primaryModel = .Values.providers.zai.model -}}{{- $primaryAuxiliaryModel = .Values.providers.zai.auxiliaryModel -}}
 {{- else }}{{- fail "vicegerent-agent: every provider (anthropic/openai/deepseek/zai) is disabled in values.providers -- at least one must be enabled" -}}
@@ -222,7 +222,7 @@ model_aliases:
 {{- if .Values.providers.openai.enabled }}
   gpt-5:
     model: {{ .Values.providers.openai.model }}
-    provider: openai-api
+    provider: openai
 {{- end }}
 {{- if .Values.providers.deepseek.enabled }}
   deepseek:
@@ -270,9 +270,8 @@ moa:
 {{- $gw := "http://agentgateway-proxy.agentgateway-system.svc.cluster.local" -}}
 {{- $fpBase := "" -}}
 {{- $fpKey := "" -}}
-{{- $fpRendered := $fp -}}
 {{- if eq $fp "anthropic" }}{{- $fpBase = printf "%s/mnemosyne-anthropic/v1" $gw -}}{{- $fpKey = "ANTHROPIC_API_KEY" -}}
-{{- else if eq $fp "openai" }}{{- $fpBase = printf "%s/openai/v1" $gw -}}{{- $fpKey = "OPENAI_API_KEY" -}}{{- $fpRendered = "openai-api" -}}
+{{- else if eq $fp "openai" }}{{- $fpBase = printf "%s/openai/v1" $gw -}}{{- $fpKey = "OPENAI_API_KEY" -}}
 {{- else if eq $fp "deepseek" }}{{- $fpBase = printf "%s/deepseek/v1" $gw -}}{{- $fpKey = "DEEPSEEK_API_KEY" -}}
 {{- else if eq $fp "zai" }}{{- $fpBase = printf "%s/zai/api/paas/v4" $gw -}}{{- $fpKey = "ZAI_API_KEY" -}}
 {{- end }}
@@ -285,7 +284,7 @@ fallback_providers:
   # billing_mode="unknown" unconditionally, so EVERY failover session recorded
   # cost_status="unknown" and showed no cost in the Slack footer regardless of
   # what the price table contained. Naming the provider restores attribution.
-  - provider: {{ $fpRendered }}
+  - provider: {{ $fp }}
     model: {{ $fpModel }}
     base_url: {{ $fpBase }}
     key_env: {{ $fpKey }}

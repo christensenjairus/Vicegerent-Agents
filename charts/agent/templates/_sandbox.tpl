@@ -429,8 +429,6 @@ spec:
 {{- if .Values.providers.openai.enabled }}
             - name: OPENAI_API_KEY
               value: none
-            - name: OPENAI_BASE_URL
-              value: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
 {{- end }}
 {{- if .Values.providers.deepseek.enabled }}
             - name: DEEPSEEK_API_KEY
