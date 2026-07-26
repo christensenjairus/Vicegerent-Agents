@@ -35,7 +35,7 @@ validate:pre-commit:
     # renovate: datasource=github-releases depName=cerbos/cerbos
     CERBOS_VERSION: v0.54.0
     # renovate: datasource=pypi depName=pre-commit
-    PRE_COMMIT_VERSION: 4.5.0
+    PRE_COMMIT_VERSION: 4.6.1
     # renovate: datasource=pypi depName=detect-secrets
     DETECT_SECRETS_VERSION: 1.5.0
   cache:
@@ -153,7 +153,7 @@ validate:image-tag-bump:
 
 validate:renovate-config:
   stage: validate
-  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:43.280.4
+  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:43.281.0
   interruptible: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -166,7 +166,7 @@ validate:renovate-config:
 
 scan:renovate:
   stage: scan
-  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:43.280.4
+  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:43.281.0
   resource_group: renovate-main
   interruptible: false
   needs: []
