@@ -76,7 +76,7 @@ agentDefaults:
   image:
     # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/hermes-agent
     repository: harbor.hahomelabs.com/vicegerent/hermes-agent
-    tag: v2026.7.20-rev17
+    tag: v2026.7.20-rev18
   storage:
     data: 10Gi
     gitRepos: 50Gi
@@ -96,6 +96,8 @@ agentDefaults:
     anthropic:
       enabled: true
       model: claude-sonnet-5
+      # Primary-model reasoning effort; overrides the global tuning fallback when enabled.
+      reasoningEffort: medium
       auxiliaryModel: claude-haiku-4-5
       mnemosyneModel: claude-haiku-4-5
       moaModels:
@@ -104,6 +106,8 @@ agentDefaults:
     openai:
       enabled: true
       model: gpt-5.4
+      # Primary-model reasoning effort; gpt-5.4 tool calls require none, but newer models may opt into an effort level.
+      reasoningEffort: none
       auxiliaryModel: gpt-4o-mini
       mnemosyneModel: gpt-4o-mini
       moaModels:
@@ -112,6 +116,8 @@ agentDefaults:
     deepseek:
       enabled: false
       model: deepseek-v4-pro
+      # Primary-model reasoning effort; overrides the global tuning fallback when enabled.
+      reasoningEffort: high
       auxiliaryModel: deepseek-v4-flash
       mnemosyneModel: deepseek-v4-flash
       moaModels:
@@ -120,6 +126,8 @@ agentDefaults:
     zai:
       enabled: false
       model: glm-5.2
+      # Primary-model reasoning effort; overrides the global tuning fallback when enabled.
+      reasoningEffort: high
       auxiliaryModel: glm-4.7-flash
       mnemosyneModel: glm-4.7-flash
       moaModels:

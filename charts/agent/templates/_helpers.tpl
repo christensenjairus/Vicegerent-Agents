@@ -324,11 +324,11 @@ agent:
   api_max_retries: {{ .Values.tuning.apiMaxRetries }}
   reasoning_effort: {{ .Values.tuning.reasoningEffort }}
   reasoning_overrides:
-{{- if .Values.providers.deepseek.enabled }}
-    {{ .Values.providers.deepseek.model }}: high
+{{- range $name := $providerOrder }}
+{{- $provider := index $.Values.providers $name }}
+{{- if $provider.enabled }}
+    {{ $provider.model }}: {{ $provider.reasoningEffort }}
 {{- end }}
-{{- if .Values.providers.zai.enabled }}
-    {{ .Values.providers.zai.model }}: high
 {{- end }}
   disabled_toolsets:
     - computer_use
