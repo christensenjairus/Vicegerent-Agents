@@ -6,13 +6,7 @@ metadata:
   namespace: agent-sandbox
 data:
   AGENTS.md: |-
-    {{ include "vicegerent-agent.webSearchInstructions" . | trim }}
-
-    {{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
-
-    {{ include "vicegerent-agent.worktreeDiscipline" . | trim }}
-
-    {{ include "vicegerent-agent.sharedKnowledge" . | trim }}
+{{ include "vicegerent-agent.codingHarnessSystemPrompt" . | trim | indent 4 }}
   opencode.json: |-
     {
       "$schema": "https://opencode.ai/config.json",
