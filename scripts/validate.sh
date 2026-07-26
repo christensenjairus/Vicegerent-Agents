@@ -236,6 +236,9 @@ python3 scripts/validate-image-tags.py
 echo "INFO - Asserting every configured model has live pricing"
 python3 scripts/validate-model-pricing.py
 
+echo "INFO - Asserting the agent owns ~/.gitconfig instead of seeding it imperatively"
+python3 scripts/validate-gitconfig-immutable.py
+
 platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
 
 echo "INFO - Asserting the vMCP Cerbos guardrail is well-formed"

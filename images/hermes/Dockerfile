@@ -394,6 +394,30 @@ RUN --mount=type=bind,source=vmcp-redirect/binaries.txt,target=/tmp/vmcp-redirec
     done < /tmp/vmcp-redirect-binaries.txt \
     && kubectl 2>&1 | grep -q "use the vMCP server instead"
 
+# Client-side protected-branch guard, root-owned on the read-only rootfs so uid
+# 10000 cannot edit either half. Both layers are load-bearing: /etc/gitconfig is
+# system scope, which git ranks BELOW the agent-writable worktree/local/global/XDG
+# config, so the wrapper re-injects core.hooksPath at command scope to keep the hook
+# armed; the wrapper alone is bypassed by calling /usr/bin/git directly.
+# core.hooksPath replaces .git/hooks wholesale, so hook-dispatch.sh chains to the
+# repo's own hook -- else this would silently disable every repo's pre-commit.
+COPY git-guard/git /usr/local/bin/git
+COPY git-guard/hook-dispatch.sh /opt/vicegerent/git-hooks/hook-dispatch.sh
+COPY git-guard/gitconfig /etc/gitconfig
+RUN --mount=type=bind,source=git-guard,target=/tmp/git-guard \
+    chmod 755 /usr/local/bin/git /opt/vicegerent/git-hooks/hook-dispatch.sh \
+    && chmod 444 /etc/gitconfig \
+    && for h in pre-push pre-commit prepare-commit-msg commit-msg post-commit \
+        post-checkout post-merge post-rewrite pre-rebase pre-merge-commit \
+        pre-applypatch post-applypatch applypatch-msg push-to-checkout \
+        post-index-change reference-transaction; do \
+        ln -sf hook-dispatch.sh "/opt/vicegerent/git-hooks/${h}"; \
+    done \
+    && for h in /opt/vicegerent/git-hooks/*; do test -e "$h" || { echo "dangling hook symlink: $h" >&2; exit 1; }; done \
+    && git config --show-origin core.hooksPath | grep -q /opt/vicegerent/git-hooks \
+    && grep -q '^readonly TRUSTED_HOOKS=/opt/vicegerent/git-hooks$' /usr/local/bin/git \
+    && bash /tmp/git-guard/test-git-guard.sh /tmp/git-guard
+
 # hermes-lcm must live in Hermes' bundled context_engine tree, not ~/.hermes/plugins.
 # renovate: datasource=github-releases depName=stephenschoettler/hermes-lcm
 ARG HERMES_LCM_VERSION=v0.20.0
