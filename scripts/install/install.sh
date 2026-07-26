@@ -219,7 +219,7 @@ else
 fi
 
 echo
-info "${G}Install complete.${N}"
+ui_success "Install complete."
 echo "Inspect with:"
 echo "  helm --kube-context $KUBE_CONTEXT list -A"
 echo "  kubectl --context $KUBE_CONTEXT get pods -A"

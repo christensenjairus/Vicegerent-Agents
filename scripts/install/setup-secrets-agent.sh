@@ -51,19 +51,17 @@ ITEM_SSH="${AGENT}-ssh-key"  # pragma: allowlist secret
 # GIT_SSH_COMMAND in the chart references hermes_agent_ed25519.
 SSH_KEY_FILE="hermes_agent_ed25519"
 
-if [[ -t 1 ]]; then
-  B=$'\033[1m'; G=$'\033[0;32m'; Y=$'\033[0;33m'; R=$'\033[0;31m'; N=$'\033[0m'
-else
-  B=""; G=""; Y=""; R=""; N=""
-fi
-info()  { echo "${G}•${N} $*"; }
-step()  { echo; echo "${B}== $* ==${N}"; }
-warn()  { echo "${Y}!${N} $*" >&2; }
-die()   { echo "${R}ERROR:${N} $*" >&2; exit 1; }
+# shellcheck source=../lib/cli-ui.sh
+source "$SCRIPT_DIR/../lib/cli-ui.sh"
+
+info()  { ui_info "$@"; }
+step()  { ui_section "$@"; }
+warn()  { ui_warn "$@"; }
+die()   { ui_error "$@"; exit 1; }
 
 confirm() {
   echo
-  echo "${Y}CHANGE:${N} $*"
+  echo "${UI_YELLOW}${UI_BOLD}Change${UI_RESET}  $*"
   if [[ "$ASSUME_YES" == "1" ]]; then
     echo "  (auto-approved via --yes)"
     return 0
@@ -95,17 +93,17 @@ chmod 700 "$WORK"
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT INT TERM
 
-echo "${B}vicegerent agent secret setup${N}  (agent: $AGENT, context: $KUBE_CONTEXT)"
+ui_header "Agent secrets" "agent: $AGENT  •  context: $KUBE_CONTEXT"
 ensure_ns "$NS"
 
 # --- SSH key ---------------------------------------------------------------
 # ed25519 keypair (generate-once). Private key → <name>-ssh-key; public key is
 # stored as the public-key field of <name>-secrets (assembled below).
-step "$ITEM_SSH"
+step "SSH identity"
 pubkey="$(secret_val "$ITEM" public-key || true)"
 if [[ -n "$(secret_val "$ITEM_SSH" "$SSH_KEY_FILE")" ]]; then
   info "SSH key already present; reusing."
-  [[ -n "$pubkey" ]] && { echo; echo "  ${Y}Public key${N} (add to GitLab/GitHub if not already):"; echo "  $pubkey"; }
+  [[ -n "$pubkey" ]] && { echo; ui_key_value "Public key" "$pubkey"; ui_info "Add this key to GitLab/GitHub if it is not already registered."; }
 else
   if confirm "Generate a new ed25519 SSH key for agent '$AGENT' ($ITEM_SSH)."; then
     ssh-keygen -t ed25519 -C "${AGENT}-agent@vicegerent" -N "" -f "$WORK/$SSH_KEY_FILE" >/dev/null 2>&1
@@ -115,8 +113,8 @@ else
     pubkey="$(cat "$WORK/$SSH_KEY_FILE.pub")"
     info "Stored SSH private key in $ITEM_SSH."
     echo
-    echo "  ${Y}Next step:${N} add the public key to your git hosts (GitLab/GitHub deploy keys):"
-    echo "  $pubkey"
+    ui_key_value "Public key" "$pubkey"
+    ui_info "Next: add this key to your GitLab/GitHub deploy keys."
   else
     warn "SSH key generation skipped — git push/pull from the sandbox will not work until set."
   fi
@@ -125,7 +123,7 @@ fi
 # --- agent secrets (dashboard auth + Slack + public key) -------------------
 # Assembled and applied as a whole because `apply` replaces every key; existing
 # generated values (password, signing-secret) and Slack fields are preserved.
-step "$ITEM"
+step "Agent credentials"
 password="$(secret_val "$ITEM" password || true)"
 signing="$(secret_val "$ITEM" signing-secret || true)"
 [[ -z "$password" ]] && { password="$(openssl rand -base64 24 | tr -d '\n')"; info "Generated dashboard password."; }
@@ -136,9 +134,7 @@ args=(--from-literal="password=$password" --from-literal="signing-secret=$signin
 
 # Slack fields (optional). env override > existing value > interactive prompt.
 echo
-echo "  Slack is optional. Create the app from the manifest at slack-app-manifest.yaml"
-echo "  (edit the bot name first): api.slack.com → Create New App → From manifest;"
-echo "  enable Socket Mode; install to workspace."
+ui_info "Slack is optional. Create the app from slack-app-manifest.yaml, enable Socket Mode, then install it to the workspace."
 for field in SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS SLACK_HOME_CHANNEL; do
   val="${!field:-}"
   [[ -z "$val" ]] && val="$(secret_val "$ITEM" "$field" || true)"
@@ -160,10 +156,10 @@ kc -n "$NS" create secret generic "$ITEM" "${args[@]}" --dry-run=client -o yaml 
 info "Applied $ITEM."
 
 # --- verify ----------------------------------------------------------------
-step "Verify"
+step "Verification"
 missing=0
-check() { if [[ -n "$(secret_val "$1" "$2")" ]]; then echo "  ${G}ok${N}   $NS/$1 ($2)"; else echo "  ${R}MISS${N} $NS/$1 ($2)"; missing=1; fi; }
-check_optional() { if [[ -n "$(secret_val "$1" "$2")" ]]; then echo "  ${G}ok${N}   $NS/$1 ($2)"; else echo "  ${Y}skip${N} $NS/$1 ($2)  (optional)"; fi; }
+check() { if [[ -n "$(secret_val "$1" "$2")" ]]; then ui_success "$NS/$1 ($2)"; else ui_error "$NS/$1 ($2) is missing"; missing=1; fi; }
+check_optional() { if [[ -n "$(secret_val "$1" "$2")" ]]; then ui_success "$NS/$1 ($2)"; else ui_info "$NS/$1 ($2) — optional, not set"; fi; }
 check "$ITEM" password
 check "$ITEM" signing-secret
 check_optional "$ITEM" public-key

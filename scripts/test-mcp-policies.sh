@@ -23,6 +23,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/cli-ui.sh
+source "$SCRIPT_DIR/lib/cli-ui.sh"
 # shellcheck source=lib/kube-context.sh
 source "$SCRIPT_DIR/lib/kube-context.sh"
 
@@ -37,14 +39,13 @@ API_KEY="${MY_KEY:-hermes}"
 # Random secret name so the test is self-describing in k8s audit logs
 SECRET_NAME="policy-test-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom 2>/dev/null | head -c8 || echo 'xxxxxxxx')"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 PASS=0; FAIL=0
 # Set to 1 in section 1 when the vMCP optimizer (find_tool/call_tool) is detected.
 OPTIMIZER=0
 
-pass() { echo -e "  ${GREEN}✓ $*${NC}"; ((PASS++)); }
-fail() { echo -e "  ${RED}✗ $*${NC}"; ((FAIL++)); }
-section() { echo -e "\n${CYAN}${BOLD}--- $* ---${NC}"; }
+pass() { ui_success "$*"; ((PASS++)); }
+fail() { ui_error "$*"; ((FAIL++)); }
+section() { ui_section "$*"; }
 
 # ── MCP session helpers ─────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ open_session() {
   SESSION_ID=""
   mcp_post "$url" "$init" >/dev/null
   if [[ -z "$SESSION_ID" ]]; then
-    echo -e "  ${RED}FATAL: could not open MCP session to ${url}${NC}" >&2
+    ui_error "Could not open MCP session to ${url}."
     exit 1
   fi
 }
@@ -179,10 +180,9 @@ except Exception:
 
 # ── Setup ────────────────────────────────────────────────────────────────────
 
-echo ""
-echo -e "${CYAN}${BOLD}=== MCP Policy Enforcement Test Suite ===${NC}"
-echo -e "${CYAN}Gateway: ${GATEWAY_URL}${NC}"
-echo -e "${CYAN}Secret probe name: ${SECRET_NAME}${NC}"
+ui_header "MCP policy enforcement test suite"
+ui_key_value "Gateway" "$GATEWAY_URL"
+ui_key_value "Secret probe" "$SECRET_NAME"
 
 VMCP_URL="${GATEWAY_URL}/mcp/vmcp"
 
@@ -244,7 +244,7 @@ open_session "$VMCP_URL"
 # 3a: resources_get on a Secret — must be denied before k8s is ever contacted.
 # Args: apiVersion + kind (kubernetes-mcp-server format). No context arg needed.
 # The secret name is random and almost certainly absent; Cerbos denies before k8s lookup.
-echo -e "  ${YELLOW}probing kubernetes_resources_get(Secret/${SECRET_NAME}) ...${NC}"
+ui_info "Probing kubernetes_resources_get(Secret/${SECRET_NAME})…"
 RESP=$(call_tool "$VMCP_URL" "kubernetes_resources_get" \
   "{\"apiVersion\":\"v1\",\"kind\":\"Secret\",\"name\":\"${SECRET_NAME}\",\"namespace\":\"default\"}")
 VERDICT=$(is_cerbos_denied "$RESP")
@@ -259,7 +259,7 @@ fi
 
 # 3b: resources_list of Secrets — must be denied.
 # Namespace is intentionally a fake one so even if policy fails, no secrets are returned.
-echo -e "  ${YELLOW}probing kubernetes_resources_list(kind=Secret, ns=policy-test-ns) ...${NC}"
+ui_info "Probing kubernetes_resources_list(kind=Secret, ns=policy-test-ns)…"
 RESP=$(call_tool "$VMCP_URL" "kubernetes_resources_list" \
   "{\"apiVersion\":\"v1\",\"kind\":\"Secret\",\"namespace\":\"policy-test-nonexistent-ns\"}")
 VERDICT=$(is_cerbos_denied "$RESP")
@@ -274,7 +274,7 @@ fi
 
 # 3c: resources_get on a ConfigMap — must NOT be denied (Cerbos should not over-block).
 # A k8s-level 404 is fine — it means Cerbos passed it through (correct behaviour).
-echo -e "  ${YELLOW}probing kubernetes_resources_get(ConfigMap/policy-test-nonexistent) — expect allowed ...${NC}"
+ui_info "Probing kubernetes_resources_get(ConfigMap/policy-test-nonexistent) — expect allowed…"
 RESP=$(call_tool "$VMCP_URL" "kubernetes_resources_get" \
   "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"name\":\"policy-test-nonexistent\",\"namespace\":\"default\"}")
 VERDICT=$(is_cerbos_denied "$RESP")
@@ -285,7 +285,7 @@ else
 fi
 
 # 3d: resources_list for Pods — must NOT be denied (non-secret, non-empty kind).
-echo -e "  ${YELLOW}probing kubernetes_resources_list(kind=Pod) — expect allowed ...${NC}"
+ui_info "Probing kubernetes_resources_list(kind=Pod) — expect allowed…"
 RESP=$(call_tool "$VMCP_URL" "kubernetes_resources_list" \
   "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"namespace\":\"default\"}")
 VERDICT=$(is_cerbos_denied "$RESP")
@@ -297,7 +297,7 @@ fi
 
 # 3e: Guardrail attachment check — verify the policy carries the shim attachment.
 # A missing guardrail silently fails open (FailClosed only covers shim failures, not absence).
-echo -e "  ${YELLOW}verifying guardrail attached to vmcp-mcp-tools policy ...${NC}"
+ui_info "Verifying guardrail attachment to the vmcp-mcp-tools policy…"
 if command -v kubectl &>/dev/null; then
   GUARDRAIL=$(kubectl --context "$KUBE_CONTEXT" -n agentgateway-system get agentgatewaypolicy vmcp-mcp-tools \
     -o jsonpath='{.spec.backend.mcp.guardrails.processors[0].remote.backendRef.name}' 2>/dev/null || true)
@@ -309,15 +309,14 @@ if command -v kubectl &>/dev/null; then
     fail "guardrail attached to unexpected backend: ${GUARDRAIL}"
   fi
 else
-  echo -e "  ${YELLOW}~ kubectl not available — skipping live guardrail attachment check${NC}"
+  ui_warn "kubectl is not available — skipping the live guardrail attachment check."
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 
-echo ""
-echo -e "${CYAN}${BOLD}=== Summary ===${NC}"
-echo -e "  ${GREEN}PASS: ${PASS}${NC}  ${RED}FAIL: ${FAIL}${NC}"
-echo ""
+ui_section "Summary"
+ui_key_value "Passed" "$PASS"
+ui_key_value "Failed" "$FAIL"
 
 if [[ $FAIL -gt 0 ]]; then
   echo "Diagnostics:"
