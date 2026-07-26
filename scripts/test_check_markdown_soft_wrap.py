@@ -46,6 +46,12 @@ second line
     def test_rejects_a_wrapped_blockquote(self) -> None:
         self.assertEqual(self.violations("> First line\n> second line\n"), [2])
 
+    def test_rejects_a_lazy_blockquote_continuation(self) -> None:
+        self.assertEqual(self.violations("> First line\nlazy continuation\n"), [2])
+
+    def test_rejects_a_nested_lazy_blockquote_continuation(self) -> None:
+        self.assertEqual(self.violations("> > First line\n> lazy continuation\n"), [2])
+
     def test_allows_structural_blocks_inside_a_blockquote(self) -> None:
         text = "> - one\n> - two\n>\n> | Name | Value |\n> |---|---|\n> | one | two |\n"
         self.assertEqual(self.violations(text), [])
