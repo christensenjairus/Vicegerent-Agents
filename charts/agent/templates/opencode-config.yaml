@@ -11,6 +11,8 @@ data:
     {{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
 
     {{ include "vicegerent-agent.worktreeDiscipline" . | trim }}
+
+    {{ include "vicegerent-agent.sharedKnowledge" . | trim }}
   opencode.json: |-
     {
       "$schema": "https://opencode.ai/config.json",

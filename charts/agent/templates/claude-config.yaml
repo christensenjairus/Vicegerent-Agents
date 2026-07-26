@@ -60,3 +60,5 @@ data:
     {{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
 
     {{ include "vicegerent-agent.worktreeDiscipline" . | trim }}
+
+    {{ include "vicegerent-agent.sharedKnowledge" . | trim }}
