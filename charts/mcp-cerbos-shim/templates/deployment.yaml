@@ -28,7 +28,7 @@ spec:
       containers:
         - name: mcp-cerbos-shim
           # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim
-          image: harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim:v0.33.13
+          image: harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim:v0.33.14
           ports:
             - name: grpc
               containerPort: 4445
