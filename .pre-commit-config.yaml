@@ -30,6 +30,12 @@ repos:
         args: [--baseline, .secrets.baseline]
   - repo: local
     hooks:
+      - id: validate-policy-runtime-coverage
+        name: Cerbos runtime policy coverage
+        language: system
+        entry: python3 scripts/validate-policy-runtime-coverage.py
+        files: ^(charts/cerbos-policies/policies/.+\.yaml|scripts/test-mcp-policies\.sh|scripts/validate-policy-runtime-coverage\.py)$
+        pass_filenames: false
       - id: validate-manifests
         name: helm lint + render + kubeconform + cerbos compile
         language: system
