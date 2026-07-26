@@ -30,6 +30,17 @@ repos:
         args: [--baseline, .secrets.baseline]
   - repo: local
     hooks:
+      - id: test-markdown-soft-wrap
+        name: Markdown soft-wrap tests
+        language: system
+        entry: python3 -m unittest scripts/test_check_markdown_soft_wrap.py
+        files: ^scripts/(check-markdown-soft-wrap|test_check_markdown_soft_wrap)\.py$
+        pass_filenames: false
+      - id: markdown-soft-wrap
+        name: Markdown soft-wrap
+        language: system
+        entry: python3 scripts/check-markdown-soft-wrap.py
+        files: \.md$
       - id: validate-policy-runtime-coverage
         name: Cerbos runtime policy coverage
         language: system
