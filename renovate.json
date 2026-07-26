@@ -49,13 +49,13 @@
       "allowedVersions": "<2.0.0"
     },
     {
-      "description": "These Harbor tags are <upstream-version>-rev<N> (e.g. v2026.7.20-rev1, v1.3.1-rev1). Model rev as a numeric build component so the unsuffixed upstream tag is build 0 and never sorts above a rebuilt tag.",
+      "description": "Only locally rebuilt <upstream-version>-rev<N> tags are valid. The numeric build group excludes bare upstream tags and orders rev10 after rev2.",
       "matchDatasources": ["docker"],
       "matchPackageNames": [
         "harbor.hahomelabs.com/vicegerent/hermes-agent",
         "harbor.hahomelabs.com/vicegerent/agentgateway"
       ],
-      "versioning": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:-rev(?<build>\\d+))?$"
+      "versioning": "regex:^v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-rev(?<build>\\d+)$"
     },
     {
       "description": "github-mcp-server v1.6.0 rejects a second `initialize` on the same stdio connection as a protocol error, which ToolHive's vMCP triggers routinely (one per incoming client session/health-check over the single shared stdio pipe) -- confirmed live, v1.6.0 never successfully aggregates through the vMCP at all (see host/mcp/README.md \"Version pinning\"). Don't bump past v1.5.0 without re-running that same live A/B check against the target version first.",
