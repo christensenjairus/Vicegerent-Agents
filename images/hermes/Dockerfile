@@ -39,12 +39,20 @@ ARG TARGETARCH
 # terraform-ls is downloaded from HashiCorp releases; strip leading v for URL.
 # renovate: datasource=github-releases depName=hashicorp/terraform-ls
 ARG TERRAFORM_LS_VERSION=v0.39.0
+# renovate: datasource=github-releases depName=hashicorp/terraform
+ARG TERRAFORM_VERSION=v1.15.8
 RUN TFLS_VER="${TERRAFORM_LS_VERSION#v}" \
     && curl -fsSL -o /tmp/terraform-ls.zip \
         "https://releases.hashicorp.com/terraform-ls/${TFLS_VER}/terraform-ls_${TFLS_VER}_linux_${TARGETARCH}.zip" \
     && unzip -o /tmp/terraform-ls.zip -d /usr/local/bin \
     && chmod +x /usr/local/bin/terraform-ls \
-    && rm /tmp/terraform-ls.zip
+    && rm /tmp/terraform-ls.zip \
+    && TF_VER="${TERRAFORM_VERSION#v}" \
+    && curl -fsSL -o /tmp/terraform.zip \
+        "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_${TARGETARCH}.zip" \
+    && unzip -o /tmp/terraform.zip -d /usr/local/bin terraform \
+    && chmod +x /usr/local/bin/terraform \
+    && rm /tmp/terraform.zip
 
 # terragrunt for formatting HCL/Terraform files in repos that use it.
 # renovate: datasource=github-releases depName=gruntwork-io/terragrunt
@@ -403,6 +411,7 @@ COPY --from=tools \
     /usr/local/bin/kustomize \
     /usr/local/bin/rtk \
     /usr/local/bin/shfmt \
+    /usr/local/bin/terraform \
     /usr/local/bin/terraform-ls \
     /usr/local/bin/terragrunt \
     /usr/local/bin/tirith \
@@ -419,6 +428,7 @@ RUN buf --version \
     && kustomize version \
     && rtk --version \
     && shfmt --version \
+    && terraform version \
     && tirith --version \
     && yq --version
 
