@@ -225,7 +225,7 @@ RUN case "${TARGETARCH}" in \
 
 # Bake rtk for rtk-hermes; arch triples differ between arm64 and amd64 release assets.
 # renovate: datasource=github-releases depName=rtk-ai/rtk
-ARG RTK_VERSION=v0.43.0
+ARG RTK_VERSION=v0.44.0
 RUN case "${TARGETARCH}" in \
         arm64) RTK_TRIPLE=aarch64-unknown-linux-gnu ;; \
         amd64) RTK_TRIPLE=x86_64-unknown-linux-musl ;; \
