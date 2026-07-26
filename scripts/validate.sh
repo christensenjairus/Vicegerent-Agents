@@ -117,6 +117,9 @@ assert_policy_guardrail() {
 require_tools
 mkdir -p "$KUBECONFORM_CACHE"
 
+echo "INFO - Asserting every Cerbos policy has a runtime MCP probe"
+python3 scripts/validate-policy-runtime-coverage.py
+
 echo "INFO - Validating YAML syntax"
 # Tracked files only: a `find` walk also descends into .worktrees/ and any other
 # untracked scratch dir, so an unrelated in-progress branch could fail this run.
