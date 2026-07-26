@@ -4,6 +4,7 @@ package eval
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
@@ -13,6 +14,62 @@ import (
 func init() {
 	registerHelper("gitlabProjectAttr", gitlabProjectAttrOption)
 	registerHelper("gitlabMergeRequestAttr", gitlabMergeRequestAttrOption)
+	registerHelper("gitlabDraftTitleForce", gitlabDraftTitleForceOption)
+}
+
+// gitlabDraftTitlePrefix is how GitLab marks a merge request as a draft.
+// Verified live against the instance: passing draft:true to
+// create/update_merge_request is silently IGNORED (the MR comes back
+// draft:false), while a title carrying this prefix sets draft:true. GitLab
+// derives draft status from the title; unlike GitHub it has no draft field.
+const gitlabDraftTitlePrefix = "Draft: "
+
+// gitlabDraftTitleForceOption returns a forceFrom map that rewrites an MR's
+// title to carry the draft prefix, which is the only way to force draft
+// status on GitLab (see gitlabDraftTitlePrefix).
+//
+// This exists because `force: {draft: true}` — copied from the GitHub mapping,
+// where draft IS a real boolean — was a silent no-op on GitLab, so every
+// agent-opened merge request shipped ready-for-review rather than draft.
+//
+// Returns an EMPTY title when the override does not apply, which
+// ForceOverrides drops rather than forwarding: two cases need that.
+//   - A title already prefixed (any casing, and GitLab also accepts the
+//     legacy "WIP:" marker) must not be double-prefixed into
+//     "Draft: Draft: x".
+//   - update_merge_request's title is OPTIONAL. An update that doesn't touch
+//     the title must not have one invented here: forcing a title would
+//     overwrite the MR's real title with the string "Draft: ", destroying it.
+//     Only rewrite a title the call actually carries.
+func gitlabDraftTitleForceOption() []cel.EnvOption {
+	return []cel.EnvOption{
+		cel.Function("gitlabDraftTitleForce",
+			cel.Overload("gitlabDraftTitleForce_map",
+				[]*cel.Type{cel.MapType(cel.StringType, cel.DynType)},
+				cel.MapType(cel.StringType, cel.StringType),
+				cel.UnaryBinding(func(arg ref.Val) ref.Val {
+					m := toAnyMap(arg)
+					title := lookupCIScalar(m, "title")
+					return types.NewStringStringMap(types.DefaultTypeAdapter, map[string]string{
+						"title": gitlabDraftTitle(title),
+					})
+				}),
+			),
+		),
+	}
+}
+
+// gitlabDraftTitle returns the draft-prefixed form of title, or "" when no
+// rewrite should be applied (absent title, or one already marked draft/WIP).
+func gitlabDraftTitle(title string) string {
+	if strings.TrimSpace(title) == "" {
+		return ""
+	}
+	lower := strings.ToLower(strings.TrimSpace(title))
+	if strings.HasPrefix(lower, "draft:") || strings.HasPrefix(lower, "wip:") {
+		return ""
+	}
+	return gitlabDraftTitlePrefix + title
 }
 
 // gitlabProjectAttrOption surfaces project_id (and target_project_id, where the

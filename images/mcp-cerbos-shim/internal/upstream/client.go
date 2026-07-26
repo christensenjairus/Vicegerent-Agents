@@ -45,11 +45,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
+
+// errSessionRejected marks a non-200 that means "this Mcp-Session-Id is no
+// longer valid" rather than "the upstream is broken". Only these are worth
+// retrying on a fresh handshake; anything else is surfaced as-is so a real
+// upstream failure still fails the gate closed instead of being retried into
+// a doubled latency budget.
+var errSessionRejected = errors.New("upstream rejected the MCP session")
 
 // SelfHeaderName is the HTTP header the shim's own MCP client sets (to its
 // secret self-token) on every re-entrant lookup, so the shim's CheckRequest
@@ -79,10 +88,29 @@ const mcpProtocolVersion = "2025-06-18"
 // needed here (initialize -> initialized -> tools/call, single POST per
 // call) is small enough to hand-roll rather than pull in a new dependency
 // for one call site.
+//
+// One Client is constructed per shim process (main.go) and shared by every
+// live-resolved gate, so the cached MCP session below is process-wide.
 type Client struct {
 	url        string
 	httpClient *http.Client
 	selfToken  string
+
+	// mu guards sessionID. Lookups run concurrently (one per in-flight
+	// gated tools/call, across two shim replicas' worth of goroutines), and
+	// they all share this Client.
+	mu sync.Mutex
+	// sessionID is the cached MCP session, reused across CallTool
+	// invocations so the initialize -> notifications/initialized handshake
+	// stays OFF the per-lookup path. Empty means "no session yet"; it is
+	// cleared whenever the server rejects it (see CallTool) so the next
+	// call transparently re-handshakes.
+	sessionID string
+	// handshakes counts completed initialize sequences. Test-only
+	// observability: it's what lets a test assert that N sequential lookups
+	// cost ONE handshake rather than N, which is the entire point of the
+	// cache and is otherwise invisible from CallTool's return value.
+	handshakes int
 }
 
 // Option configures a Client. Kept minimal (one option today) to match the
@@ -178,22 +206,56 @@ func (r *CallToolResult) Text() string {
 // unwrapping does on the inbound side for calls arriving at the shim.
 const callToolMetaName = "call_tool"
 
-// CallTool performs a fresh MCP handshake (initialize -> notifications/
-// initialized -> tools/call) and returns the named tool's result. The
-// tools/call itself is always wrapped in the optimizer's call_tool meta-tool
-// (see callToolMetaName) -- there is no direct/unwrapped path in this
-// deployment, so this package doesn't try to detect or fall back; if a future
-// deployment ever disables the optimizer, this wrapping becomes a no-op shape
-// mismatch that would need revisiting, not a silent failure (vMCP would still
-// need to expose call_tool for this to work at all). Each call opens its own
-// session; the ancestry check makes exactly one lookup per update-page call (a
-// single notion-fetch resolves the full ancestor chain), so the extra
-// handshake round trips are an acceptable per-call cost, not a hot path.
-// ctx's deadline governs the whole sequence -- exceeding it, any non-200, any
-// malformed JSON-RPC envelope, or a JSON-RPC error response all return a
-// non-nil error; there is no partial/best-effort result.
+// CallTool returns the named tool's result, reusing a cached MCP session so
+// the initialize -> notifications/initialized handshake is NOT paid per call.
+// The tools/call itself is always wrapped in the optimizer's call_tool
+// meta-tool (see callToolMetaName) -- there is no direct/unwrapped path in
+// this deployment, so this package doesn't try to detect or fall back; if a
+// future deployment ever disables the optimizer, this wrapping becomes a
+// no-op shape mismatch that would need revisiting, not a silent failure
+// (vMCP would still need to expose call_tool for this to work at all).
+//
+// Session reuse is the fix for a real outage, not an optimization. This
+// client previously re-handshook on EVERY lookup, so each gated call paid two
+// sequential round trips through the gateway to the host vMCP. Measured live:
+// initialize 0.5s-2.7s + tools/call 0.9s-3.3s, totalling 4997ms against a
+// 5000ms deadline -- the GitLab project-canonicalization gate lost that race
+// by 3ms and failed closed on every non-numeric project_id spelling. With the
+// handshake amortized, the steady-state lookup is ONE round trip.
+//
+// A cached session can still be rejected -- the server restarts, evicts idle
+// sessions, or the gateway rolls. That surfaces as a non-200 (typically 404
+// Not Found on an unknown Mcp-Session-Id), so on the first such failure the
+// cached session is dropped and the whole sequence retried once against a
+// fresh handshake. Exactly one retry: a second failure is a real upstream
+// problem, not a stale session, and must not become an unbounded loop inside
+// a gate that is holding an agent's call open.
+//
+// ctx's deadline governs the whole sequence including any retry -- exceeding
+// it, any non-200 on the retry, any malformed JSON-RPC envelope, or a
+// JSON-RPC error response all return a non-nil error; there is no
+// partial/best-effort result.
 func (c *Client) CallTool(ctx context.Context, tool string, arguments map[string]any) (*CallToolResult, error) {
-	sessionID, err := c.initialize(ctx)
+	result, err := c.callToolOnce(ctx, tool, arguments)
+	if err == nil || !errors.Is(err, errSessionRejected) {
+		return result, err
+	}
+	// Stale cached session: drop it and try once more with a fresh handshake.
+	// Guarded so a concurrent caller that already replaced the session isn't
+	// clobbered.
+	c.invalidateSession()
+	result, err = c.callToolOnce(ctx, tool, arguments)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// callToolOnce runs one attempt: reuse-or-establish a session, then issue the
+// wrapped tools/call. A rejected session is reported as errSessionRejected so
+// CallTool can distinguish "retry with a new session" from a genuine failure.
+func (c *Client) callToolOnce(ctx context.Context, tool string, arguments map[string]any) (*CallToolResult, error) {
+	sessionID, err := c.session(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("upstream initialize: %w", err)
 	}
@@ -225,6 +287,42 @@ func (c *Client) CallTool(ctx context.Context, tool string, arguments map[string
 		return nil, fmt.Errorf("upstream tools/call %s: tool reported an error: %s", tool, result.Text())
 	}
 	return &result, nil
+}
+
+// session returns the cached MCP session id, performing the handshake only if
+// there isn't one yet. The lock is held across the handshake so a burst of
+// concurrent first-lookups produces ONE initialize rather than one each --
+// the thundering-herd case that would otherwise reproduce the original
+// latency problem on every shim restart.
+func (c *Client) session(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sessionID != "" {
+		return c.sessionID, nil
+	}
+	sessionID, err := c.initialize(ctx)
+	if err != nil {
+		return "", err
+	}
+	c.sessionID = sessionID
+	c.handshakes++
+	return sessionID, nil
+}
+
+// invalidateSession clears the cached session so the next call re-handshakes.
+func (c *Client) invalidateSession() {
+	c.mu.Lock()
+	c.sessionID = ""
+	c.mu.Unlock()
+}
+
+// handshakeCount reports how many initialize sequences this Client has
+// completed. Test-only: the whole point of the session cache is that this
+// stays at 1 across many lookups, which no other observable exposes.
+func (c *Client) handshakeCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.handshakes
 }
 
 // initialize opens a new MCP session and returns the Mcp-Session-Id the
@@ -315,6 +413,15 @@ func (c *Client) postJSONRPC(ctx context.Context, sessionID string, req jsonrpcR
 		return "", nil, fmt.Errorf("read response body: %w", err)
 	}
 	if httpResp.StatusCode != http.StatusOK {
+		// 404/400 on a request that carried a session id means the server no
+		// longer knows that session (restart, idle eviction, gateway roll).
+		// Flag it so CallTool can re-handshake once instead of failing the
+		// gate closed on a recoverable condition. Only when a session was
+		// actually presented -- the same status on the initialize call itself
+		// is a genuine upstream failure with nothing to retry.
+		if sessionID != "" && (httpResp.StatusCode == http.StatusNotFound || httpResp.StatusCode == http.StatusBadRequest) {
+			return "", nil, fmt.Errorf("%w: %d: %s", errSessionRejected, httpResp.StatusCode, truncate(string(respBody), 300))
+		}
 		return "", nil, fmt.Errorf("non-200 response: %d: %s", httpResp.StatusCode, truncate(string(respBody), 300))
 	}
 

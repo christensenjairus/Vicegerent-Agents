@@ -62,6 +62,24 @@ type Tool struct {
 	// constants (e.g. forcing draft: true on PR creation), not derived from
 	// the caller's args. Only applied on allow; a denied call is never mutated.
 	Force map[string]any `yaml:"force"`
+	// ForceFrom is a single CEL expression yielding a map<string,string> of
+	// argument overrides, merged into Force. Use it when the forced value has
+	// to be DERIVED from the call's own args rather than being a constant.
+	//
+	// This exists because GitLab has no draft boolean: draft status is
+	// derived from the merge request's TITLE ("Draft: ..."), verified live —
+	// passing draft:true to create/update_merge_request is silently ignored,
+	// while the title prefix sets it. So `force: {draft: true}` was a no-op
+	// on GitLab and every agent-opened MR shipped non-draft, while the
+	// equivalent GitHub force worked because GitHub's draft IS a real field.
+	// Expressing the GitLab half needs to read the incoming title and prefix
+	// it, which a literal cannot do.
+	//
+	// Evaluated first, then Force's literals override individual keys — same
+	// precedence as AttrFrom/Attr, so the two mechanisms read consistently.
+	// String-valued like AttrFrom: a forced value that needs to be a non-string
+	// JSON type stays a Force literal.
+	ForceFrom string `yaml:"forceFrom"`
 }
 
 // Load reads and structurally validates a mapping file. CEL compilation happens

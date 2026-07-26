@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/internal/eval"
@@ -302,10 +303,14 @@ func TestDeployedGitlabMapping_TargetProjectIdIsSurfaced(t *testing.T) {
 }
 
 // TestDeployedGitlabMapping_MergeRequestsAlwaysForceDraft proves the SHIPPED
-// mapping's force block on create/update_merge_request, the GitLab half of the
-// GitHub force-draft rule: on an allowed project the call is forwarded as
-// Mutated with draft rewritten to true regardless of what was sent, closing the
-// "create as draft, then update to un-draft" loophole.
+// mapping's draft override on create/update_merge_request, the GitLab half of
+// the GitHub force-draft rule.
+//
+// GitLab has no draft boolean: draft status is derived from the TITLE
+// ("Draft: ..."). Verified live -- passing draft:true is silently ignored and
+// the MR comes back draft:false. So the override rewrites the title, and this
+// test asserts the TITLE, not a draft flag. It previously asserted draft==true
+// and passed while every real agent-opened MR shipped ready-for-review.
 func TestDeployedGitlabMapping_MergeRequestsAlwaysForceDraft(t *testing.T) {
 	m := deployedMapping(t)
 	e, err := eval.Compile(m)
@@ -314,20 +319,35 @@ func TestDeployedGitlabMapping_MergeRequestsAlwaysForceDraft(t *testing.T) {
 	}
 
 	cases := []struct {
-		tool string
-		args map[string]any
+		tool      string
+		args      map[string]any
+		wantTitle string // "" means: no override applies, so the call passes through
 	}{
 		{"gitlab_create_merge_request", map[string]any{
 			"project_id": "148", "title": "t",
-			"source_branch": "feature-x", "target_branch": "main", "draft": false,
-		}},
+			"source_branch": "feature-x", "target_branch": "develop", "draft": false,
+		}, "Draft: t"},
 		{"gitlab_update_merge_request", map[string]any{
-			"project_id": "148", "merge_request_iid": "42", "draft": false,
-		}},
+			"project_id": "148", "merge_request_iid": "42", "title": "t", "draft": false,
+		}, "Draft: t"},
+		{
+			// An already-drafted title must not be double-prefixed.
+			"gitlab_update_merge_request", map[string]any{
+				"project_id": "148", "merge_request_iid": "42", "title": "Draft: t",
+			}, "",
+		},
+		{
+			// update_merge_request's title is OPTIONAL. An update that doesn't
+			// touch the title gets no override at all -- forcing one would
+			// overwrite the MR's real title with "Draft: ".
+			"gitlab_update_merge_request", map[string]any{
+				"project_id": "148", "merge_request_iid": "42", "state_event": "close",
+			}, "",
+		},
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.tool, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/%s", tc.tool, tc.wantTitle), func(t *testing.T) {
 			// update_merge_request also needs the MR-author gate wired (a fake
 			// upstream, so its own lookup succeeds) -- this test cares about the
 			// force-draft mapping, not the author gate, which has its own
@@ -340,15 +360,30 @@ func TestDeployedGitlabMapping_MergeRequestsAlwaysForceDraft(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CheckRequest: %v", err)
 			}
+			if tc.wantTitle == "" {
+				// No override applies: the call must be forwarded untouched,
+				// NOT mutated with an invented title.
+				if !isPass(res) {
+					t.Fatalf("expected an untouched pass, got mutated=%v deny=%v", isMutated(res), isDeny(res))
+				}
+				return
+			}
 			if !isMutated(res) {
-				t.Fatalf("expected a mutated (forced-draft) result, got pass=%v deny=%v", isPass(res), isDeny(res))
+				t.Fatalf("expected a mutated (draft title) result, got pass=%v deny=%v", isPass(res), isDeny(res))
 			}
 			name, args := decodeMutated(t, res)
 			if name != tc.tool {
 				t.Errorf("mutated name = %q, want %q", name, tc.tool)
 			}
-			if args["draft"] != true {
-				t.Errorf("draft = %v, want true (forced)", args["draft"])
+			if args["title"] != tc.wantTitle {
+				t.Errorf("title = %v, want %q", args["title"], tc.wantTitle)
+			}
+			// The override must not SET draft. Whatever the caller sent passes
+			// through untouched (GitLab ignores it either way); what matters is
+			// that draft was never rewritten to true, because that would be the
+			// silent no-op this change replaced.
+			if args["draft"] == true {
+				t.Error("draft was forced to true, but GitLab ignores that field; the title prefix is the real mechanism")
 			}
 			if args["project_id"] != "148" {
 				t.Errorf("project_id not preserved: %v", args)

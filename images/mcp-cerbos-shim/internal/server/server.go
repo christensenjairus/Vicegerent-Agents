@@ -29,12 +29,55 @@ import (
 )
 
 // internalBackendName is the AgentgatewayBackend the shim's own re-entrant
-// lookups arrive on (the :81 vmcp-internal route -- see upstream.DefaultVMCPURL
-// and charts/platform/templates/vmcp.yaml). service_names surfaces the backend
-// name, so CheckRequest recognizes the shim's own traffic by it. That route
+// lookups are ROUTED to (the :81 vmcp-internal route -- see
+// upstream.DefaultVMCPURL and charts/platform/templates/vmcp.yaml). That route
 // runs CheckRequest only (no CheckResponse), which is what breaks the
 // shim<->agentgateway prompt-injection loop.
+//
+// It is NOT a reliable way to recognize the shim's own traffic, and must not be
+// used as one. ext_mcp.proto documents service_names as backend names "in their
+// native (unmuxed) namespace": that is the MCP *target* name from
+// spec.mcp.targets[].name, NOT the AgentgatewayBackend resource's
+// metadata.name. Both vmcp.yaml backends front the same host vMCP and so both
+// declare `targets: [- name: vmcp]`, meaning a re-entrant lookup arrives with
+// service_names=["vmcp"] -- identical to agent traffic. Matching this constant
+// against it never fired, and the shim's own gitlab_get_project lookup fell
+// through to the normal gating path and re-entered the canonicalization gate
+// that issued it (recursion, observed in production as 40+ identical denies per
+// agent call). The self-token is the identifier that actually distinguishes the
+// two paths; see isSelfRequest and the recursion guard in CheckRequest.
 const internalBackendName = "vmcp-internal"
+
+// selfLookupTools are the read-only tools the shim itself calls on its own
+// re-entrant lookups (internal/upstream), for the subset that mapping.yaml also
+// gates. A call for one of these MUST never be run through the gate that issues
+// it: the GitLab canonicalization gate resolves a project by calling
+// gitlab_get_project, and gitlab_get_project is itself mapped to
+// gitlab_project/access, so gating the shim's own lookup makes the gate call
+// itself. The recursion is bounded only by the upstream deadline and each level
+// spawns another, so ONE agent call becomes a storm (observed in production:
+// 40+ identical denies per call).
+//
+// All four entries are structurally recursive in exactly this way; GitLab's is
+// simply the one that fired, because it is the only gate whose lookup tool is
+// mapped to the same resource the gate itself resolves. The other lookup tools
+// the shim calls (notion_notion-fetch, linear_get_issue, linear_get_project,
+// notion_notion-search, pagerduty_*get_incident, alertmanager_*getSilences) are
+// deliberately absent: they are unmapped, so they never reach a gate and adding
+// them here would widen the bypass for no benefit.
+//
+// This is a defence-in-depth backstop keyed on the tool name, which is intrinsic
+// to the call and cannot be lost in transport the way a backend name was. It is
+// deliberately independent of the routing config, because the recursion it
+// prevents is a self-inflicted outage rather than a policy decision. It is
+// gated on an authenticated self-token, so an AGENT calling any of these tools
+// directly is unaffected and stays fully gated.
+var selfLookupTools = map[string]struct{}{
+	"gitlab_get_project":       {},
+	"gitlab_get_merge_request": {},
+	"github_pull_request_read": {},
+	"jira_jira_get_issue":      {},
+}
 
 const toolsCall = "tools/call"
 
@@ -250,7 +293,25 @@ func isModeratedWriteTool(toolName string, verbs []string) bool {
 // the whole CheckRequest (the gateway is FailClosed, so a hang would deny
 // anyway — but only after its own longer timeout, holding the connection
 // open meanwhile).
-const upstreamLookupTimeout = 5 * time.Second
+//
+// 15s, not 5s. The old budget was set when CallTool re-handshook on EVERY
+// lookup, so it had to cover initialize + tools/call back-to-back. Measured
+// live against the deployed stack: initialize 0.5s-2.7s plus a 0.9s-3.3s
+// tools/call totalled 4997ms against the 5000ms deadline. It lost by 3ms and
+// the GitLab project-canonicalization gate failed closed on every non-numeric
+// project_id spelling. Every live-resolved gate shares this constant, so they
+// all sat on the same knife edge.
+//
+// upstream.Client now reuses its MCP session, so the steady-state lookup is
+// ONE round trip and typically finishes in ~1-3s. The budget is nonetheless
+// kept at 15s rather than tightened back down, because it still has to cover
+// the cold cases that legitimately need two round trips: the first lookup
+// after a shim restart, and the one-shot re-handshake when a cached session
+// has been evicted upstream. Tightening it to the happy-path figure would
+// re-arm exactly the failure this change set exists to remove. Still far
+// below the gateway's own timeout, so a genuinely hung upstream is cut off
+// here rather than by the gateway.
+const upstreamLookupTimeout = 15 * time.Second
 
 // moderationTimeout bounds a single moderation-endpoint call (fails open on
 // timeout -- see checkModeration).
@@ -383,6 +444,13 @@ type Server struct {
 	// rule reads, so an operator lists ONE canonical value per project instead
 	// of guessing every spelling agents might send.
 	gitlabProjectCanonicalizer upstream.ToolCaller
+
+	// gitlabProjectCanonicalCache memoizes successful non-numeric
+	// project_id -> numeric id resolutions for projectCanonicalTTL, so a run
+	// of calls naming a project by path costs one lookup rather than one
+	// each. Successes only; see gitlab_project_cache.go for why failures are
+	// never cached and why entries expire.
+	gitlabProjectCanonicalCache *projectCanonicalCache
 
 	// jiraIssueAssignee, when set, resolves a Jira issue key to its CURRENT
 	// assignee via a live jira_jira_get_issue lookup -- a network round trip
@@ -535,6 +603,7 @@ func WithGitlabMRAuthor(client upstream.ToolCaller) Option {
 func WithGitlabProjectCanonicalizer(client upstream.ToolCaller) Option {
 	return func(s *Server) {
 		s.gitlabProjectCanonicalizer = client
+		s.gitlabProjectCanonicalCache = newProjectCanonicalCache(projectCanonicalTTL)
 	}
 }
 
@@ -652,7 +721,9 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 	// the SelfHeaderName header (constant-time), so even a route ever mis-scoped
 	// onto the agent-facing :80 still can't be driven by an agent. An
 	// unconfigured token leaves the CNP as the sole lock (fail-safe, dev). See
-	// isInternalBackend / isSelfRequest.
+	// isInternalBackend / isSelfRequest. NOTE: this match does not fire in the
+	// current deployed topology (see internalBackendName); the selfLookupTools
+	// recursion backstop below is what actually protects the re-entrant path.
 	if isInternalBackend(req.GetServiceNames()) {
 		if s.selfToken != "" && !s.isSelfRequest(req) {
 			log.Printf("deny: tokenless caller on the reserved vmcp-internal backend (method=%q backend=%v)", req.GetMethod(), req.GetServiceNames())
@@ -715,6 +786,22 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 		}
 	}
 
+	// Recursion backstop. A self-lookup tool (gitlab_get_project) is the tool
+	// the canonicalization gate below CALLS to resolve a project, and is itself
+	// mapped to gitlab_project/access -- so running the shim's own lookup
+	// through this path makes the gate invoke itself, and each level spawns
+	// another until the upstream deadline. Keyed on the tool name, which is
+	// intrinsic to the call, so it holds even when the backend name and the
+	// route both fail to identify the internal path (which is exactly what
+	// happened: see internalBackendName).
+	//
+	// Requires an authenticated self request, so this can only ever skip the
+	// shim's own traffic. An AGENT calling gitlab_get_project directly carries
+	// no self-token, falls through, and stays fully gated by the allowlist.
+	if _, isSelfTool := selfLookupTools[cp.Name]; isSelfTool && s.isSelfRequest(req) {
+		return pass(), nil
+	}
+
 	// Content-moderation gate: runs before the mapping lookup below and
 	// before Cerbos, on the tool name/args alone -- deliberately independent
 	// of whether cp.Name has a Cerbos mapping entry, so an entirely unmapped
@@ -728,8 +815,7 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 		}
 	}
 
-	tool, ok := b.Tools[cp.Name]
-	if !ok {
+	if _, ok := b.Tools[cp.Name]; !ok {
 		if b.DefaultAction == config.ActionDeny {
 			return deny(fmt.Sprintf("tool %q not mapped on deny-default backend %q", cp.Name, backend)), nil
 		}
@@ -1119,10 +1205,23 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 		cp.Arguments = redactedArgs
 	}
 
-	if len(tool.Force) == 0 && redactedCount == 0 {
+	// Argument overrides for an allowed call: the tool's literal force values
+	// plus any forceFrom expression evaluated against these args (GitLab's
+	// draft-title rewrite is the latter — GitLab has no draft boolean, so the
+	// override has to be derived from the incoming title). Evaluated against
+	// the POST-redaction arguments so a forced value can't reintroduce a
+	// scrubbed secret.
+	overrides, err := s.engine.ForceOverrides(eval.CallInput{
+		Tool: cp.Name, Backend: backend, Method: req.GetMethod(), Args: cp.Arguments,
+	})
+	if err != nil {
+		return deny(fmt.Sprintf("force-override eval: %v", err)), nil
+	}
+
+	if len(overrides) == 0 && redactedCount == 0 {
 		return pass(), nil
 	}
-	mutated, err := buildMutatedParams(cp, wrapped, tool.Force)
+	mutated, err := buildMutatedParams(cp, wrapped, overrides)
 	if err != nil {
 		// A shim-side malfunction (e.g. the tool's own args aren't marshalable) —
 		// fail closed rather than forward an un-mutated, non-compliant call.
@@ -1336,12 +1435,16 @@ func (s *Server) checkGitlabProjectCanonical(ctx context.Context, projectID stri
 	if s.gitlabProjectCanonicalizer == nil {
 		return "", fmt.Errorf("gitlab project-canonicalization gate not configured; denying call against project %q", projectID)
 	}
+	if cached, ok := s.gitlabProjectCanonicalCache.get(projectID); ok {
+		return cached, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
 	defer cancel()
 	canonical, err := upstream.CanonicalProjectID(ctx, s.gitlabProjectCanonicalizer, projectID)
 	if err != nil {
 		return "", fmt.Errorf("could not resolve this GitLab project (failing closed): %v", err)
 	}
+	s.gitlabProjectCanonicalCache.put(projectID, canonical)
 	return canonical, nil
 }
 
@@ -1547,10 +1650,13 @@ func pass() *pb.McpRequestResult {
 	return &pb.McpRequestResult{Result: &pb.McpRequestResult_Pass{Pass: &pb.Pass{}}}
 }
 
-// isInternalBackend reports whether service_names identifies the dedicated
-// vmcp-internal backend the shim's own re-entrant lookups arrive on.
-// service_names carries the backend name (confirmed live), so an exact match
-// is enough; a call on any other backend is agent traffic on the normal path.
+// isInternalBackend reports whether service_names names the vmcp-internal
+// backend. It is the network/route-level lock's app-layer companion, but see
+// internalBackendName: this match does NOT fire in the deployed topology,
+// because service_names carries the MCP target name (both vmcp.yaml backends
+// declare target `vmcp`) rather than the AgentgatewayBackend's metadata.name.
+// Never rely on it alone to recognize the shim's own traffic -- the
+// selfLookupTools backstop in CheckRequest is what actually holds today.
 func isInternalBackend(names []string) bool {
 	for _, n := range names {
 		if n == internalBackendName {
