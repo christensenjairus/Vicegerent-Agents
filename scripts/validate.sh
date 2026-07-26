@@ -229,6 +229,13 @@ python3 scripts/gen-vector-redactor.py --check
 echo "INFO - Asserting every image we build is deployed on the tag its Makefile defaults to"
 python3 scripts/validate-image-tags.py
 
+# Every model the chart can route to must have live pricing, or that model
+# silently records cost_status="unknown" and shows no cost in the Slack footer.
+# Self-skips where Hermes' agent.usage_pricing isn't importable (dev laptop),
+# and runs for real inside the sandbox image and in CI.
+echo "INFO - Asserting every configured model has live pricing"
+python3 scripts/validate-model-pricing.py
+
 platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
 
 echo "INFO - Asserting the vMCP Cerbos guardrail is well-formed"

@@ -233,7 +233,15 @@ model_aliases:
 {{- else if eq $fp "zai" }}{{- $fpBase = printf "%s/zai/api/paas/v4" $gw -}}{{- $fpKey = "ZAI_API_KEY" -}}
 {{- end }}
 fallback_providers:
-  - provider: custom
+  # provider is the REAL provider name, not "custom". Both honor explicit
+  # base_url identically (verified: resolve_provider_client passes
+  # explicit_base_url through for every provider name, so the gateway route
+  # below is preserved either way), but "custom" makes the entry unbillable:
+  # usage_pricing.resolve_billing_route() maps custom/local to
+  # billing_mode="unknown" unconditionally, so EVERY failover session recorded
+  # cost_status="unknown" and showed no cost in the Slack footer regardless of
+  # what the price table contained. Naming the provider restores attribution.
+  - provider: {{ $fp }}
     model: {{ $fpModel }}
     base_url: {{ $fpBase }}
     key_env: {{ $fpKey }}

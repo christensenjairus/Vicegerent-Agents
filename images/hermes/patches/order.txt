@@ -14,6 +14,14 @@
 #   0016 and 0020 must follow 0014 (they import helpers it adds).
 #   0039 must follow 0028 and 0036 (it rewrites their shared call site).
 #
+#   0043 runs LAST. It is the single source of truth for model prices and
+#   emits them into BOTH price sinks (agent/usage_pricing.py and
+#   agentburn/prices.py). It imports agent.usage_pricing to compare its table
+#   against upstream's and fails the build on a rate conflict, so it must see
+#   the module in its final post-patch state. It also supersedes the deleted
+#   0038 (GLM prices + zai billing route, folded in) and the price half of
+#   0004 (which is now HERMES_HOME-only).
+#
 0019-remove-mnemosyne-tools-namespace-collision.py
 0004-agentburn.py
 0007-slack-bypass-egress-proxy.py
@@ -37,8 +45,8 @@
 0035-slack-flat-text-table-rendering.py
 0036-slack-runtime-footer-dm-only.py
 0037-jiter-streaming-parse-error-retryable.py
-0038-glm-usage-pricing.py
 0039-runtime-footer-cost-field.py
 0040-custom-provider-drop-unconditional-think-field.py
 0041-interim-assistant-messages-session-toggle.py
 0042-slack-socket-mode-recovery.py
+0043-model-pricing.py
