@@ -1041,7 +1041,7 @@ def write_internal_kubeconfig(cluster: str, runtime_dir: Path) -> Path:
             f"{result.stderr.strip()}"
         )
     dest.write_text(result.stdout, encoding="utf-8")
-    dest.chmod(0o644)  # readable by the container's (possibly non-root) user
+    dest.chmod(0o600)
     return dest
 
 
