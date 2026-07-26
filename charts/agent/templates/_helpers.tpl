@@ -155,7 +155,7 @@ providers:
     name: Agentgateway-OpenAI
     api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
     key_env: OPENAI_API_KEY
-    transport: responses
+    transport: codex_responses
     models:
 {{- range (list .Values.providers.openai.model .Values.providers.openai.auxiliaryModel .Values.harnesses.codex .Values.harnesses.openCode "gpt-5.6-sol" "gpt-5.6-terra" "gpt-5.6-luna" | uniq) }}
       - {{ . }}
@@ -294,9 +294,10 @@ moa:
 {{- $gw := "http://agentgateway-proxy.agentgateway-system.svc.cluster.local" -}}
 {{- $fpBase := "" -}}
 {{- $fpKey := "" -}}
+{{- $fpMode := "chat_completions" -}}
 {{- $fpRendered := $fp -}}
-{{- if eq $fp "anthropic" }}{{- $fpBase = printf "%s/mnemosyne-anthropic/v1" $gw -}}{{- $fpKey = "ANTHROPIC_API_KEY" -}}
-{{- else if eq $fp "openai" }}{{- $fpBase = printf "%s/openai/v1" $gw -}}{{- $fpKey = "OPENAI_API_KEY" -}}{{- $fpRendered = "openai-api" -}}
+{{- if eq $fp "anthropic" }}{{- $fpBase = printf "%s/anthropic" $gw -}}{{- $fpKey = "ANTHROPIC_API_KEY" -}}{{- $fpMode = "anthropic_messages" -}}
+{{- else if eq $fp "openai" }}{{- $fpBase = printf "%s/openai/v1" $gw -}}{{- $fpKey = "OPENAI_API_KEY" -}}{{- $fpMode = "codex_responses" -}}{{- $fpRendered = "openai-api" -}}
 {{- else if eq $fp "deepseek" }}{{- $fpBase = printf "%s/deepseek/v1" $gw -}}{{- $fpKey = "DEEPSEEK_API_KEY" -}}
 {{- else if eq $fp "zai" }}{{- $fpBase = printf "%s/zai/api/paas/v4" $gw -}}{{- $fpKey = "ZAI_API_KEY" -}}
 {{- end }}
@@ -313,6 +314,7 @@ fallback_providers:
     model: {{ $fpModel }}
     base_url: {{ $fpBase }}
     key_env: {{ $fpKey }}
+    api_mode: {{ $fpMode }}
 {{- end }}
 {{- end }}
 compression:
