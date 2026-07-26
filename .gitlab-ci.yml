@@ -2,6 +2,7 @@
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_PIPELINE_SOURCE == "web"
@@ -52,6 +53,8 @@ validate:pre-commit:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       when: on_success
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+      when: on_success
     - if: $CI_PIPELINE_SOURCE == "web"
       when: on_success
     - when: never
@@ -99,6 +102,8 @@ validate:shim-go-test:
       changes:
         - images/mcp-cerbos-shim/**/*
       when: on_success
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+      when: on_success
     - if: $CI_PIPELINE_SOURCE == "web"
       when: on_success
     - when: never
@@ -126,6 +131,8 @@ validate:agentgateway-crds:
         - stages/stages.yaml
         - scripts/validate-agentgateway*.{sh,py}
       when: on_success
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+      when: on_success
     - if: $CI_PIPELINE_SOURCE == "web"
       when: on_success
     - when: never
@@ -148,7 +155,7 @@ validate:image-tag-bump:
       when: on_success
     - when: never
   before_script:
-    - apk add --no-cache git python3 2>/dev/null || true
+    - apk add --no-cache curl git python3 2>/dev/null || true
   script:
     - git fetch --no-tags origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
     - python3 scripts/validate-image-tags.py --bump-since "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
@@ -165,6 +172,10 @@ validate:image-tag-bump:
         git commit -m "chore(images): bump tags"
         git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
           "HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}"
+        curl --fail --silent --show-error --request POST \
+          --form "token=${CI_JOB_TOKEN}" \
+          --form "ref=${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/trigger/pipeline"
       fi
 
 validate:renovate-config:
@@ -173,6 +184,8 @@ validate:renovate-config:
   interruptible: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: on_success
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
       when: on_success
     - if: $CI_PIPELINE_SOURCE == "web"
       when: on_success
