@@ -173,25 +173,24 @@ spec:
               fi
               pkg="$(/opt/hermes/.venv/bin/python -c 'import mnemosyne_hermes, os; print(os.path.dirname(mnemosyne_hermes.__file__))')"
               ln -sfn "${pkg}" /opt/data/plugins/mnemosyne
-              # Merge each harness's GitOps-owned config onto whatever's already on the PVC
-              # -- ConfigMap keys win on conflict. Structured files (yq handles yaml/toml/
-              # json); prose files (CLAUDE.md, AGENTS.md) are plain copies instead.
-              merge_config() {
-                local fmt="$1" pvc_file="$2" cm_file="$3"
+              # Reconcile project-owned subtrees exactly while preserving harness state
+              # and user preferences outside those boundaries.
+              reconcile_config() {
+                local kind="$1" fmt="$2" pvc_file="$3" cm_file="$4"
                 if [ -f "${pvc_file}" ]; then
-                  yq eval-all -p "${fmt}" -o "${fmt}" 'select(fi == 0) * select(fi == 1)' \
-                    "${pvc_file}" "${cm_file}" > "${pvc_file}.tmp" \
-                    && mv "${pvc_file}.tmp" "${pvc_file}"
+                  /opt/hermes/.venv/bin/python \
+                    /reload/config-reconciler/reconcile-config.py \
+                    "${kind}" "${fmt}" "${pvc_file}" "${cm_file}" "${pvc_file}"
                 else
                   cp "${cm_file}" "${pvc_file}"
                 fi
               }
               mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode
-              merge_config toml /opt/data/.codex/config.toml /reload/codex-config/config.toml
-              merge_config json /opt/data/.claude/settings.json /reload/claude-config/settings.json
-              merge_config json /opt/data/.claude/.claude.json /reload/claude-config/claude.json
+              reconcile_config codex toml /opt/data/.codex/config.toml /reload/codex-config/config.toml
+              reconcile_config claude-settings json /opt/data/.claude/settings.json /reload/claude-config/settings.json
+              reconcile_config claude-state json /opt/data/.claude/.claude.json /reload/claude-config/claude.json
               cp -f /reload/claude-config/CLAUDE.md /opt/data/.claude/CLAUDE.md
-              merge_config json /opt/data/.config/opencode/opencode.json /reload/opencode-config/opencode.json
+              reconcile_config opencode json /opt/data/.config/opencode/opencode.json /reload/opencode-config/opencode.json
               # OpenCode's documented global-rules location (opencode.ai/docs/rules); see
               # opencode-config.yaml's AGENTS.md key for the anomalyco/opencode#22020 caveat.
               cp -f /reload/opencode-config/AGENTS.md /opt/data/.config/opencode/AGENTS.md
@@ -201,7 +200,7 @@ spec:
                 /opt/hermes/.venv/bin/hermes kanban init || true
               # Remove any stale subPath artifact (dangling symlink or empty file from old design).
               [ ! -s /opt/data/config.yaml ] && rm -f /opt/data/config.yaml
-              merge_config yaml /opt/data/config.yaml /reload/hermes-config/config.yaml
+              reconcile_config hermes yaml /opt/data/config.yaml /reload/hermes-config/config.yaml
               touch /opt/data/.restart_pending.json
               find /opt/data/skills -type d -perm 555 -exec chmod u+w {} + 2>/dev/null || true
               /usr/local/bin/sync-shared-skills.sh || true
@@ -223,6 +222,9 @@ spec:
               mountPath: /opt/data/.hermes/mnemosyne/models
             - name: config
               mountPath: /reload/hermes-config
+              readOnly: true
+            - name: config-reconciler
+              mountPath: /reload/config-reconciler
               readOnly: true
             - name: codex-config
               mountPath: /reload/codex-config
@@ -513,6 +515,9 @@ spec:
         - name: config
           configMap:
             name: {{ include "vicegerent-agent.name" . }}-config
+        - name: config-reconciler
+          configMap:
+            name: {{ include "vicegerent-agent.name" . }}-config-reconciler
         - name: gitconfig
           configMap:
             name: {{ include "vicegerent-agent.name" . }}-gitconfig
