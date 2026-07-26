@@ -11,11 +11,9 @@ while [[ -L "$SOURCE" ]]; do
 done
 REPO_ROOT="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
 
-if [[ -t 1 ]]; then
-  B=$'\033[1m'; C=$'\033[0;36m'; N=$'\033[0m'
-else
-  B=""; C=""; N=""
-fi
+# shellcheck source=scripts/lib/cli-ui.sh
+source "$REPO_ROOT/scripts/lib/cli-ui.sh"
+C="$UI_CYAN"
 
 # Resolve KUBE_CONTEXT (scripts/lib/kube-context.sh): the canonical kind-vicegerent by
 # default, or the current context under the undocumented VICEGERENT_USE_CURRENT_CONTEXT
@@ -30,7 +28,7 @@ source "$REPO_ROOT/scripts/lib/kube-context.sh"
 mcp_py() {
   local venv_python="$REPO_ROOT/host/mcp/.venv/bin/python"
   [[ -x "$venv_python" ]] || {
-    echo "ERROR: host MCP venv not found. Run: ./vicegerent setup mcp" >&2
+    ui_error "Host MCP venv not found. Run: ./vicegerent setup mcp"
     exit 1
   }
   "$venv_python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" "$@"
@@ -86,7 +84,7 @@ patch_coredns() {
   corefile="$(kubectl --context "$ctx" -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}')"
 
   if grep -q 'host.docker.internal' <<<"$corefile"; then
-    echo "${B}CoreDNS already patched (host.docker.internal); skipping.${N}"
+    ui_success "CoreDNS already patched (host.docker.internal); skipping."
     return
   fi
 
@@ -110,11 +108,11 @@ patch_coredns() {
       | awk '/^([0-9]+\.){3}[0-9]+$/ {print; exit}')"
   fi
   [[ -n "$host_ip" ]] || {
-    echo "ERROR: could not determine the host IP reachable from docker network '${docker_network}'." >&2
-    echo "  Set it explicitly and re-run: VICEGERENT_HOST_IP=<ip> ./vicegerent setup cluster" >&2
+    ui_error "Could not determine the host IP reachable from docker network '${docker_network}'."
+    ui_command "VICEGERENT_HOST_IP=<ip> ./vicegerent setup cluster" >&2
     exit 1
   }
-  echo "${B}CoreDNS: resolve host.docker.internal → ${host_ip}${N}"
+  ui_info "CoreDNS will resolve host.docker.internal to ${host_ip}."
   new="$(awk -v ip="$host_ip" '{print} /^\.:53 \{/ && !d {
     print "    hosts {"; print "        " ip " host.docker.internal"; print "        fallthrough"; print "    }"; d=1}' <<<"$corefile")"
 
@@ -135,30 +133,31 @@ cluster_setup() {
   # stages.yaml can't leave the bootstrap on an older Cilium than the install.
   local cilium_version="${CILIUM_VERSION:-}"
   if [[ -z "$cilium_version" ]]; then
-    command -v yq >/dev/null 2>&1 || { echo "ERROR: yq is not installed or not on PATH" >&2; exit 1; }
+    command -v yq >/dev/null 2>&1 || { ui_error "yq is not installed or not on PATH"; exit 1; }
     cilium_version="$(yq -r '.stages[].actions[] | select(.name == "cilium") | .version' \
       "$REPO_ROOT/stages/stages.yaml")"
     [[ -n "$cilium_version" && "$cilium_version" != "null" ]] \
-      || { echo "ERROR: no cilium version in stages/stages.yaml" >&2; exit 1; }
+      || { ui_error "No Cilium version in stages/stages.yaml"; exit 1; }
   fi
   # Dedicated docker network so this cluster's node containers are isolated from the
   # default shared `kind` network and any other kind clusters.
   local docker_network="${KIND_DOCKER_NETWORK:-vicegerent}"
 
   for cmd in kind kubectl docker; do
-    command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: $cmd is not installed or not on PATH" >&2; exit 1; }
+    command -v "$cmd" >/dev/null 2>&1 || { ui_error "$cmd is not installed or not on PATH"; exit 1; }
   done
   command -v cilium >/dev/null 2>&1 || {
-    echo "ERROR: cilium (cilium-cli) is not installed or not on PATH." >&2
+    ui_error "cilium (cilium-cli) is not installed or not on PATH."
     echo "  Install it: brew install cilium-cli" >&2
     echo "  (or see https://docs.cilium.io/en/stable/gettingstarted/k8s-install-helm/)" >&2
     exit 1
   }
 
   if kind get clusters 2>/dev/null | grep -qx "$cluster_name"; then
-    echo "${B}Kind cluster '${cluster_name}' already exists; skipping create.${N}"
+    ui_success "Kind cluster '${cluster_name}' already exists; skipping create."
   else
-    echo "${B}Creating Kind cluster '${cluster_name}' on docker network '${docker_network}'…${N}"
+    ui_section "Creating Kind cluster '${cluster_name}'"
+    ui_key_value "Docker network" "$docker_network"
     KIND_EXPERIMENTAL_DOCKER_NETWORK="$docker_network" \
       kind create cluster --name "$cluster_name" --config "$kind_config"
   fi
@@ -169,15 +168,15 @@ cluster_setup() {
   # csi-hostpath-sc, installed by the `storage` stage of `./vicegerent install` -- so remove
   # it post-creation instead. --ignore-not-found makes this safe to rerun on an existing
   # cluster; the namespace delete cascades onto its Deployment/ServiceAccount/Role/RoleBinding.
-  echo "${B}Removing kind's local-path-provisioner and 'standard' default StorageClass…${N}"
+  ui_info "Removing kind's local-path-provisioner and 'standard' default StorageClass…"
   kubectl --context "kind-${cluster_name}" delete storageclass standard --ignore-not-found
   kubectl --context "kind-${cluster_name}" delete clusterrole local-path-provisioner-role --ignore-not-found
   kubectl --context "kind-${cluster_name}" delete clusterrolebinding local-path-provisioner-bind --ignore-not-found
   kubectl --context "kind-${cluster_name}" delete namespace local-path-storage --ignore-not-found
 
-  echo "${B}Installing Cilium ${cilium_version} as the CNI…${N}"
+  ui_info "Installing Cilium ${cilium_version} as the CNI…"
   cilium install --version "$cilium_version" --context "kind-${cluster_name}" 2>/dev/null \
-    || echo "${B}Cilium already installed or install skipped; checking status…${N}"
+    || ui_info "Cilium already installed or install skipped; checking status…"
   cilium status --wait --context "kind-${cluster_name}"
 
   patch_coredns "$cluster_name" "$docker_network"
@@ -192,7 +191,7 @@ run_with_portforward() {
   # exits before this `if` can run, so redirecting stderr too would make the
   # missing-venv case exit 1 printing nothing at all.
   if ! mcp_py status >/dev/null; then
-    echo "ERROR: host MCP stack is not running. Start it first: ./vicegerent mcp start" >&2
+    ui_error "Host MCP stack is not running. Start it first: ./vicegerent mcp start"
     exit 1
   fi
 
@@ -212,7 +211,7 @@ run_with_portforward() {
   while ! python3 -c "import socket; s=socket.create_connection(('127.0.0.1',8080),0.25); s.close()" 2>/dev/null; do
     i=$((i + 1))
     if [[ $i -ge 60 ]]; then
-      echo "ERROR: agentgateway port-forward did not become ready after 15s" >&2
+      ui_error "agentgateway port-forward did not become ready after 15s"
       exit 1
     fi
     sleep 0.25
@@ -238,9 +237,10 @@ case "${1:-}" in
       exit 0
     fi
     require_kind_context
-    echo "${B}Starting Kind cluster…${N}"
+    ui_section "Starting Vicegerent"
+    ui_info "Starting Kind cluster…"
     docker start "$(kind_node_container)" >/dev/null
-    echo "${B}Starting host MCP stack…${N}"
+    ui_info "Starting host MCP stack…"
     mcp_py start "$@"
     ;;
   stop)
@@ -251,10 +251,11 @@ case "${1:-}" in
       echo "  2. docker stop vicegerent-control-plane     (stop the Kind node container to free CPU)"
       exit 0
     fi
-    echo "${B}Stopping host MCP stack…${N}"
+    ui_section "Stopping Vicegerent"
+    ui_info "Stopping host MCP stack…"
     mcp_py stop "$@"
     require_kind_context
-    echo "${B}Stopping Kind cluster…${N}"
+    ui_info "Stopping Kind cluster…"
     exec docker stop "$(kind_node_container)"
     ;;
   setup)
@@ -345,9 +346,9 @@ case "${1:-}" in
 
     i=0
     while ! python3 -c "import socket; s=socket.create_connection(('127.0.0.1',9428),0.25); s.close()" 2>/dev/null; do
-      kill -0 "$PF_PID" 2>/dev/null || { echo "ERROR: VictoriaLogs port-forward exited before becoming ready" >&2; exit 1; }
+      kill -0 "$PF_PID" 2>/dev/null || { ui_error "VictoriaLogs port-forward exited before becoming ready"; exit 1; }
       i=$((i + 1))
-      [[ $i -lt 60 ]] || { echo "ERROR: VictoriaLogs port-forward did not become ready after 15s" >&2; exit 1; }
+      [[ $i -lt 60 ]] || { ui_error "VictoriaLogs port-forward did not become ready after 15s"; exit 1; }
       sleep 0.25
     done
 
@@ -356,11 +357,12 @@ case "${1:-}" in
     elif command -v xdg-open >/dev/null 2>&1; then
       xdg-open "$LOGS_URL"
     else
-      echo "ERROR: no browser opener found (expected 'open' or 'xdg-open')" >&2
+      ui_error "No browser opener found (expected 'open' or 'xdg-open')"
       exit 1
     fi
-    echo "VictoriaLogs dashboard: $LOGS_URL"
-    echo "Press Ctrl-C to stop the port-forward."
+    ui_success "VictoriaLogs dashboard opened."
+    ui_key_value "URL" "$LOGS_URL"
+    ui_info "Press Ctrl-C to stop the port-forward."
     wait "$PF_PID"
     ;;
   creds)

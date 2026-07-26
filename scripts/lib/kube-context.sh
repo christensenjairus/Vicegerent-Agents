@@ -17,11 +17,20 @@
 #
 # require_kind_context sets the global KUBE_CONTEXT, or aborts (exit 1). Call it at
 # statement scope (never inside $(...)), since it may exit.
+# shellcheck source=cli-ui.sh
+if ! declare -F ui_error >/dev/null 2>&1; then
+  _vicegerent_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck disable=SC1091 # Resolved beside this file at runtime.
+  source "$_vicegerent_lib_dir/cli-ui.sh"
+  unset _vicegerent_lib_dir
+fi
+
 require_kind_context() {
   if [ -n "${VICEGERENT_USE_CURRENT_CONTEXT:-}" ]; then
     KUBE_CONTEXT="$(kubectl config current-context 2>/dev/null || true)"
     if [ -z "$KUBE_CONTEXT" ]; then
-      echo "ERROR: VICEGERENT_USE_CURRENT_CONTEXT is set but kubectl has no active context. Select one: kubectl config use-context kind-<cluster>" >&2
+      ui_error "VICEGERENT_USE_CURRENT_CONTEXT is set, but kubectl has no active context."
+      ui_command "kubectl config use-context kind-<cluster>" >&2
       exit 1
     fi
   else
@@ -30,7 +39,9 @@ require_kind_context() {
   case "$KUBE_CONTEXT" in
     kind-*) : ;;
     *)
-      echo "ERROR: refusing to target non-Kind context '$KUBE_CONTEXT': vicegerent only operates on local Kind clusters (context must start with 'kind-'). Switch with: kubectl config use-context kind-<cluster>" >&2
+      ui_error "Refusing to target non-Kind context '$KUBE_CONTEXT'; vicegerent only operates on local Kind clusters."
+      ui_info "The context name must start with 'kind-'." >&2
+      ui_command "kubectl config use-context kind-<cluster>" >&2
       exit 1 ;;
   esac
 }

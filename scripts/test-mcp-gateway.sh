@@ -15,6 +15,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/cli-ui.sh
+source "$SCRIPT_DIR/lib/cli-ui.sh"
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 API_KEY="${API_KEY:-hermes}"
 SERVERS_CONFIG="${SERVERS_CONFIG:-$SCRIPT_DIR/../host/mcp/toolhive-servers.json}"
@@ -28,7 +30,6 @@ MCPS=(
   "vmcp:/mcp/vmcp"
 )
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 PASS=0; FAIL=0; WARN=0
 
 INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}'
@@ -93,10 +94,13 @@ except Exception as e:
 discover_tools() {
   local url="$1" session="$2" query="${3:-}"
   URL="$url" API_KEY="$API_KEY" SESSION="$session" SERVERS_CONFIG="$SERVERS_CONFIG" QUERY="$query" python3 -c "
-import os, json, urllib.request
+import os, sys, json, urllib.request
 url, key, sid, cfg = os.environ['URL'], os.environ['API_KEY'], os.environ['SESSION'], os.environ['SERVERS_CONFIG']
 query = os.environ['QUERY']
-G, Y, N = chr(27)+'[0;32m', chr(27)+'[1;33m', chr(27)+'[0m'
+if sys.stdout.isatty() and 'NO_COLOR' not in os.environ:
+    G, Y, N = chr(27)+'[0;32m', chr(27)+'[1;33m', chr(27)+'[0m'
+else:
+    G = Y = N = ''
 servers = [s['name'] for s in json.load(open(cfg))['servers']]
 
 def find(keyword):
@@ -151,80 +155,78 @@ raise SystemExit(0 if total else 4)
 "
 }
 
-echo ""
-echo -e "${CYAN}=== agentgateway MCP endpoint test ===${NC}"
-echo -e "${CYAN}Gateway: ${GATEWAY_URL}${NC}"
-echo ""
+ui_header "Agentgateway MCP endpoint test"
+ui_key_value "Gateway" "$GATEWAY_URL"
 
 for entry in "${MCPS[@]}"; do
   name="${entry%%:*}"
   path="${entry#*:}"
   url="${GATEWAY_URL}${path}"
-  echo -e "${CYAN}--- ${name} (${path}) ---${NC}"
+  ui_section "${name} (${path})"
 
   SESSION_ID=""
   code=$(http_code "$url" "$INIT")
 
   case "$code" in
-    000) echo -e "  ${RED}x UNREACHABLE${NC} — nothing at ${url}"; ((FAIL++)); continue ;;
-    404) echo -e "  ${RED}x 404${NC} — HTTPRoute missing or backend not registered"
+    000) ui_error "Unreachable — nothing at ${url}"; ((FAIL++)); continue ;;
+    404) ui_error "HTTP 404 — HTTPRoute missing or backend not registered"
          echo    "    kubectl -n agentgateway-system get httproutes"
          ((FAIL++)); continue ;;
-    421) echo -e "  ${RED}x 421 Misdirected Request${NC} — Python MCP SDK host-allowlist lock"
+    421) ui_error "HTTP 421 Misdirected Request — Python MCP SDK host-allowlist lock"
          echo    "    kubectl -n <mcp-ns> logs <pod> | grep -i 'Invalid Host'"
          ((FAIL++)); continue ;;
     [45]*) raw=$(mcp_post "$url" "$INIT" || true)
-           echo -e "  ${RED}x HTTP ${code}${NC}: ${raw:0:300}"
+           ui_error "HTTP ${code}: ${raw:0:300}"
            ((FAIL++)); continue ;;
   esac
 
   # Successful initialize — capture session ID from response headers
   mcp_post "$url" "$INIT" > /dev/null
-  echo -e "  ${GREEN}+ reachable (HTTP ${code})${NC}"
+  ui_success "Reachable (HTTP ${code})"
 
   if [[ -z "$SESSION_ID" ]]; then
-    echo -e "  ${YELLOW}? no Mcp-Session-Id in response — cannot send tools/list${NC}"
+    ui_warn "No Mcp-Session-Id in response — cannot send tools/list."
     ((WARN++)); continue
   fi
 
   resp=$(mcp_post "$url" "$LIST" "$SESSION_ID" 2>&1 || true)
   if [[ -z "$resp" ]]; then
-    echo -e "  ${YELLOW}? tools/list returned empty${NC}"
+    ui_warn "tools/list returned empty."
     ((WARN++)); continue
   fi
 
   tools=$(echo "$resp" | parse_tools 2>/tmp/mcp-parse-err || echo "PARSE_ERROR")
 
   if [[ "$tools" == "PARSE_ERROR" ]]; then
-    echo -e "  ${YELLOW}? tools/list unparseable${NC}"
+    ui_warn "tools/list response was not parseable."
     [[ -f /tmp/mcp-parse-err ]] && head -3 /tmp/mcp-parse-err | sed 's/^/    /'
     ((WARN++))
   elif [[ "$tools" == "(no tools)" ]]; then
-    echo -e "  ${YELLOW}? 0 tools returned — allowlist blocking all?${NC}"
+    ui_warn "No tools returned — is the allowlist blocking all tools?"
     echo    "    kubectl -n agentgateway-system get agentgatewaypolicies ${name}-policy -o yaml"
     ((WARN++))
   elif echo "$tools" | grep -qx "find_tool"; then
     # Optimizer on: search (QUERY) or enumerate the real tools behind find_tool.
-    [[ -n "$QUERY" ]] && echo -e "  ${CYAN}search: \"${QUERY}\"${NC}"
+    [[ -n "$QUERY" ]] && ui_key_value "Search" "$QUERY"
     if discover_tools "$url" "$SESSION_ID" "$QUERY"; then
       ((PASS++))
     else
-      echo -e "  ${YELLOW}? find_tool surfaced no backend tools — index empty or all backends down${NC}"
+      ui_warn "find_tool surfaced no backend tools — the index is empty or all backends are down."
       ((WARN++))
     fi
   else
     count=$(echo "$tools" | wc -l | tr -d ' ')
-    echo -e "  ${GREEN}+ ${count} tools:${NC}"
+    ui_success "${count} tools discovered"
     echo "$tools" | sed 's/^/      /'
     ((PASS++))
   fi
   echo ""
 done
 
-echo ""
-echo -e "${CYAN}=== Summary ===${NC}"
-echo -e "  ${GREEN}PASS: ${PASS}${NC}  ${YELLOW}WARN: ${WARN}${NC}  ${RED}FAIL: ${FAIL}${NC}"
-echo ""
+ui_section "Summary"
+ui_key_value "Passed" "$PASS"
+ui_key_value "Warnings" "$WARN"
+ui_key_value "Failed" "$FAIL"
 
 if [[ $FAIL -gt 0 ]]; then
   echo "Useful diagnostics:"

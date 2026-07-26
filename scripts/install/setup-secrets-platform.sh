@@ -72,19 +72,17 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ -t 1 ]]; then
-  B=$'\033[1m'; G=$'\033[0;32m'; Y=$'\033[0;33m'; R=$'\033[0;31m'; N=$'\033[0m'
-else
-  B=""; G=""; Y=""; R=""; N=""
-fi
-info()  { echo "${G}•${N} $*"; }
-step()  { echo; echo "${B}== $* ==${N}"; }
-warn()  { echo "${Y}!${N} $*" >&2; }
-die()   { echo "${R}ERROR:${N} $*" >&2; exit 1; }
+# shellcheck source=../lib/cli-ui.sh
+source "$SCRIPT_DIR/../lib/cli-ui.sh"
+
+info()  { ui_info "$@"; }
+step()  { ui_section "$@"; }
+warn()  { ui_warn "$@"; }
+die()   { ui_error "$@"; exit 1; }
 
 confirm() {
   echo
-  echo "${Y}CHANGE:${N} $*"
+  echo "${UI_YELLOW}${UI_BOLD}Change${UI_RESET}  $*"
   if [[ "$ASSUME_YES" == "1" ]]; then
     echo "  (auto-approved via --yes)"
     return 0
@@ -126,7 +124,7 @@ ensure_literal_secret() {
       warn "No $envvar in environment and --yes is set; leaving $ns/$name ($key) empty."
     else
       echo
-      echo "${Y}CHANGE:${N} Set $ns/$name ($key). $prompt"
+      echo "${UI_YELLOW}${UI_BOLD}Change${UI_RESET}  Set $ns/$name ($key). $prompt"
       read -r -s -p "  value (empty to skip): " val; echo
     fi
   fi
@@ -194,7 +192,7 @@ chmod 700 "$WORK"
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT INT TERM
 
-echo "${B}vicegerent platform secret setup${N}  (context: $KUBE_CONTEXT)"
+ui_header "Platform secrets" "context: $KUBE_CONTEXT"
 [[ "$FORCE" == "1" ]] && warn "--force: the ghostunnel CA and all leaf certificates will be rebuilt."
 
 # Ensure target namespaces exist so Secrets can be applied before the install stages run.
@@ -360,13 +358,13 @@ ensure_velero_credentials
 # not Kubernetes Secrets. Nothing MCP-credential-related is applied to the cluster.
 
 # --- verify ----------------------------------------------------------------
-step "Verify"
+step "Verification"
 missing=0
 check() {
-  if secret_has "$1" "$2" "$3"; then echo "  ${G}ok${N}   $2/$1 ($3)"; else echo "  ${R}MISS${N} $2/$1 ($3)"; missing=1; fi
+  if secret_has "$1" "$2" "$3"; then ui_success "$2/$1 ($3)"; else ui_error "$2/$1 ($3) is missing"; missing=1; fi
 }
 check_optional() {
-  if secret_has "$1" "$2" "$3"; then echo "  ${G}ok${N}   $2/$1 ($3)"; else echo "  ${Y}empty${N} $2/$1 ($3)  (optional)"; fi
+  if secret_has "$1" "$2" "$3"; then ui_success "$2/$1 ($3)"; else ui_info "$2/$1 ($3) — optional, not set"; fi
 }
 check vicegerent-mcp-client agentgateway-system tls.crt
 check vicegerent-mcp-client agentgateway-system tls.key
@@ -383,14 +381,14 @@ check_optional vicegerent-openai-secrets agentgateway-system Authorization
 check_optional vicegerent-deepseek-secrets agentgateway-system Authorization
 check_optional vicegerent-zai-secrets agentgateway-system Authorization
 if [[ -s "$HD/server.crt" && -s "$HD/server.key" && -s "$HD/ca.cert" ]]; then
-  echo "  ${G}ok${N}   $HD (host ghostunnel server + CA material)"
+  ui_success "$HD (host ghostunnel server + CA material)"
 else
-  echo "  ${R}MISS${N} $HD (host ghostunnel material)"; missing=1
+  ui_error "$HD (host ghostunnel material) is incomplete"; missing=1
 fi
 if [[ -s "$RCLONE_S3_HOST_DIR/auth-key" ]]; then
-  echo "  ${G}ok${N}   $RCLONE_S3_HOST_DIR/auth-key (host rclone S3 auth-key)"
+  ui_success "$RCLONE_S3_HOST_DIR/auth-key (host rclone S3 auth-key)"
 else
-  echo "  ${R}MISS${N} $RCLONE_S3_HOST_DIR/auth-key (host rclone S3 auth-key)"; missing=1
+  ui_error "$RCLONE_S3_HOST_DIR/auth-key (host rclone S3 auth-key) is missing"; missing=1
 fi
 
 echo

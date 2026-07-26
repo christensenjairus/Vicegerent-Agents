@@ -1675,9 +1675,39 @@ def _require_rich() -> tuple[Any, Any]:
         from rich.console import Console
         from rich.table import Table
 
-        return Console(), Table
+        return Console(highlight=False, no_color="NO_COLOR" in os.environ), Table
     except ImportError:
         raise SystemExit("rich is required: pip install -r host/mcp/requirements-host.txt")
+
+
+def _ui(message: str, style: str | None = None, *, stderr: bool = False) -> None:
+    """Print semantic CLI output, with Rich disabling ANSI off-TTY/under NO_COLOR."""
+    try:
+        from rich.console import Console
+
+        Console(
+            stderr=stderr,
+            highlight=False,
+            no_color="NO_COLOR" in os.environ,
+        ).print(message, style=style, markup=False)
+    except ImportError:
+        print(message, file=sys.stderr if stderr else sys.stdout)
+
+
+def _ui_step(message: str) -> None:
+    _ui(f"\n── {message} ──", "bold cyan")
+
+
+def _ui_ok(message: str) -> None:
+    _ui(f"✓ {message}", "green")
+
+
+def _ui_warn(message: str) -> None:
+    _ui(f"! {message}", "yellow", stderr=True)
+
+
+def _ui_error(message: str) -> None:
+    _ui(f"✗ {message}", "bold red", stderr=True)
 
 
 def _style_proc(state: str) -> str:
@@ -1913,14 +1943,16 @@ def start_stack(
     ensure_ghostunnel_material()
 
     if not skip_workloads:
-        print("Ensuring ToolHive workloads …")
+        _ui_step("ToolHive workloads")
+        _ui("Ensuring enabled workloads are ready …", "dim")
         run_workloads(config, runtime_dir)
         # `thv vmcp init` only captures backends that are HEALTHY right now, so wait
         # for the (often slow, npx-download) workloads to come up first — otherwise
         # they're silently omitted from the vMCP config and never aggregated.
         wait_for_workloads_running(config, runtime_dir)
 
-    print("Generating vMCP config …")
+    _ui_step("Host services")
+    _ui("Generating vMCP configuration …", "dim")
     vmcp_cfg = generate_vmcp_config(config, runtime_dir)
 
     port = vmcp_port(config)
@@ -1977,7 +2009,7 @@ def start_stack(
         probe_addrs = {"vmcp": target, "ghostunnel": effective_listen, "rclone-s3": rclone_addr}
         preexisting = frozenset(name for name, addr in probe_addrs.items() if _addr_reachable(addr))
         if preexisting:
-            print(f"Already running outside supervisord, leaving in place: {', '.join(sorted(preexisting))}")
+            _ui_warn(f"Already running outside supervisord; leaving in place: {', '.join(sorted(preexisting))}")
 
     # mcp-health-watch reads the `aws` backend's cred_watch_profile param itself
     # (blank -> no --profile flag), so nothing AWS-specific is threaded here.
@@ -2008,7 +2040,7 @@ def start_stack(
         # rewritten conf, update adds/removes/restarts only the program groups
         # whose OWN declared command/env actually changed (e.g. caffeinate just
         # toggled on) and leaves everything else untouched -- no `stop` required.
-        print("supervisord already running — reconciling in place …")
+        _ui("Reconciling the running host stack …", "cyan")
         reread = supervisorctl("reread", runtime_dir=runtime_dir)
         if reread.returncode != 0:
             raise SystemExit(f"supervisorctl reread failed: {reread.stderr.strip()}")
@@ -2060,16 +2092,17 @@ def start_stack(
         time.sleep(0.5)
 
     sup_states = get_supervisor_states(runtime_dir)
+    _ui_step("Ready")
     for prog in expected:
         state = "RUNNING (external, inherited)" if prog in preexisting else sup_states.get(prog, "unknown")
-        print(f"  {prog}: {state}")
-    print(f"vMCP:          127.0.0.1:{port}  (ToolHive, group '{group_name(config)}')")
-    print(f"ghostunnel:    {effective_listen} -> {target}")
-    print(f"rclone-s3:     {rclone_addr} -> {rclone_serve_dir} (bucket '{RCLONE_BUCKET}')")
-    print(f"caffeinate:    {'on' if use_caffeinate else 'off'}")
+        (_ui_ok if state.startswith("RUNNING") else _ui_warn)(f"{prog:<18} {state}")
+    _ui(f"  {'vMCP':<16} 127.0.0.1:{port}  (ToolHive group: {group_name(config)})")
+    _ui(f"  {'ghostunnel':<16} {effective_listen} → {target}")
+    _ui(f"  {'rclone-s3':<16} {rclone_addr} → {rclone_serve_dir}  (bucket: {RCLONE_BUCKET})")
+    _ui(f"  {'caffeinate':<16} {'on' if use_caffeinate else 'off'}", "green" if use_caffeinate else "dim")
     failed = [p for p in managed if sup_states.get(p) != "RUNNING"]
     if failed:
-        print(f"\nwarning: {failed} did not reach RUNNING; check logs under {paths['logs']}", file=sys.stderr)
+        _ui_error(f"{', '.join(failed)} did not reach RUNNING; check logs under {paths['logs']}")
         return 1
     return 0
 
@@ -2087,11 +2120,12 @@ def stop_stack(
     (`--keep-workloads`) to leave them running.
     """
     config = load_servers_config(servers_config)
+    _ui_step("Stopping host stack")
     if stop_workloads:
         group = group_name(config)
         running = [name for name, st in list_workloads(group).items() if st == "running"]
         if running:
-            print(f"  stopping {len(running)} workloads: {', '.join(running)} …")
+            _ui(f"Stopping {len(running)} ToolHive workload(s): {', '.join(running)} …", "cyan")
             # Concurrent: per-workload `thv` locks make parallel stops safe.
             with ThreadPoolExecutor(max_workers=len(running)) as pool:
                 list(pool.map(lambda n: thv("stop", n), running))
@@ -2100,7 +2134,7 @@ def stop_stack(
     rc = 0
     if is_supervisor_running(runtime_dir):
         result = supervisorctl("shutdown", runtime_dir=runtime_dir)
-        print(result.stdout.strip() or "supervisord shutdown initiated")
+        _ui_ok(result.stdout.strip() or "Host services shutdown initiated")
 
         # Wait up to 15s for the supervisor socket to disappear (processes fully exited).
         sock = paths["supervisord_sock"]
@@ -2110,10 +2144,10 @@ def stop_stack(
                 break
             time.sleep(0.5)
         else:
-            print("warning: supervisord did not exit within 15s", file=sys.stderr)
+            _ui_warn("supervisord did not exit within 15s")
             rc = 1
     else:
-        print("supervisord is not running")
+        _ui("Host services are already stopped.", "dim")
 
     # `supervisorctl shutdown` above only ever reaches whichever supervisord
     # currently owns the socket path -- a stray instance a *prior* stop failed to
@@ -2123,7 +2157,7 @@ def stop_stack(
     # the port sweep below kills.
     stray = _kill_stray_supervisord(paths)
     if stray:
-        print(f"  killed stray supervisord ({', '.join(str(p) for p in stray)})")
+        _ui_warn(f"Stopped stray supervisord process(es): {', '.join(str(p) for p in stray)}")
 
     # supervisorctl shutdown only stops what supervisord is currently tracking --
     # anything still listening on these ports afterward is an orphan (see start's
@@ -2137,7 +2171,10 @@ def stop_stack(
     for name, addr in port_addrs.items():
         killed = _kill_addr_listeners(addr)
         if killed:
-            print(f"  killed orphaned {name} ({', '.join(str(p) for p in killed)})")
+            _ui_warn(f"Stopped orphaned {name} process(es): {', '.join(str(p) for p in killed)}")
+
+    if rc == 0:
+        _ui_ok("Host stack stopped.")
 
     return rc
 
@@ -2178,14 +2215,26 @@ def doctor(
     group = group_name(config)
     servers = enabled_servers(config, runtime_dir)
     ok = True
+    console, Table = _require_rich()
 
-    print("binaries:")
+    _ui_step("Vicegerent doctor")
+    binaries = Table(box=None, show_header=False, padding=(0, 2))
+    binaries.add_column("Check", style="bold")
+    binaries.add_column("Status")
+    binaries.add_row("[bold cyan]Binaries[/bold cyan]", "")
     for binary in (
         "thv", "ghostunnel", "rclone", "supervisord", "supervisorctl",
         "caffeinate", "kind", "aws", "terminal-notifier",
     ):
         found = shutil.which(binary)
-        print(f"  {binary}: {found or 'MISSING'}")
+        optional = binary in ("kind", "aws", "terminal-notifier")
+        if found:
+            result = f"[green]✓[/green] {found}"
+        elif optional:
+            result = "[yellow]![/yellow] not installed (optional)"
+        else:
+            result = "[red]✗ missing[/red]"
+        binaries.add_row(binary, result)
         # kind is only needed for the local Kind cluster's kubeconfig; aws is only
         # needed for mcp-health-watch's AWS credential check (when `aws` is
         # enabled); terminal-notifier is only needed for mcp-health-watch's own
@@ -2193,42 +2242,60 @@ def doctor(
         # notifications just silently don't fire).
         if not found and binary not in ("kind", "aws", "terminal-notifier"):
             ok = False
+    console.print(binaries)
 
-    print("thv secrets provider:")
+    secrets_table = Table(box=None, show_header=False, padding=(0, 2))
+    secrets_table.add_column("Secret", style="bold")
+    secrets_table.add_column("Status")
+    secrets_table.add_row("[bold cyan]ToolHive secrets[/bold cyan]", "")
     prov = thv("secret", "list")
     if prov.returncode == 0:
-        print("  configured (thv secret list OK)")
+        secrets_table.add_row("provider", "[green]✓ configured[/green]")
     else:
-        print("  NOT configured — run `thv secret setup` (choose 'encrypted')")
+        secrets_table.add_row("provider", "[red]✗ not configured[/red]")
         ok = False
 
-    print(f"required thv secrets ({len(servers)} enabled server(s)):")
     needed = sorted({sec["name"] for s in servers for sec in s.get("secrets", [])}
                      | {param_secret_name(s["name"], p["name"])
                         for s in servers for p in s.get("params", []) if p.get("secret")})
     if not needed:
-        print("  (none — no server enabled yet; run `vicegerent mcp configure`)")
+        secrets_table.add_row("required", "[dim]none (no servers enabled)[/dim]")
+    missing_secrets: list[str] = []
     for name in needed:
         present = thv("secret", "get", name).returncode == 0
-        print(f"  {name}: {'present' if present else 'MISSING (thv secret set ' + name + ')'}")
+        secrets_table.add_row(name, "[green]✓ configured[/green]" if present else "[red]✗ missing[/red]")
         if not present:
+            missing_secrets.append(name)
             ok = False
+    console.print(secrets_table)
+    if prov.returncode != 0:
+        _ui("  Fix: thv secret setup  (choose 'encrypted')", "yellow")
+    elif missing_secrets:
+        _ui("  Fix: run `vicegerent mcp configure` to set missing credentials.", "yellow")
 
-    print("kind cluster:")
+    cluster_table = Table(box=None, show_header=False, padding=(0, 2))
+    cluster_table.add_column("Target", style="bold")
+    cluster_table.add_column("Status")
+    cluster_table.add_row("[bold cyan]Runtime[/bold cyan]", "")
     clusters = {s.get("kind_cluster") for s in servers if s.get("kind_cluster")}
     for cluster in sorted(c for c in clusters if c):
         reachable = subprocess.run(
             ["kind", "get", "kubeconfig", "--name", cluster, "--internal"],
             capture_output=True, text=True,
         ).returncode == 0
-        print(f"  {cluster}: {'reachable' if reachable else 'NOT reachable (kind create cluster / vicegerent cluster setup)'}")
+        cluster_table.add_row(cluster, "[green]✓ reachable[/green]" if reachable else "[red]✗ not reachable[/red]")
         if not reachable:
             ok = False
 
-    print(f"group:         {group}")
-    print(f"vMCP target:   {vmcp_target(config)}")
-    print(f"ghostunnel:    {default_listen()}")
-    print(f"rclone-s3:     {DEFAULT_RCLONE_ADDR} -> {DEFAULT_RCLONE_SERVE_DIR} (bucket '{RCLONE_BUCKET}')")
+    cluster_table.add_row("ToolHive group", group)
+    cluster_table.add_row("vMCP", vmcp_target(config))
+    cluster_table.add_row("ghostunnel", default_listen())
+    cluster_table.add_row(
+        "rclone-s3",
+        f"{DEFAULT_RCLONE_ADDR} → {DEFAULT_RCLONE_SERVE_DIR}  (bucket: {RCLONE_BUCKET})",
+    )
+    console.print(cluster_table)
+    (_ui_ok if ok else _ui_error)("All required checks passed." if ok else "Doctor found required fixes.")
     return 0 if ok else 1
 
 
@@ -2261,12 +2328,38 @@ def _prompt_yn(prompt: str, default: bool) -> bool:
     return ans in ("y", "yes")
 
 
+def _store_hidden_secret(secret_name: str, prompt: str, prefix: str = "") -> int | None:
+    """Read a secret without echo and store it through thv stdin, never argv/output."""
+    try:
+        entered = getpass.getpass(f"   {prompt} [hidden] › ").strip()
+    except (EOFError, KeyboardInterrupt):
+        _ui_warn(f"No value entered for {prompt}; keeping the current value.")
+        return None
+    if not entered:
+        _ui("   No value entered; keeping the current value.", "dim")
+        return None
+    value = entered if not prefix or entered.startswith(prefix) else prefix + entered
+    result = subprocess.run(
+        [_thv_path(), "secret", "set", secret_name],
+        input=value,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        _ui_ok(f"   Saved {prompt}")
+    else:
+        # Do not relay ToolHive output here: even an unexpected backend error must
+        # never get an opportunity to echo the submitted value back to the screen.
+        _ui_error(f"Could not save {secret_name} (exit {result.returncode})")
+    return result.returncode
+
+
 def _server_auth_line(server: dict[str, Any]) -> str:
     if server.get("type") == "remote":
         return "auth: OAuth — a browser opens on first `start` to authorize (token then persists)."
     secrets = server.get("secrets", [])
     if secrets:
-        return f"auth: API key via `thv` secret ({', '.join(s['name'] for s in secrets)})."
+        return "auth: API key stored securely by ToolHive."
     if server.get("kind_cluster"):
         return f"auth: uses the kind '{server['kind_cluster']}' cluster kubeconfig (no secret)."
     return "auth: none."
@@ -2287,22 +2380,21 @@ def configure(
     state = load_server_state(runtime_dir)
     params_all = load_server_params(runtime_dir)
 
-    print(f"\nConfigure ToolHive MCP servers (group: {group}).")
-    print("For each server: enable and set it up, or skip it (ToolHive won't run it).")
+    _ui_step("Configure MCP servers")
+    _ui(f"ToolHive group: {group}", "dim")
+    _ui("Enable the servers you need; skipped servers will not run.")
     have_provider = thv("secret", "list").returncode == 0
     if not have_provider:
-        print(
-            "\n! No `thv` secrets provider configured — servers that need an API key\n"
-            "  can't be set up yet."
-        )
+        _ui_warn("No ToolHive secrets provider is configured; API-key servers cannot be completed yet.")
         if _prompt_yn("  Set one up now (choose 'encrypted')?", default=True):
+            _ui_step("ToolHive secrets provider")
             subprocess.run([_thv_path(), "secret", "setup"])
             have_provider = thv("secret", "list").returncode == 0
+            if have_provider:
+                _ui_ok("ToolHive secrets provider configured.")
         if not have_provider:
-            print(
-                "  ! Still no provider — enabling servers anyway, but set their keys later\n"
-                "    (re-run `./vicegerent setup mcp` after `thv secret setup`).\n"
-            )
+            _ui_warn("Continuing without a provider. You can enable servers, but must set their keys later.")
+            _ui("  Fix later: thv secret setup; then re-run `vicegerent mcp configure`.", "dim")
 
     running = list_workloads(group)
     for server in servers:
@@ -2313,17 +2405,18 @@ def configure(
             continue
         secrets = server.get("secrets", [])
         currently = is_server_enabled(server, state)
-        print(f"\n── {name} ──  (currently {'enabled' if currently else 'disabled'})")
+        _ui_step(name)
+        _ui(f"currently {'enabled' if currently else 'disabled'}", "green" if currently else "dim")
         if server.get("description"):
-            print(f"   {server['description']}")
-        print(f"   {_server_auth_line(server)}")
+            _ui(f"   {server['description']}")
+        _ui(f"   {_server_auth_line(server)}", "dim")
 
         if not _prompt_yn(f"   Enable {name}?", default=currently):
             state[name] = False
             if running.get(name):
-                print(f"   stopping running workload {name} …")
+                _ui(f"   Stopping running workload {name} …", "cyan")
                 thv("stop", name)
-            print(f"   {name}: disabled.")
+            _ui(f"○ {name} disabled", "dim")
             continue
 
         # Parameters (GitLab URL, kubeconfig path, …). Most live in runtime state;
@@ -2338,55 +2431,30 @@ def configure(
         # templated into argv via apply:server_arg -- e.g. an API key baked into a
         # --header flag, which can't go through the top-level secrets[]/--secret
         # mechanism below since that only injects container env vars, not CLI args.
-        # Such a param skips the visible echo-prompt entirely and instead follows
-        # the exact same hidden-input model as the secrets[] loop further down:
-        # `thv secret set <name>` is invoked directly with no captured input/output,
-        # so thv's own hidden terminal prompt handles it and the value never passes
-        # through Python (never printed, never echoed back on a later run). The one
-        # exception is a param with "value_prefix": the value is read hidden via
-        # getpass and that fixed prefix prepended before storing (idempotently), so
-        # the operator pastes just the bare secret and can't forget a required
-        # scheme (e.g. the "ApiKey " that elastic's Authorization header must carry).
+        # Sensitive values use one consistent hidden Vicegerent prompt. They are
+        # piped to `thv secret set` over stdin (never argv or output); value_prefix
+        # is prepended idempotently before storage when a protocol scheme is needed.
         for param in server.get("params", []):
             pname = param["name"]
             prompt = param.get("prompt", pname)
             use_secret = bool(param.get("secret"))
             sensitive = bool(param.get("sensitive"))
             if use_secret and not have_provider:
-                print(f"   ! {prompt} needs a secrets provider — set it after `thv secret setup`.")
+                _ui_warn(f"{prompt} needs a secrets provider; set it after `thv secret setup`.")
                 continue
             sname = param_secret_name(name, pname) if use_secret else None
 
             if sname and sensitive:
                 prefix = param.get("value_prefix", "")
                 exists = thv("secret", "get", sname).returncode == 0
-                if exists and not _prompt_yn(f"   secret '{sname}' is already set — replace it?", default=False):
-                    print(f"   keeping existing '{sname}'.")
-                elif prefix:
-                    # value_prefix is a fixed scheme the stored secret MUST carry
-                    # (e.g. "ApiKey " for an Authorization header injected verbatim
-                    # by --remote-forward-headers-secret). Read the value hidden via
-                    # getpass so it still never echoes, prepend the prefix
-                    # idempotently, and pipe it in — the operator pastes just the
-                    # bare secret and can't forget the scheme. The value passes
-                    # through Python only in memory here (never printed), the one
-                    # deviation from the no-capture path below, required to prepend.
-                    entered = getpass.getpass(f"   {prompt} (input hidden): ").strip()
-                    if entered:
-                        value = entered if entered.startswith(prefix) else prefix + entered
-                        rc = subprocess.run(
-                            [_thv_path(), "secret", "set", sname],
-                            input=value, text=True, capture_output=True,
-                        ).returncode
-                        if rc != 0:
-                            print(f"   warning: saving {pname} failed (rc={rc}); {name} may not work.")
+                if exists and not _prompt_yn(f"   {prompt} is already configured — replace it?", default=False):
+                    _ui_ok(f"   Keeping existing {prompt}")
                 else:
-                    print(f"   setting '{sname}' (input hidden):")
-                    rc = subprocess.run([_thv_path(), "secret", "set", sname]).returncode
-                    if rc != 0:
-                        print(f"   warning: saving {pname} failed (rc={rc}); {name} may not work.")
+                    rc = _store_hidden_secret(sname, prompt, prefix)
+                    if rc not in (0, None):
+                        _ui_warn(f"{name} may not work until {pname} is saved.")
                 if param.get("required") and thv("secret", "get", sname).returncode != 0:
-                    print(f"   ! {pname} is required — {name} won't work until it's set.")
+                    _ui_warn(f"{pname} is required; {name} will not work until it is set.")
                 continue
 
             current = (
@@ -2406,26 +2474,26 @@ def configure(
                         input=value, text=True, capture_output=True,
                     ).returncode
                     if rc != 0:
-                        print(f"   warning: saving {pname} failed (rc={rc}); {name} may not work.")
+                        _ui_warn(f"Saving {pname} failed (exit {rc}); {name} may not work.")
             else:
                 params_all.setdefault(name, {})[pname] = value
             if param.get("required") and not value:
-                print(f"   ! {pname} is required — {name} won't work until it's set.")
+                _ui_warn(f"{pname} is required; {name} will not work until it is set.")
 
         if secrets and not have_provider:
-            print(f"   ! {name} needs a secrets provider — enabling anyway, but set the key later.")
+            _ui_warn(f"{name} needs a secrets provider. It will be enabled, but its key must be set later.")
         for sec in secrets if have_provider else []:
             sname = sec["name"]
+            secret_prompt = f"{name} credential"
             exists = thv("secret", "get", sname).returncode == 0
-            if exists and not _prompt_yn(f"   secret '{sname}' is already set — replace it?", default=False):
-                print(f"   keeping existing '{sname}'.")
+            if exists and not _prompt_yn(f"   {secret_prompt} is already configured — replace it?", default=False):
+                _ui_ok(f"   Keeping existing {secret_prompt}")
                 continue
-            print(f"   setting '{sname}' (input hidden):")
-            rc = subprocess.run([_thv_path(), "secret", "set", sname]).returncode
-            if rc != 0:
-                print(f"   warning: `thv secret set {sname}` failed (rc={rc}); {name} may not work.")
+            rc = _store_hidden_secret(sname, secret_prompt)
+            if rc not in (0, None):
+                _ui_warn(f"{name} may not work until {sname} is saved.")
         state[name] = True
-        print(f"   {name}: enabled.")
+        _ui_ok(f"{name} enabled")
 
     save_server_state(runtime_dir, state)
     save_server_params(runtime_dir, params_all)
@@ -2433,9 +2501,10 @@ def configure(
     visible = [s for s in servers if not s.get("companion_of")]
     on = [s["name"] for s in visible if is_server_enabled(s, state)]
     off = [s["name"] for s in visible if not is_server_enabled(s, state)]
-    print("\nSaved. enabled: " + (", ".join(on) or "(none)"))
-    print("       disabled: " + (", ".join(off) or "(none)"))
-    print("Run `vicegerent start` to bring the enabled servers up.")
+    _ui_step("Configuration saved")
+    _ui("Enabled   " + (", ".join(on) or "none"), "green")
+    _ui("Disabled  " + (", ".join(off) or "none"), "dim")
+    _ui("Next: run `vicegerent start` to bring up the enabled servers.", "cyan")
     return 0
 
 

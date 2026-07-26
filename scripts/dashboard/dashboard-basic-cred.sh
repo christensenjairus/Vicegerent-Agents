@@ -11,6 +11,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/cli-ui.sh
+source "$SCRIPT_DIR/../lib/cli-ui.sh"
 # shellcheck source=../lib/kube-context.sh
 source "$SCRIPT_DIR/../lib/kube-context.sh"
 
@@ -18,8 +20,8 @@ NAMESPACE="${HERMES_DASHBOARD_NAMESPACE:-agent-sandbox}"
 DEFAULT_NODEPORT="${HERMES_DASHBOARD_NODEPORT:-30119}"
 
 usage() {
-  echo "usage: $0 <agent-name>" >&2
-  echo "  prints the dashboard basic-auth username and password for that agent" >&2
+  ui_error "Usage: $0 <agent-name>"
+  ui_info "Prints the dashboard basic-auth username, password, and URL for that agent."
   exit 2
 }
 
@@ -28,13 +30,14 @@ name="$1"
 [ -n "$name" ] || usage
 name="$(echo "$name" | tr '[:upper:]' '[:lower:]')"
 
-command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required" >&2; exit 1; }
+command -v kubectl >/dev/null 2>&1 || { ui_error "kubectl is required."; exit 1; }
 require_kind_context
 CONTEXT_ARG=(--context "$KUBE_CONTEXT")
 
 password="$(kubectl "${CONTEXT_ARG[@]}" -n "$NAMESPACE" get secret "${name}-secrets" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)"
 [ -n "$password" ] || {
-  echo "No password in Secret ${NAMESPACE}/${name}-secrets. Run: ./vicegerent setup secrets agent ${name}" >&2
+  ui_error "No password in Secret ${NAMESPACE}/${name}-secrets."
+  ui_command "./vicegerent setup secrets agent ${name}"
   exit 1
 }
 
@@ -52,10 +55,12 @@ if command -v docker >/dev/null 2>&1; then
   if [ -n "$mapped" ]; then
     host_port="${mapped##*:}"
   else
-    echo "warning: NodePort ${node_port} is not published to the host by Kind; the dashboard may be unreachable at this URL. Add an extraPortMapping for ${node_port} in scripts/install/kind-config.yaml and recreate the cluster." >&2
+    ui_warn "NodePort ${node_port} is not published to the host by Kind; the dashboard may be unreachable at this URL. Add an extraPortMapping in scripts/install/kind-config.yaml and recreate the cluster."
   fi
 fi
 
-echo "username: ${name}"
-echo "password: ${password}"
-echo "url:      http://127.0.0.1:${host_port}/"
+ui_header "Dashboard credentials"
+ui_key_value "Agent" "$name"
+ui_key_value "Username" "$name"
+ui_key_value "Password" "$password"
+ui_key_value "URL" "http://127.0.0.1:${host_port}/"

@@ -32,15 +32,13 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ -t 1 ]]; then
-  B=$'\033[1m'; G=$'\033[0;32m'; Y=$'\033[0;33m'; R=$'\033[0;31m'; N=$'\033[0m'
-else
-  B=""; G=""; Y=""; R=""; N=""
-fi
-info()    { echo "${G}✓${N} $*"; }
-step()    { echo; echo "${B}== $* ==${N}"; }
-warn()    { echo "${Y}!${N} $*" >&2; }
-die()     { echo "${R}ERROR:${N} $*" >&2; exit 1; }
+# shellcheck source=../lib/cli-ui.sh
+source "$REPO_ROOT/scripts/lib/cli-ui.sh"
+
+info()    { ui_success "$@"; }
+step()    { ui_section "$@"; }
+warn()    { ui_warn "$@"; }
+die()     { ui_error "$@"; exit 1; }
 
 confirm() {
   if [[ "$ASSUME_YES" == "1" ]]; then return 0; fi
@@ -135,9 +133,8 @@ step "ToolHive secrets"
 if command -v thv >/dev/null 2>&1 && thv secret list >/dev/null 2>&1; then
   info "thv secrets provider configured"
 else
-  warn "No thv secrets provider configured. OAuth tokens (notion/linear) won't"
-  warn "persist and API-key secrets can't be stored. Configure one (choose 'encrypted'):"
-  echo "     thv secret setup"
+  warn "No ToolHive secrets provider is configured; OAuth tokens and API keys cannot persist yet."
+  ui_command "thv secret setup" "Choose the encrypted provider"
 fi
 
 # ---------------------------------------------------------------------------
@@ -150,10 +147,9 @@ if [[ "$ASSUME_YES" == "1" ]]; then
   echo "  Re-run './vicegerent setup mcp' without -y to enable servers and set keys."
 else
   echo
-  echo "  MCP servers are OFF by default. Enable the ones you want and set their API"
-  echo "  keys now (GitLab/Tavily/Firecrawl prompt for a key; Notion/Linear use OAuth —"
-  echo "  a browser tab opens on first start and the token persists via the secrets"
-  echo "  provider). Re-run './vicegerent setup mcp' any time to change your selection."
+  ui_info "MCP servers are off by default. Choose which ones to enable and configure their authentication."
+  ui_info "API keys use hidden prompts; OAuth servers open a browser on first start."
+  ui_info "Re-run 'vicegerent setup mcp' whenever you want to change the selection."
   echo
   "$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" configure
 fi
@@ -196,12 +192,10 @@ else
 fi
 
 echo
-echo "${G}${B}Host stack setup complete.${N}"
+ui_header "Host stack setup complete"
 echo
-echo "Next steps:"
-echo "  1. Create the kind cluster:            ./vicegerent setup cluster"
-echo "  2. Provision host + cluster secrets:   ./vicegerent setup secrets platform"
-echo "     (kubectl-applies the platform Secrets, so the cluster must exist first;"
-echo "      also writes host ghostunnel material to ~/.vicegerent/ghostunnel)"
-echo "  3. Install the platform:               ./vicegerent install"
-echo "  4. Bring up the host stack:            ./vicegerent start"
+ui_section "Next steps"
+ui_command "./vicegerent setup cluster" "Create the Kind cluster"
+ui_command "./vicegerent setup secrets platform" "Provision host and cluster secrets"
+ui_command "./vicegerent install" "Install the platform"
+ui_command "./vicegerent start" "Bring up the host stack"

@@ -5,19 +5,17 @@
 # Sourced by install.sh (which owns the globals REPO_ROOT, KUBE_CONTEXT,
 # STAGES_FILE, VALUES_FILE, ASSUME_YES, and the $WORKDIR scratch dir).
 
-if [[ -t 1 ]]; then
-  B=$'\033[1m'; G=$'\033[0;32m'; Y=$'\033[0;33m'; R=$'\033[0;31m'; N=$'\033[0m'
-else
-  B=""; G=""; Y=""; R=""; N=""
-fi
-info() { echo "${G}•${N} $*"; }
-step() { echo; echo "${B}== $* ==${N}"; }
-warn() { echo "${Y}!${N} $*" >&2; }
-die()  { echo "${R}ERROR:${N} $*" >&2; exit 1; }
+# shellcheck source=../../lib/cli-ui.sh
+source "$REPO_ROOT/scripts/lib/cli-ui.sh"
+
+info() { ui_info "$@"; }
+step() { ui_section "$@"; }
+warn() { ui_warn "$@"; }
+die()  { ui_error "$@"; exit 1; }
 
 confirm() {
   echo
-  echo "${Y}CHANGE:${N} $*"
+  echo "${UI_YELLOW}${UI_BOLD}Change${UI_RESET}  $*"
   if [[ "$ASSUME_YES" == "1" ]]; then
     echo "  (auto-approved via --yes)"
     return 0

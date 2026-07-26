@@ -6,6 +6,10 @@
 # laptop side and are disposable — re-run setup-secrets-platform.sh to regenerate.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/cli-ui.sh
+source "$SCRIPT_DIR/../lib/cli-ui.sh"
+
 GHOSTUNNEL_HOST_DIR="${GHOSTUNNEL_HOST_DIR:-$HOME/.vicegerent/ghostunnel}"
 # Bind loopback only. Kind reaches this via host.docker.internal (Docker Desktop
 # proxies it to the host's localhost); binding 0.0.0.0 would expose it to the LAN.
@@ -16,7 +20,9 @@ GHOSTUNNEL="${GHOSTUNNEL:-ghostunnel}"
 
 for f in server.crt server.key ca.cert; do
   if [[ ! -s "$GHOSTUNNEL_HOST_DIR/$f" ]]; then
-    echo "missing $GHOSTUNNEL_HOST_DIR/$f — start via './vicegerent start' (recovers it from the kind ghostunnel-server Secret), or run scripts/install/setup-secrets-platform.sh to (re)generate it." >&2
+    ui_error "Missing $GHOSTUNNEL_HOST_DIR/$f."
+    ui_info "Run './vicegerent start' to recover it from the Kind ghostunnel-server Secret, or regenerate it:"
+    ui_command "./vicegerent setup secrets platform"
     exit 1
   fi
 done
