@@ -15,3 +15,6 @@ host/mcp/.venv/
 
 # Host-side rclone serve s3 backing dir for Velero backups (never committed)
 velero-backups/
+
+# Hermes-Agent Project File
+IDEA.md
