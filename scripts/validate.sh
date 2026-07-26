@@ -59,13 +59,9 @@ require_tools() {
   (( missing == 0 )) || exit 1
 }
 
-# Re-root the machine-plane egress: / agents[0] subtree the way the installer feeds
-# charts/egress-proxy and charts/agent (which read their values at top level).
-egress_slice() { local f; f="$(mktemp_f)"; yq '.egress' "$EXAMPLE_VALUES" > "$f"; printf '%s' "$f"; }
+# Re-root agentDefaults and the first example agent the way the installer feeds the agent chart.
 agent0_slice() { local f; f="$(mktemp_f)"; yq '.agents[0]' "$EXAMPLE_VALUES" > "$f"; printf '%s' "$f"; }
-# The committed defaults layer, sliced the same way (installer feeds it UNDER the machine slice).
-egress_defaults_slice() { local f; f="$(mktemp_f)"; yq '.egress' "$DEFAULTS_VALUES" > "$f"; printf '%s' "$f"; }
-agent0_defaults_slice() { local f; f="$(mktemp_f)"; yq '.agents[0]' "$DEFAULTS_VALUES" > "$f"; printf '%s' "$f"; }
+agent_defaults_slice() { local f; f="$(mktemp_f)"; yq '.agentDefaults' "$DEFAULTS_VALUES" > "$f"; printf '%s' "$f"; }
 
 # Render the cerbos-policies ConfigMap and explode each data entry back into a
 # standalone policy file, so `cerbos compile` sees the real substituted CEL (it has
@@ -135,7 +131,7 @@ git ls-files -z -- '*.yaml' \
 done
 
 # Each chart's full -f arg list: the committed defaults layer first, then the
-# machine slice (values.example.yaml or its re-rooted egress/agent0 subtree) --
+# machine values (or the re-rooted first agent) --
 # exactly how the installer feeds them. Chart values.yaml files are intentionally
 # empty, so both lint and template must supply this layered pair. Parallel indexed
 # arrays (CHART_NAMES[i] <-> CHART_ARGS[i]) rather than an associative array, so
@@ -145,8 +141,8 @@ CHART_ARGS=(
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set-file secretPatterns=$SECRET_PATTERNS_FILE"
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES"
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES"
-  "-f $(egress_defaults_slice) -f $(egress_slice) --set-file secretPatterns=$SECRET_PATTERNS_FILE"
-  "-f $(agent0_defaults_slice) -f $(agent0_slice)"
+  "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set-file secretPatterns=$SECRET_PATTERNS_FILE"
+  "-f $(agent_defaults_slice) -f $(agent0_slice)"
 )
 
 echo "INFO - Linting Helm charts"
@@ -185,8 +181,7 @@ else
 fi
 
 echo "INFO - Rendering egress-proxy scrub.py and validating it is valid Python"
-egress_vals="$(egress_slice)"
-helm template egress-proxy charts/egress-proxy -f "$(egress_defaults_slice)" -f "$egress_vals" \
+helm template egress-proxy charts/egress-proxy -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" \
   --set-file "secretPatterns=$SECRET_PATTERNS_FILE" \
   --show-only templates/addon-configmap.yaml \
   | yq '.data."scrub.py"' \
@@ -197,7 +192,7 @@ echo "INFO - Asserting egress-proxy render FAILS without --set-file secretPatter
 # The addon ConfigMap guards .Values.secretPatterns with `required`, so a bare
 # render (no --set-file) must fail. If it ever succeeds, the guard has regressed
 # and scrub.py could ship with an empty pattern set.
-if helm template egress-proxy charts/egress-proxy -f "$(egress_defaults_slice)" -f "$egress_vals" \
+if helm template egress-proxy charts/egress-proxy -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" \
      --show-only templates/addon-configmap.yaml >/dev/null 2>&1; then
   echo "ERROR - egress-proxy addon-configmap rendered WITHOUT --set-file secretPatterns;" \
        "the required guard is not load-bearing." >&2
@@ -205,10 +200,9 @@ if helm template egress-proxy charts/egress-proxy -f "$(egress_defaults_slice)" 
 fi
 
 echo "INFO - Testing egress-proxy scrub.py secret-redaction patterns"
-# scrub.py renders with a single -f, so hand it one file: defaults egress merged
-# under the machine egress slice (all scalars, so yq deep-merge == Helm layering).
+# scrub.py renders with a single -f, so hand it the merged full values document.
 egress_merged="$(mktemp_f)"
-yq eval-all 'select(fi==0) * select(fi==1)' "$(egress_defaults_slice)" "$egress_vals" > "$egress_merged"
+yq eval-all 'select(fi==0) * select(fi==1)' "$DEFAULTS_VALUES" "$EXAMPLE_VALUES" > "$egress_merged"
 EGRESS_VALUES="$egress_merged" python3 scripts/test-scrub-patterns.py
 
 echo "INFO - Asserting platform render FAILS without --set-file secretPatterns"

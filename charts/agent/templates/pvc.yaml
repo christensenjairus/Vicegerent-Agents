@@ -1,7 +1,7 @@
 {{- $name := include "vicegerent-agent.name" . -}}
 {{- range $claim := list
       (dict "name" "data" "size" $.Values.storage.data)
-      (dict "name" "gitrepos" "size" $.Values.storage.gitrepos)
+      (dict "name" "gitrepos" "size" $.Values.storage.gitRepos)
       (dict "name" "models" "size" $.Values.storage.models "excludeFromBackup" true) }}
 ---
 apiVersion: v1

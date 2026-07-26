@@ -66,7 +66,7 @@
   ],
   "customManagers": [
     {
-      "description": "hermes-agent image tag in the root values.defaults.yaml agents[0] template (nested in a list, no sibling Chart.yaml, so tracked here rather than by the helm-values manager). Loose versioning comes from the packageRules entry keyed on the depName.",
+      "description": "hermes-agent image tag in the root values.defaults.yaml agentDefaults map (no sibling Chart.yaml, so tracked here rather than by the helm-values manager).",
       "customType": "regex",
       "managerFilePatterns": [
         "/^values\\.defaults\\.ya?ml$/"

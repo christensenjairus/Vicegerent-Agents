@@ -4,7 +4,7 @@ Full step-by-step for standing up your own instance. See the [README](../README.
 
 ## Configuring for your machine
 
-Each person runs their own clone against their own laptop and their own local Kind cluster. All machine-specific configuration lives in a single gitignored `values.yaml` (cluster vars, the agents you run, egress allowlists) that you copy from the committed `values.example.yaml` — like copying `.env.example` to `.env`. Your `values.yaml` carries only the **deltas** for your machine; it is layered over the committed `values.defaults.yaml` (the full annotated default for every setting) by the installer and `scripts/validate.sh`, so anything you omit falls through to that default. Nothing machine-specific is committed, so a second machine is just a second clone with its own `values.yaml` (see [Adding a second machine](#adding-a-second-machine)).
+Each person runs their own clone against their own laptop and their own local Kind cluster. All machine-specific configuration lives in a single gitignored `values.yaml` (policy, agents, egress, models, and replicas) that you copy from the committed `values.example.yaml` — like copying `.env.example` to `.env`. Your `values.yaml` carries only the **deltas** for your machine; it is layered over the committed `values.defaults.yaml` (the full annotated default for every setting) by the installer and `scripts/validate.sh`, so anything you omit falls through to that default. Nothing machine-specific is committed, so a second machine is just a second clone with its own `values.yaml` (see [Adding a second machine](#adding-a-second-machine)).
 
 ### Values to change for your machine
 
@@ -17,18 +17,22 @@ $EDITOR values.yaml
 
 Every setting carries an inline comment in `values.defaults.yaml`; the example carries only the deltas below, which you almost certainly need to change:
 
-- **`clusterVars`** — the machine/operator-scoped tokens that feed the Cerbos authorization policies and the shim mapping. The example ships: `githubAllowedRepos` / `githubUsername` (the repos agents may write to and your GitHub login, `resource_github.yaml`), `gitlabAllowedProjects` / `gitlabUsername` (the projects agents may act on — reads included — as the numeric project id, since the shim resolves whatever form an agent sends to that id before matching, and your GitLab login, `resource_gitlab.yaml`), `jiraAllowedProjects` (ships as `["PROJ"]` — set to your own project key(s), or `["*"]` if you don't scope Jira), `jiraAllowedAssignees`, `linearAllowedTeams` (your Linear team's UUID + name + key prefix), `linearAllowedAssignees`, `notionScratchpadPageId` / `notionUserId` (the page new pages are pinned to and your Notion user id), and `alertmanagerCreatedBy` — all as placeholders you replace. The rest (`grafanaDeniedDatasourceUids` / `grafanaDeniedDatasourceNames`, `elasticDeniedIndexPatterns`, the `webCrawlMax*` caps, …) default to neutral values in `values.defaults.yaml`; add them to your `values.yaml` only to override.
+- **`policy`** — machine-wide authorization, data-access, content-safety, and operational limits, grouped by service. The example includes source-control identities and scopes under `policy.sourceControl`, Jira and Linear write scopes under `policy.workManagement`, the Notion Scratchpad and identity under `policy.notion`, and the Alertmanager creator under `policy.alertmanager`. Neutral defaults for data-access denylists and operational caps live in `values.defaults.yaml`.
 - **`agents[].git`** — `userName` / `userEmail` are the identity each agent commits as. Ships as `your-git-username` / `you@example.com`.
-- **`egress`** — `apexWildcardDomains` / `exactOnlyDomains` are the external HTTP(S) destinations the egress-proxy allows; `internalAllowlistCIDRs` carves RFC1918 hosts out of the private-network deny (empty = none).
-- **`agents[].networkAllowlist`** — `cnameChainedFQDN` / `cnameChain` are your git host's FQDN and its full CNAME chain (see step 3 below). Ships as placeholders (`git.example.com` + a dummy chain); if your git host is `github.com` you can clear them.
-- **Container registry** (`values.defaults.yaml`'s `agents[].image`, `charts/mcp-cerbos-shim/templates/deployment.yaml`, `charts/platform/templates/gateway.yaml`) — these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave them as-is and install directly against it. Only repoint them if you want to build and host your own copies of `hermes-agent`, `mcp-cerbos-shim`, or the agentgateway proxy image — see each image's README under `images/*/README.md` for the build & push steps.
+- **`egress`** — `wildcardDomains` / `exactDomains` are YAML lists of external HTTP(S) destinations the egress proxy allows; `internalAllowedCIDRs` carves RFC1918 hosts out of the private-network deny.
+- **`agents[].directEgress`** — `ssh.fqdn` and `ssh.cnameChain` describe your git host and its full CNAME chain; the Slack and edge-TTS lists hold direct WebSocket destinations.
+- **Container registry** (`values.defaults.yaml`'s `agentDefaults.image`, `charts/mcp-cerbos-shim/templates/deployment.yaml`, `charts/platform/templates/gateway.yaml`) — these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave them as-is and install directly against it. Only repoint them if you want to build and host your own copies of `hermes-agent`, `mcp-cerbos-shim`, or the agentgateway proxy image — see each image's README under `images/*/README.md` for the build & push steps.
+
+### Migrating values from the former schema
+
+The installer rejects the former flat schema instead of silently ignoring it. Move `clusterVars` into the service groups under `policy`, rename `agents[].networkAllowlist` to `agents[].directEgress`, change the SSH fields to `directEgress.ssh.fqdn` and a list-valued `directEgress.ssh.cnameChain`, change `storage.gitrepos` to `storage.gitRepos`, and convert `agents[].config` from a YAML block string to a map. Under `egress`, replace the comma-separated `apexWildcardDomains`, `exactOnlyDomains`, and `internalAllowlistCIDRs` strings with the `wildcardDomains`, `exactDomains`, and `internalAllowedCIDRs` lists. Move `egress.replicaCount` to `replicas.egressProxy`. Compare your file with `values.example.yaml` before rerunning `./vicegerent install`.
 - **`.gitlab-ci.yml` / `renovate.json`** — wired for this repo's own self-hosted GitLab instance. If you host this elsewhere, adapt these to your CI platform or ignore them; nothing in the platform itself depends on them (they're validation/dependency-update tooling, not part of the installed cluster state).
 
 To stand up your own instance:
 
 1. Clone this repo. `./vicegerent install` reads `values.yaml` from the checkout root.
 2. Make sure the SSH key your agents will use has access to your git host, so git-over-SSH clone/push works from inside the sandbox.
-3. If your git host isn't `github.com`, its FQDN and CNAME chain go in `agents[].networkAllowlist` (`cnameChainedFQDN` / `cnameChain`) — otherwise Cilium blocks git-over-SSH from inside the sandbox. If that host resolves through a CNAME (common for self-hosted setups behind dynamic DNS or a tunnel), list every name in the chain, not just the one you git-clone with: Cilium's `toFQDNs` DNS proxy strips a CNAME answer unless every name in it is itself allowlisted. Find the chain with `dig +noall +answer <your-host>`.
+3. If your git host isn't `github.com`, put its FQDN in `agents[].directEgress.ssh.fqdn` and every intermediate name in `agents[].directEgress.ssh.cnameChain` — otherwise Cilium blocks git-over-SSH from inside the sandbox. Find the chain with `dig +noall +answer <your-host>`.
 
 ## Create the local Kind cluster
 
@@ -124,7 +128,7 @@ This applies these Kubernetes Secrets in namespace `agent-sandbox` (agent `<name
 
 ## Install the platform
 
-`./vicegerent install` runs the staged Helm installer in `scripts/install/install.sh`. The control plane (stage order, chart coordinates, pinned versions, image tags) lives in `stages/stages.yaml`; the machine plane (`clusterVars` / `agents` / `egress` / `models`) is your `values.yaml`. It does not run continuously — re-run it yourself after a `git pull` to apply upstream changes.
+`./vicegerent install` runs the staged Helm installer in `scripts/install/install.sh`. The control plane (stage order, chart coordinates, pinned versions, image tags) lives in `stages/stages.yaml`; the machine plane (`policy` / `agents` / `egress` / `models` / `replicas`) is your `values.yaml`. It does not run continuously — re-run it yourself after a `git pull` to apply upstream changes.
 
 Each stage runs `helm upgrade --install --wait --rollback-on-failure` (or `kubectl apply -k` for the vendored/CRD manifests) in order and health-gates before moving on, so a re-run delivers upgrades with no gaps. It is idempotent — an immediate re-run with no changes is a no-op. It confirms before each change; pass `-y`/`--yes` for a non-interactive run.
 

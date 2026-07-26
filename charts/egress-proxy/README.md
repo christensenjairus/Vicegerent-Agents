@@ -79,10 +79,10 @@ The regex registry covers the named provider shapes in the table above. A creden
 **To scrub a literal secret value**: there is currently no mechanism to inject runtime secret values into the proxy for scrubbing. Adding this requires mounting the secret into the proxy pod and loading it at startup — a future improvement.
 
 ### SSH traffic
-Port 22 egress is direct — it bypasses the proxy entirely. `github.com` is always allowed; your own git host is whatever you set in the agent's `networkAllowlist.cnameChainedFQDN` (plus every name in its `cnameChain`), so the reachable set is machine-specific. `git push` content is not inspectable at the HTTP layer. The SSH deploy key's scope (read-only vs read-write, per-repo vs org-wide) is the control here.
+Port 22 egress is direct — it bypasses the proxy entirely. `github.com` is always allowed; your own git host is set with `directEgress.ssh.fqdn` plus every name in `directEgress.ssh.cnameChain`, so the reachable set is machine-specific. `git push` content is not inspectable at the HTTP layer. The SSH deploy key's scope (read-only vs read-write, per-repo vs org-wide) is the control here.
 
 ### Slack traffic
-Slack FQDNs are allowed direct (bypassing the proxy) through the per-agent Cilium policy (`charts/agent/templates/networkpolicy.yaml`, FQDNs set through the agent's `networkAllowlist.slackFQDNs` in `values.yaml`) and `no_proxy` in `charts/agent/templates/_sandbox.tpl`. The list defaults to empty in `values.defaults.yaml` — Slack is opt-in per agent — and `values.example.yaml` ships these four. Slack Socket Mode requires POST and WebSocket — both blocked by the proxy — so Slack must go direct. (`no_proxy` alone is not enough: `slack_sdk` ignores `NO_PROXY` and auto-loads `HTTPS_PROXY`, so the hermes image also carries build patch `0007-slack-bypass-egress-proxy.py` to force the bypass.)
+Slack FQDNs are allowed direct (bypassing the proxy) through the per-agent Cilium policy (`charts/agent/templates/networkpolicy.yaml`, FQDNs set through `directEgress.slackFQDNs`) and `no_proxy` in `charts/agent/templates/_sandbox.tpl`. The list defaults to empty in `values.defaults.yaml` — Slack is opt-in per agent — and `values.example.yaml` ships these four. Slack Socket Mode requires POST and WebSocket — both blocked by the proxy — so Slack must go direct. (`no_proxy` alone is not enough: `slack_sdk` ignores `NO_PROXY` and auto-loads `HTTPS_PROXY`, so the hermes image also carries build patch `0007-slack-bypass-egress-proxy.py` to force the bypass.)
 
 | FQDN | Purpose |
 |---|---|
@@ -91,7 +91,7 @@ Slack FQDNs are allowed direct (bypassing the proxy) through the per-agent Ciliu
 | `wss-backup.slack.com` | Socket Mode WebSocket (failover endpoint) |
 | `files.slack.com` | File/image downloads for attachment handling |
 
-The former `*.slack.com` wildcard is removed from the Cilium policy. If Slack rotates the WSS hostname, Socket Mode reconnections will fail — add the new hostname to the agent's `networkAllowlist.slackFQDNs` in `values.yaml`. `no_proxy` needs no edit for a `*.slack.com` name: it carries the suffix form `.slack.com`, which already covers any new subdomain. Slack traffic carries no sandbox secrets by design.
+The former `*.slack.com` wildcard is removed from the Cilium policy. If Slack rotates the WSS hostname, Socket Mode reconnections will fail — add the new hostname to the agent's `directEgress.slackFQDNs` in `values.yaml`. `no_proxy` needs no edit for a `*.slack.com` name: it carries the suffix form `.slack.com`, which already covers any new subdomain. Slack traffic carries no sandbox secrets by design.
 
 ### Streaming responses
 SSE (`text/event-stream`) and chunked transfer responses skip response body scrubbing to avoid buffering the LLM stream. An echo attack via streaming is theoretically possible but requires the external server to actively reflect back injected content.
@@ -121,13 +121,13 @@ SSE (`text/event-stream`) and chunked transfer responses skip response body scru
 There are two CiliumNetworkPolicies; pick by how the sandbox reaches the service.
 
 For a service the **proxy fetches** (GET/HEAD through the egress proxy):
-1. Add the FQDN to `values.yaml`'s `egress:` block — one edit, single source of truth. `apexWildcardDomains` if the service also needs subdomains (an exact match plus a `*.<domain>` wildcard); `exactOnlyDomains` for an exact host only. Both are comma-joined bare hostnames, machine-scoped (same laptop implies the same network requirements, unlike the per-agent direct-egress bypass FQDNs below). The installer feeds them into `charts/egress-proxy`, which renders the **same** list into both the Cilium `toFQDNs` policy (the kernel-level gate) and `scrub.py`'s allowlist (the mitmproxy application-layer gate) — so the two can no longer drift.
+1. Add the FQDN to `values.yaml`'s `egress:` block — `wildcardDomains` if the service also needs subdomains, or `exactDomains` for an exact host only. Both are YAML lists and feed the Cilium policy and `scrub.py` from the same source.
 2. If the service needs POST it cannot go through the proxy (external POST → 403) — route it direct instead (below)
 3. If the service holds credentials, add its token format to `images/mcp-cerbos-shim/internal/server/secret-patterns.json` — see [Adding a new secret pattern](#adding-a-new-secret-pattern).
 4. If the service is multi-tenant (object storage, a CDN), add an `EXTERNAL_PATH_SCOPES` entry so the host-only FQDN allowlist doesn't grant every tenant's path.
 
 For a service the sandbox reaches **direct** (bypassing the proxy, e.g. Slack):
-1. Add the FQDN to the agent's `networkAllowlist.slackFQDNs` in `values.yaml` (rendered by `charts/agent/templates/networkpolicy.yaml`)
+1. Add the FQDN to the agent's `directEgress.slackFQDNs` in `values.yaml` (rendered by `charts/agent/templates/networkpolicy.yaml`)
 2. Add it to `no_proxy`/`NO_PROXY` in `charts/agent/templates/_sandbox.tpl`
 
 ---

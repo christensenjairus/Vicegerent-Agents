@@ -28,7 +28,7 @@ spec:
       containers:
         - name: mcp-cerbos-shim
           # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim
-          image: harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim:v0.33.10
+          image: harbor.hahomelabs.com/vicegerent/mcp-cerbos-shim:v0.33.11
           ports:
             - name: grpc
               containerPort: 4445
@@ -45,17 +45,17 @@ spec:
                   name: mcp-cerbos-shim-self-token
                   key: token
             - name: NOTION_ALLOWED_PARENT_PAGE_IDS  # Scratchpad always implicit, then the team-folder list
-              value: {{ prepend (.Values.clusterVars.notionAllowedParentPageIds | default list) .Values.clusterVars.notionScratchpadPageId | join "," | quote }}
+              value: {{ prepend (.Values.policy.notion.allowedParentPageIds | default list) .Values.policy.notion.scratchpadPageId | join "," | quote }}
             - name: NOTION_USER_ID
-              value: {{ .Values.clusterVars.notionUserId | quote }}
+              value: {{ .Values.policy.notion.userId | quote }}
             - name: CONTENT_MODERATION  # "enabled"/"disabled", never "true"/"false" -- see README
-              value: {{ .Values.clusterVars.contentModeration | quote }}
+              value: {{ .Values.policy.contentSafety.moderation.status | quote }}
             - name: PROMPT_INJECTION_DETECTION  # "enabled"/"disabled" -- see README
-              value: {{ .Values.clusterVars.promptInjectionDetection | quote }}
+              value: {{ .Values.policy.contentSafety.promptInjection.status | quote }}
             - name: PROMPT_INJECTION_JUDGE_MODEL  # stage-2 judge model
-              value: {{ .Values.clusterVars.promptInjectionJudgeModel | quote }}
+              value: {{ .Values.policy.contentSafety.promptInjection.judgeModel | quote }}
             - name: MODERATION_MODEL  # content-moderation classifier model
-              value: {{ .Values.clusterVars.moderationModel | quote }}
+              value: {{ .Values.policy.contentSafety.moderation.model | quote }}
             - name: MODERATION_WRITE_VERBS  # override valve, empty = shim default
               value: ''
           securityContext:

@@ -24,7 +24,7 @@ Vicegerent is a credential-isolated, egress-locked, harness-agnostic agent platf
 
 ## Validation
 
-- `scripts/validate.sh` is the authoritative render check. It layers `values.defaults.yaml` under machine values and builds the chart-specific slices used by the installer.
+- `scripts/validate.sh` is the authoritative render check. It layers `values.defaults.yaml` under machine values and layers `agentDefaults` under each agent entry exactly as the installer does.
 - When hand-rendering `platform` or `egress-proxy`, provide `--set-file secretPatterns=images/mcp-cerbos-shim/internal/server/secret-patterns.json`. Prefer `scripts/validate.sh` when possible so every chart receives the correct values slice.
 - For ConfigMaps consumed by another workload, inspect the rendered ConfigMap, not only the template diff. Helm-templated files are not valid standalone YAML; validate their rendered output.
 - For image changes, run both `python3 scripts/validate-image-tags.py` and `python3 scripts/validate-image-tags.py --since origin/main`. The second mode is an independent CI requirement and is not run by `scripts/validate.sh`.

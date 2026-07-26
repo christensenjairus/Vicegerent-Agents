@@ -259,11 +259,11 @@ mcp_servers:
       HERMES_HOME: /opt/data
   vmcp:
     url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp
-    timeout: {{ .Values.tuning.vmcp.timeout }}
-    connect_timeout: {{ .Values.tuning.vmcp.connectTimeout }}
+    timeout: {{ .Values.tuning.vmcp.timeoutSeconds }}
+    connect_timeout: {{ .Values.tuning.vmcp.connectTimeoutSeconds }}
 agent:
   max_turns: {{ .Values.tuning.maxTurns }}
-  gateway_timeout: {{ .Values.tuning.gatewayTimeout }}
+  gateway_timeout: {{ .Values.tuning.gatewayTimeoutSeconds }}
   api_max_retries: {{ .Values.tuning.apiMaxRetries }}
   reasoning_effort: {{ .Values.tuning.reasoningEffort }}
   reasoning_overrides:
@@ -369,7 +369,7 @@ skills:
 checkpoints:
   enabled: true
 clarify:
-  timeout: {{ .Values.tuning.clarifyTimeout }}
+  timeout: {{ .Values.tuning.clarifyTimeoutSeconds }}
 timezone: {{ .Values.timezone }}
 terminal:
   cwd: /workspace
@@ -422,12 +422,9 @@ plugins:
 {{- end -}}
 
 {{- define "vicegerent-agent.renderedConfig" -}}
-{{- $agentConfig := .Values.config | fromYaml -}}
+{{- $agentConfig := .Values.config | deepCopy -}}
 {{- if not (kindIs "map" $agentConfig) -}}
-{{- fail (printf "vicegerent-agent: .Values.config did not parse to a YAML map (got %s) — check for invalid YAML or a bare scalar/list in values.config" (kindOf $agentConfig)) -}}
-{{- end -}}
-{{- if hasKey $agentConfig "Error" -}}
-{{- fail (printf "vicegerent-agent: .Values.config failed to parse as YAML: %v" (get $agentConfig "Error")) -}}
+{{- fail (printf "vicegerent-agent: .Values.config must be a YAML map (got %s)" (kindOf $agentConfig)) -}}
 {{- end -}}
 {{- $default := include "vicegerent-agent.defaultConfig" . | fromYaml -}}
 {{- $agentConfig = mergeOverwrite $default $agentConfig -}}

@@ -64,9 +64,9 @@ def _run(cmd: list[str]) -> str:
     return proc.stdout
 
 
-def _agent_slice(path: Path, out: Path) -> Path:
-    """Extract agents[0] the way scripts/validate.sh and the installer do."""
-    out.write_text(_run(["yq", ".agents[0]", str(path)]))
+def _agent_slice(path: Path, expression: str, out: Path) -> Path:
+    """Extract agent defaults or a machine agent the way the installer does."""
+    out.write_text(_run(["yq", expression, str(path)]))
     return out
 
 
@@ -295,8 +295,8 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
-        defaults_slice = _agent_slice(DEFAULTS, tmpd / "defaults.yaml")
-        example_slice = _agent_slice(EXAMPLE, tmpd / "example.yaml")
+        defaults_slice = _agent_slice(DEFAULTS, ".agentDefaults", tmpd / "defaults.yaml")
+        example_slice = _agent_slice(EXAMPLE, ".agents[0]", tmpd / "example.yaml")
 
         all_on = [
             f"--set=providers.{p}.enabled=true" for p in PROVIDERS

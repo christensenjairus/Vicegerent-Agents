@@ -3,171 +3,171 @@
 #
 # Maps merge recursively, but lists replace their defaults. Empty allowlists deny access; empty denylists impose no restriction; ['*'] disables a supported check.
 # Machine-wide authorization, safety, and operational policy.
-clusterVars:
-  # Source-control scope and identity
-  # GitHub owner/repo pairs agents may write to (resource_github.yaml). Empty = deny all writes.
-  # Compared case-insensitively; capitalize however you like.
-  githubAllowedRepos: []
-  # Owners requiring fork-qualified PR heads + the allowed fork owner(s). ['*'] disables.
-  githubForkRequiredOwners: ['*']
-  githubForkOwners: ['*']
-  # This machine's GitHub login (deny-not-own-pr live-author gate).
-  githubUsername: ''
+policy:
+  sourceControl:
+    github:
+      # Compared case-insensitively; empty denies all writes.
+      allowedRepos: []
+      # Owners requiring fork-qualified PR heads and the allowed fork owners.
+      forkRequiredOwners: ['*']
+      forkOwners: ['*']
+      # Login used by the live PR-author gate.
+      username: ''
 
-  # GitLab reads and writes are scoped together. Prefer numeric ids: paths are case-insensitive but break when a project is moved or renamed.
-  gitlabAllowedProjects: []
-  # Login belonging to this machine's GitLab token.
-  gitlabUsername: ''
+    # GitLab reads and writes are scoped together. Prefer numeric ids because paths break when a project moves.
+    gitlab:
+      allowedProjects: []
+      # Login belonging to this machine's GitLab token.
+      username: ''
+  workManagement:
+    # Jira reads are unrestricted; empty allowedProjects denies all writes.
+    jira:
+      allowedProjects: []
+      # ['*'] disables the corresponding check.
+      allowedAssignees: ['*']
+      allowedIssueTypes: ['*']
 
-  # Work-management scope and identity
-  # Jira projects agents may WRITE to (reads unrestricted). Issue/epic keys must
-  # start with one of these + '-'. Empty = deny all writes.
-  jiraAllowedProjects: []
-  # Jira assignees / issue types agents may set. ['*'] disables the check.
-  jiraAllowedAssignees: ['*']
-  jiraAllowedIssueTypes: ['*']
+    # Include each team's UUID, display name, and key because callers may use any of them.
+    linear:
+      allowedTeams: []
+      # Include every identity form; live lookups return display names. 'me' is always valid.
+      allowedAssignees: ['*']
 
-  # Include each team's UUID, display name, and key because callers may use any of them.
-  linearAllowedTeams: []
-  # Include every form of an identity; live lookups return display names. 'me' is always valid.
-  linearAllowedAssignees: ['*']
+    # ['*'] permits every PagerDuty service.
+    pagerduty:
+      allowedServiceIds: ['*']
+  dataAccess:
+    # Grafana datasources agents may not read, matched by uid or name.
+    grafana:
+      deniedDatasourceUids: []
+      deniedDatasourceNames: []
 
-  # PagerDuty service ids agents may act on. ['*'] disables.
-  pagerdutyAllowedServiceIds: ['*']
-
-  # Data-access denylists
-  # Grafana datasources agents may not read, matched by uid or name.
-  grafanaDeniedDatasourceUids: []
-  grafanaDeniedDatasourceNames: []
-
-  # Elastic index/datastream tokens agents may not read (substring match).
-  elasticDeniedIndexPatterns: []
-
-  # Notion scope and identity
-  # Scratchpad is the only implicit allowed parent for page creation.
-  notionScratchpadPageId: ''
-  # Additional parent folders update-page/create-comment may target (Scratchpad implicit).
-  notionAllowedParentPageIds: []
-  # Operator's own Notion user id (deny-not-own-page live-author gate).
-  notionUserId: ''
+    # Elastic index and datastream tokens agents may not read (substring match).
+    elastic:
+      deniedIndexPatterns: []
+  notion:
+    # Scratchpad is the only implicit allowed parent for page creation.
+    scratchpadPageId: ''
+    # Additional parents for page updates and comments.
+    allowedParentPageIds: []
+    # Operator identity used by the live page-author gate.
+    userId: ''
 
   # Content safety. Use enabled/disabled, not booleans. Both features require the OpenAI backend and provider.
-  contentModeration: disabled
-  promptInjectionDetection: disabled
-  # Classifier and stage-two judge models.
-  moderationModel: omni-moderation-latest
-  promptInjectionJudgeModel: gpt-4.1-mini
+  contentSafety:
+    moderation:
+      status: disabled
+      model: omni-moderation-latest
+    promptInjection:
+      status: disabled
+      judgeModel: gpt-4.1-mini
+  alertmanager:
+    # An empty creator denies all silence deletion.
+    maxSilenceSeconds: 86400
+    createdBy: ''
 
-  # Operational limits
-  # Silence duration cap in seconds. An empty creator denies all silence deletion.
-  alertmanagerMaxSilenceSeconds: '86400'
-  alertmanagerCreatedBy: ''
-
-  # Tavily/Firecrawl crawl+map caps (resource_webcrawl.yaml).
-  webCrawlMaxLimit: '200'
-  webCrawlMaxDepth: '3'
-  webCrawlMaxBreadth: '50'
+  # Tavily/Firecrawl crawl and map caps.
+  webCrawl:
+    maxLimit: 200
+    maxDepth: 3
+    maxBreadth: 50
 # Per-agent defaults. The installer layers this template under each machine agent. A machine supports at most ten agents; their dashboards use NodePorts 30119-30128 in list order.
-agents:
-  # Required in machine values; used as the Helm release name.
-  - name: ''
-    image:
-      # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/hermes-agent
-      repository: harbor.hahomelabs.com/vicegerent/hermes-agent
-      tag: v2026.7.20-rev13
-    storage:
-      data: 10Gi
-      gitrepos: 50Gi
-      # Mnemosyne embedding-model weights, reseeded from the image; excluded from Velero backup.
-      models: 2Gi
-    obsidian:
-      # Absolute path to a git-synced Obsidian vault under /opt/data or /workspace. Empty disables
-      # Obsidian entirely: no env var is set and the Environment section omits Obsidian guidance.
-      vaultPath: ''
-    git:
-      # Global git identity for commits the agent makes (MRs, vault pushes, etc.). Empty skips
-      # seeding ~/.gitconfig, leaving git to fail with 'Author identity unknown' until set manually.
-      userName: ''
-      userEmail: ''
-    # IANA timezone for the agent's config.yaml (timestamps, clarify/scheduling).
-    timezone: America/Los_Angeles
-    # Model routing
-    # Each provider defines its primary, auxiliary, and memory-consolidation models.
-    providers:
-      anthropic:
-        enabled: true
-        model: claude-sonnet-5
-        auxiliaryModel: claude-haiku-4-5
-        mnemosyneModel: claude-haiku-4-5
-      openai:
-        enabled: true
-        model: gpt-5.4
-        auxiliaryModel: gpt-4o-mini
-        mnemosyneModel: gpt-4o-mini
-      deepseek:
-        enabled: false
-        model: deepseek-v4-pro
-        auxiliaryModel: deepseek-v4-flash
-        mnemosyneModel: deepseek-v4-flash
-      zai:
-        enabled: false
-        model: glm-5.2
-        auxiliaryModel: glm-4.7-flash
-        mnemosyneModel: glm-4.7-flash
-    # Fixed standalone coding-harness models. OpenCode uses this value only on its OpenAI route; other routes reuse their provider model.
-    harnesses:
-      claudeCode: claude-opus-5
-      codex: gpt-5.6-sol
-      openCode: gpt-5.6-sol
-    # Enabled provider used for memory consolidation.
-    mnemosyne:
-      provider: anthropic
-    # Fallback when the primary provider fails. Empty model inherits the provider model; empty provider disables failover.
-    failover:
-      provider: openai
-      model: ''
-    # Direct egress. Every intermediate CNAME must be listed or Cilium strips the answer; github.com is always allowed.
-    networkAllowlist:
-      cnameChainedFQDN: ''
-      cnameChain: ''
-      # Port-443 Slack endpoints that bypass the GET-only egress proxy for POST and WebSocket traffic.
-      slackFQDNs: []
-      # WSS endpoint for edge TTS. Text sent here bypasses the scrubbing proxy.
-      edgeTtsFQDNs: []
-    # Hermes runtime tuning. The literal config block below may override these values.
-    tuning:
-      # Shared primary and compression context window.
-      contextLength: 1000000
-      compressionThreshold: 0.5
-      # Prompt-cache TTL (Go duration string).
-      cacheTtl: 1h
-      maxTurns: 150
-      gatewayTimeout: 900
-      apiMaxRetries: 5
-      reasoningEffort: medium
-      maxSpawnDepth: 2
-      # Seconds Hermes waits on a clarify prompt before proceeding.
-      clarifyTimeout: 300
-      vmcp:
-        timeout: 90
-        connectTimeout: 5
-      toolLoopGuardrails:
-        hardStopEnabled: true
-        warnAfterExactFailure: 4
-        warnAfterSameToolFailure: 15
-        hardStopAfterExactFailure: 12
-        hardStopAfterSameToolFailure: 50
-    # Personality/voice only. The chart appends a fixed Environment section after this.
-    soul: ''
-    # Agent config.yaml as a literal YAML string, merged over the tuning-driven defaultConfig
-    # and under the locked mandatoryConfig (charts/agent _helpers.tpl).
-    config: ''
-# Shared egress-proxy policy. Domain and CIDR fields are comma-separated; wildcard domains also permit the apex.
+agentDefaults:
+  image:
+    # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/hermes-agent
+    repository: harbor.hahomelabs.com/vicegerent/hermes-agent
+    tag: v2026.7.20-rev13
+  storage:
+    data: 10Gi
+    gitRepos: 50Gi
+    # Mnemosyne weights are reseeded from the image and excluded from Velero backup.
+    models: 2Gi
+  obsidian:
+    # Absolute git-synced vault path under /opt/data or /workspace; empty disables Obsidian.
+    vaultPath: ''
+  git:
+    # Global commit identity; empty leaves git without an author identity.
+    userName: ''
+    userEmail: ''
+  # IANA timezone for timestamps and scheduling.
+  timezone: America/Los_Angeles
+  # Each provider defines its primary, auxiliary, and memory-consolidation models.
+  providers:
+    anthropic:
+      enabled: true
+      model: claude-sonnet-5
+      auxiliaryModel: claude-haiku-4-5
+      mnemosyneModel: claude-haiku-4-5
+    openai:
+      enabled: true
+      model: gpt-5.4
+      auxiliaryModel: gpt-4o-mini
+      mnemosyneModel: gpt-4o-mini
+    deepseek:
+      enabled: false
+      model: deepseek-v4-pro
+      auxiliaryModel: deepseek-v4-flash
+      mnemosyneModel: deepseek-v4-flash
+    zai:
+      enabled: false
+      model: glm-5.2
+      auxiliaryModel: glm-4.7-flash
+      mnemosyneModel: glm-4.7-flash
+  # Fixed standalone coding-harness models.
+  harnesses:
+    claudeCode: claude-opus-5
+    codex: gpt-5.6-sol
+    openCode: gpt-5.6-sol
+  # Enabled provider used for memory consolidation.
+  mnemosyne:
+    provider: anthropic
+  # Empty model inherits the provider model; empty provider disables failover.
+  failover:
+    provider: openai
+    model: ''
+  # Every intermediate SSH CNAME must be listed or Cilium strips the answer.
+  directEgress:
+    ssh:
+      fqdn: ''
+      cnameChain: []
+    # Slack endpoints bypass the GET-only proxy for POST and WebSocket traffic.
+    slackFQDNs: []
+    # Edge-TTS endpoints bypass the scrubbing proxy.
+    edgeTtsFQDNs: []
+  # Hermes runtime tuning. The config map below may override these values.
+  tuning:
+    # Shared primary and compression context window.
+    contextLength: 1000000
+    compressionThreshold: 0.5
+    # Prompt-cache TTL (Go duration string).
+    cacheTtl: 1h
+    maxTurns: 150
+    gatewayTimeoutSeconds: 900
+    apiMaxRetries: 5
+    reasoningEffort: medium
+    maxSpawnDepth: 2
+    # Seconds Hermes waits on a clarify prompt before proceeding.
+    clarifyTimeoutSeconds: 300
+    vmcp:
+      timeoutSeconds: 90
+      connectTimeoutSeconds: 5
+    toolLoopGuardrails:
+      hardStopEnabled: true
+      warnAfterExactFailure: 4
+      warnAfterSameToolFailure: 15
+      hardStopAfterExactFailure: 12
+      hardStopAfterSameToolFailure: 50
+  # Personality and voice only; the chart appends fixed environment guidance.
+  soul: ''
+  # Native config map merged over platform defaults and under locked mandatory config.
+  config: {}
+# Required machine entries. Each entry is layered over agentDefaults.
+agents: []
+# Shared egress-proxy policy. Wildcard domains also permit the apex.
 egress:
-  apexWildcardDomains: ''
-  exactOnlyDomains: ''
-  internalAllowlistCIDRs: ''
-  replicaCount: 1
+  wildcardDomains: []
+  exactDomains: []
+  internalAllowedCIDRs: []
 # Platform model backends and routes. These switches are independent of each agent's provider switches.
 models:
   anthropic:
@@ -178,9 +178,10 @@ models:
     enabled: true
   zai:
     enabled: true
-# Shared component replicas. The egress proxy is configured separately under egress because that chart receives only the re-rooted egress subtree.
+# Shared component replicas.
 replicas:
   agentgatewayProxy: 1
   mcpCerbosShim: 1
   searxng: 1
   cerbos: 1
+  egressProxy: 1

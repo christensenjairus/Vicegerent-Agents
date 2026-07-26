@@ -78,10 +78,9 @@ helm_git() {
 
 # helm_local <name> <namespace> <machineValues> <forEach>
 # In-repo charts fed from values.defaults.yaml layered UNDER the gitignored
-# values.yaml (machine wins). machineValues=full passes both whole files (chart
-# reads .Values.clusterVars/.models); =egress layers the egress: slice of each;
+# values.yaml (machine wins). machineValues=full passes both whole files;
 # forEach=agents installs one release per agents[] entry (release name = entry
-# name), layering the defaults agents[0] template under each machine entry and
+# name), layering agentDefaults under each machine entry and
 # injecting dashboard.index=<i> so the NodePort derives to 30119+i.
 helm_local() {
   local name="$1" namespace="$2" machineValues="$3" forEach="$4"
@@ -107,10 +106,8 @@ helm_local() {
     full)   LOC=("$chartdir"); VALS=(-f "$DEFAULTS_FILE" -f "$VALUES_FILE")
             # platform's promptGuard partial compiles its regexes from the canonical
             # secret-patterns.json (same file the shim embeds); inject it at render.
-            [[ "$name" == "platform" ]] && VALS+=(--set-file "secretPatterns=$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-patterns.json") ;;
-    egress) LOC=("$chartdir"); VALS=(-f "$(defaults_slice_egress)" -f "$(mv_slice_egress)" \
-              --set-file "secretPatterns=$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-patterns.json") ;;
-    *)      die "action '$name': a local chart needs machineValues (full|egress) or forEach: agents" ;;
+            [[ "$name" == "platform" || "$name" == "egress-proxy" ]] && VALS+=(--set-file "secretPatterns=$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-patterns.json") ;;
+    *)      die "action '$name': a local chart needs machineValues: full or forEach: agents" ;;
   esac
   _do_helm "$name" "$namespace" false
 }

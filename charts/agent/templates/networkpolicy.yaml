@@ -22,23 +22,21 @@ spec:
               - matchName: egress-proxy.egress-proxy.svc.cluster.local
               - matchName: agentgateway-proxy.agentgateway-system.svc.cluster.local
               - matchName: victoria-logs-server.victoria-logs.svc.cluster.local
-              {{- if .Values.networkAllowlist.slackFQDNs }}
-              {{- range .Values.networkAllowlist.slackFQDNs }}
+              {{- if .Values.directEgress.slackFQDNs }}
+              {{- range .Values.directEgress.slackFQDNs }}
               - matchName: {{ . }}
               {{- end }}
               {{- end }}
-              {{- if .Values.networkAllowlist.edgeTtsFQDNs }}
-              {{- range .Values.networkAllowlist.edgeTtsFQDNs }}
+              {{- if .Values.directEgress.edgeTtsFQDNs }}
+              {{- range .Values.directEgress.edgeTtsFQDNs }}
               - matchName: {{ . }}
               {{- end }}
               {{- end }}
-              {{- if .Values.networkAllowlist.cnameChainedFQDN }}
-              - matchName: {{ .Values.networkAllowlist.cnameChainedFQDN }}
+              {{- if .Values.directEgress.ssh.fqdn }}
+              - matchName: {{ .Values.directEgress.ssh.fqdn }}
               {{- end }}
-              {{- range (splitList "," .Values.networkAllowlist.cnameChain) }}
-              {{- if . }}
+              {{- range .Values.directEgress.ssh.cnameChain }}
               - matchName: {{ . }}
-              {{- end }}
               {{- end }}
               - matchName: github.com
     # All HTTP(S) traffic — to internet, agentgateway, and searxng — routes through
@@ -64,9 +62,9 @@ spec:
     # fail to reconnect and you'll see apps.connections.open succeed but the WSS
     # connection refused. Add the new hostname here; _sandbox.tpl's no_proxy already
     # carries the suffix form `.slack.com` and needs no edit.
-    {{- if .Values.networkAllowlist.slackFQDNs }}
+    {{- if .Values.directEgress.slackFQDNs }}
     - toFQDNs:
-        {{- range .Values.networkAllowlist.slackFQDNs }}
+        {{- range .Values.directEgress.slackFQDNs }}
         - matchName: {{ . }}
         {{- end }}
       toPorts:
@@ -76,11 +74,11 @@ spec:
     {{- end }}
     # edge-tts (tts.provider: edge) speaks WSS to speech.platform.bing.com -- same
     # GET-only-proxy-can't-handle-it reasoning as the Slack bypass above. Opt-in only
-    # (networkAllowlist.edgeTtsFQDNs empty by default): text sent here leaves the
+    # (directEgress.edgeTtsFQDNs empty by default): text sent here leaves the
     # scrubbing proxy's redaction/logging entirely.
-    {{- if .Values.networkAllowlist.edgeTtsFQDNs }}
+    {{- if .Values.directEgress.edgeTtsFQDNs }}
     - toFQDNs:
-        {{- range .Values.networkAllowlist.edgeTtsFQDNs }}
+        {{- range .Values.directEgress.edgeTtsFQDNs }}
         - matchName: {{ . }}
         {{- end }}
       toPorts:
@@ -94,13 +92,11 @@ spec:
     # intermediate names. Both are machine-scoped (values.yaml); github.com is always
     # allowed.
     - toFQDNs:
-        {{- if .Values.networkAllowlist.cnameChainedFQDN }}
-        - matchName: {{ .Values.networkAllowlist.cnameChainedFQDN }}
+        {{- if .Values.directEgress.ssh.fqdn }}
+        - matchName: {{ .Values.directEgress.ssh.fqdn }}
         {{- end }}
-        {{- range (splitList "," .Values.networkAllowlist.cnameChain) }}
-        {{- if . }}
+        {{- range .Values.directEgress.ssh.cnameChain }}
         - matchName: {{ . }}
-        {{- end }}
         {{- end }}
         - matchName: github.com
       toPorts:

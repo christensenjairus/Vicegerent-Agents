@@ -3,7 +3,7 @@
 # stage's actions in order and health-gates before moving on. Everything here is
 # machine-invariant and
 # Renovate-tracked (chart versions, image tags, `?ref=` pins); the machine plane
-# (clusterVars/agents/egress/models) lives in the gitignored values.yaml.
+# (policy/agents/egress/models/replicas) lives in the gitignored values.yaml.
 #
 # Action types:
 #   helm      remote HTTP chart      -> repo + chart + version
@@ -17,7 +17,7 @@
 #   values          upstream-chart values file under stages/values/ (helm/helm-oci/helm-git)
 #   crds: true      run apply_crds() first -- Helm never upgrades crds/-dir CRDs, so this
 #                   templates + server-side-applies them
-#   machineValues   local charts: full = whole values.yaml (chart reads .clusterVars/.models);
+#   machineValues   local charts: full = whole values.yaml;
 #                   egress = the values.yaml egress: block re-rooted as the chart's values
 #   forEach: agents local charts: install once per values.yaml agents[] entry
 #   gate            kubectl-k readiness gate: established (CRDs) | rollout (+ waitResource/waitNamespace)
@@ -145,7 +145,7 @@ stages:
       - name: egress-proxy
         type: local
         namespace: egress-proxy
-        machineValues: egress
+        machineValues: full
   - name: agents
     actions:
       - name: agent

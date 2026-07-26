@@ -43,19 +43,16 @@ def _need(tool):
 
 
 def render_scrub_py():
-    """helm-template the egress-proxy ConfigMap against the machine-plane egress
-    slice and return the scrub.py source string. The chart reads its values
-    directly now (no Flux ${var} substitution): EGRESS_VALUES is the already
-    re-rooted `.egress` subtree; when unset we slice it from values.example.yaml."""
+    """Helm-template the egress-proxy ConfigMap from full machine values."""
     _need("helm")
     _need("yq")
 
     values = EGRESS_VALUES
     tmp = None
     if not values:
-        egress = subprocess.check_output(["yq", ".egress", EXAMPLE_VALUES])
         with tempfile.NamedTemporaryFile("wb", suffix=".yaml", delete=False) as f:
-            f.write(egress)
+            with open(EXAMPLE_VALUES, "rb") as source:
+                f.write(source.read())
             tmp = f.name
         values = tmp
     try:

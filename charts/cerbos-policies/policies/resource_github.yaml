@@ -1,6 +1,6 @@
 ---
 # github_repo policy: deny any GitHub call whose owner/repo isn't in the allowed
-# list (${githubAllowedRepos}, from values.yaml (clusterVars); compared
+# list (policy.sourceControl.github.allowedRepos; compared
 # case-insensitively, since GitHub's own owner/repo lookups ignore case and an
 # allowlist that didn't would false-deny a legitimate call spelled with
 # different capitalization -- both sides are lowercased, so list the value
@@ -76,7 +76,7 @@ resourcePolicy:
         match:
           expr: >-
             !((request.resource.attr.owner + "/" + request.resource.attr.repo).lowerAscii() in
-            [{{ include "cerbos-policies.celListLower" .Values.clusterVars.githubAllowedRepos }}])
+            [{{ include "cerbos-policies.celListLower" .Values.policy.sourceControl.github.allowedRepos }}])
       output:
         when:
           ruleActivated: >-
@@ -117,13 +117,13 @@ resourcePolicy:
       condition:
         match:
           expr: >-
-            !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.githubForkOwners }}])
+            !("*" in [{{ include "cerbos-policies.celList" .Values.policy.sourceControl.github.forkOwners }}])
             && has(request.resource.attr.owner) && request.resource.attr.owner
-            in [{{ include "cerbos-policies.celList" .Values.clusterVars.githubForkRequiredOwners }}]
+            in [{{ include "cerbos-policies.celList" .Values.policy.sourceControl.github.forkRequiredOwners }}]
             && has(request.resource.attr.head) && request.resource.attr.head
             != ""
             && !(request.resource.attr.head.contains(":")
-            && request.resource.attr.head.split(":")[0] in [{{ include "cerbos-policies.celList" .Values.clusterVars.githubForkOwners }}])
+            && request.resource.attr.head.split(":")[0] in [{{ include "cerbos-policies.celList" .Values.policy.sourceControl.github.forkOwners }}])
       output:
         when:
           ruleActivated: >-
@@ -184,7 +184,7 @@ resourcePolicy:
         match:
           expr: >-
             has(request.resource.attr.prAuthor) && request.resource.attr.prAuthor
-            != "{{ .Values.clusterVars.githubUsername }}"
+            != "{{ .Values.policy.sourceControl.github.username }}"
       output:
         when:
           ruleActivated: >-
