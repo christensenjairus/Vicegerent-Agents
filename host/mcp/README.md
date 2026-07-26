@@ -1,6 +1,6 @@
 # Host stack control plane
 
-This directory owns the host-side ToolHive stack that backs the cluster's MCP access. `vicegerent mcp` brings up ToolHive workloads, aggregates them behind a single vMCP endpoint, and exposes that to the cluster over mTLS.
+This directory owns the host-side ToolHive stack that backs both sandbox and manually supervised native-harness MCP access. `vicegerent mcp` brings up one set of ToolHive workloads and can aggregate them behind two different vMCP trust views.
 
 Stack shape:
 
@@ -8,13 +8,18 @@ Stack shape:
 agent sandbox
   -> agentgateway
   -> ghostunnel (mTLS, listen 127.0.0.1:8453, reached via host.docker.internal:8453)
-  -> ToolHive vMCP (loopback 127.0.0.1:4483, prefixes each backend's tools with {workload}_)
+  -> scoped ToolHive vMCP (loopback 127.0.0.1:4483)
   -> 17 ToolHive workloads (group 'vicegerent')
+
+native host harness (optional, manually supervised)
+  -> unscoped operator vMCP (loopback 127.0.0.1:4484)
+  -> the same ToolHive workloads
 ```
 
 `thv` runs the workloads as Docker containers under ToolHive's own daemon — they persist across `start`/`stop` so OAuth tokens are not re-prompted. `start` detects when a workload's declared spec (package, env, run/server flags, secret targets) has drifted from what's actually running — e.g. editing `env` or `tools` for a server already up — and recreates that one container instead of `thv restart`-ing it (which would silently keep the OLD args forever, since restart reuses whatever was passed to the container's original `thv run`). Supervisord manages the long-lived host processes:
 
 - `vmcp` — `thv vmcp serve` aggregating the group on 127.0.0.1:4483.
+- `operator-vmcp` — opt-in via `start --operator-vmcp`; reuses the same backends without `aggregation.tools` filtering on 127.0.0.1:4484 for manually supervised native harnesses.
 - `ghostunnel` — terminates mTLS from the cluster (client CN `agent-client`) and forwards to vMCP.
 - `rclone-s3` — `rclone serve s3` on 127.0.0.1:9899, the S3 backend for the cluster's Velero backups.
 - `mcp-health-watch` — always on, no flag. Polls every *enabled* workload's own `thv list` status and fires a macOS notification the first time one drops out of "running" (e.g. an OAuth-backed remote like Notion or Linear losing its token and going `unauthenticated`/`error` — observed live: the workload drops out of vMCP entirely until `start` brings it back), and — whenever the `aws` server is enabled — additionally warns *before* that backend's AWS credentials expire (and again once expired). See "MCP health & credential watcher" below.
@@ -60,6 +65,18 @@ Tool scoping uses the vMCP's native `aggregation.tools` primitive: a server with
 
 Doing tool selection here (rather than as a per-tool allowlist in agentgateway, which it also supports) keeps it a quick host-side edit for developers; a centralized corporate deployment would more likely enforce that allowlist at the gateway.
 
+### Operator vMCP for native harnesses
+
+`./vicegerent mcp start --operator-vmcp` adds a second supervised vMCP at `http://127.0.0.1:4484/mcp`. It reuses the enabled ToolHive workloads and their credentials, but omits `aggregation.tools`, ghostunnel, agentgateway, and Cerbos. It therefore exposes every tool those workloads serve; backend startup restrictions such as Kubernetes read-only mode, Grafana `--disable-write`, and AWS `READ_OPERATIONS_ONLY=true` still apply.
+
+The endpoint is deliberately opt-in per `start` and uses the same vMCP optimizer as the sandbox endpoint, collapsing the unrestricted backend surface to `find_tool` and `call_tool` instead of loading every tool schema into each native harness session. A later `start` without `--operator-vmcp` removes the process, matching the existing per-start behavior of `--caffeinate`. Override its port with `OPERATOR_VMCP_PORT`; set `VMCP_OPTIMIZER=0` only when raw tools are explicitly wanted.
+
+The two similarly named aggregation features are deliberately different. Both endpoints aggregate the ToolHive backends and both enable the token-saving `--optimizer`. Only the sandbox endpoint emits `aggregation.tools`, which is a per-backend tool filter rather than the aggregation mechanism itself. The operator endpoint omits that filter completely: this repo does not select tools or apply argument-level authorization for it. Any server-side restrictions inherited from the reused workloads are incidental limits, not an operator-vMCP safety boundary.
+
+The sandbox exists for autonomous or near-autonomous execution: auto mode, cron jobs, event-driven automation, and any workflow where a human will not inspect every command and tool call. The operator vMCP exists for the complementary case: a native harness in manual mode, with a human actively supervising and approving every action. Rule of thumb: **if you are not willing to supervise every command, run the work in the sandbox.**
+
+This is a host-trust feature, not another sandbox boundary. Client-side approval in Claude Code or another harness does not authenticate the MCP endpoint itself, and Docker Desktop sibling containers can reach host loopback through `host.docker.internal`. Enable it only while using a trusted host and trusted local containers.
+
 ### Network egress lockdown
 
 Every backend also carries a `network` block in `toolhive-servers.json`, enforced via ToolHive's native `--permission-profile` mechanism (network isolation is ToolHive's default since v0.30.1 — no `--isolate-network` flag needed to turn it on). `build_permission_profile()`/`write_permission_profile()` in `vicegerent_mcp.py` turn that config into a per-server JSON profile (`network.outbound.allow_host`/`allow_port`) written to the runtime dir and passed as `--permission-profile <path>` at `thv run` time, so each container's egress is locked to exactly the hosts it needs — anything else is denied by ToolHive's own egress proxy, independent of and in addition to the Cerbos/tool allowlisting above.
@@ -91,7 +108,7 @@ Linear's `save_issue` schema (`team`, not `teamId`) was confirmed against a live
 
 ### Tool discovery optimizer
 
-With 17 backends aggregated, the raw tool count is large enough to burn a meaningful chunk of the agent's context budget just listing tool definitions. `thv vmcp serve --optimizer` (Tier 1, FTS5 keyword search, no extra container) collapses the exposed surface to two meta-tools — `find_tool` (search) and `call_tool` (invoke by name) — so the agent discovers tools on demand instead of loading all of them up front. It's on by default (`generate_vmcp_config`'s caller passes `--optimizer`); set `VMCP_OPTIMIZER=0` before `./vicegerent mcp start` to fall back to exposing every tool raw.
+With 17 backends aggregated, the raw tool count is large enough to burn a meaningful chunk of the agent's context budget just listing tool definitions. `thv vmcp serve --optimizer` (Tier 1, FTS5 keyword search, no extra container) collapses the exposed surface to two meta-tools — `find_tool` (search) and `call_tool` (invoke by name) — so the agent discovers tools on demand instead of loading all of them up front. It is on by default for both the scoped sandbox vMCP and the unscoped operator vMCP; set `VMCP_OPTIMIZER=0` before `./vicegerent mcp start` to expose either endpoint's selected tools raw.
 
 This requires `mcp-cerbos-shim` to unwrap `call_tool`'s wrapped `{tool_name, parameters}` back into the real tool name before its mapping/Cerbos lookup (see `images/mcp-cerbos-shim/README.md` "How it works") — without that, every optimizer-routed call looks identical to the shim and the Secret/OpenSearch/ Jira-project guardrails would silently stop applying. Don't enable `--optimizer` against an older shim image that predates this unwrap.
 
@@ -175,10 +192,10 @@ A `<server>_<param>` name (`gitlab_api_url`, `kubernetes_kubeconfig`, `alertmana
 configure     interactively enable/skip each backend and set its secrets
 enable KEY    enable one backend (persists; brought up on the next start)
 disable KEY   disable one backend (stops it; ToolHive won't run it)
-start         bring up enabled workloads + vMCP + ghostunnel (idempotent); --caffeinate keeps macOS awake
+start         bring up enabled workloads + vMCP + ghostunnel (idempotent); --operator-vmcp adds the unscoped host endpoint; --caffeinate keeps macOS awake
 stop          shut down the supervised stack AND thv-stop the workloads; --keep-workloads leaves them running
 status        workload + supervised-process state (rich table)
-logs PROC     tail logs for ghostunnel|vmcp|rclone-s3|mcp-health-watch|supervisord|caffeinate (Ctrl-C to exit)
+logs PROC     tail logs for ghostunnel|vmcp|operator-vmcp|rclone-s3|mcp-health-watch|supervisord|caffeinate (Ctrl-C to exit)
 doctor        check binaries, thv secrets provider + the enabled servers' secrets, kind cluster
 ```
 
@@ -188,6 +205,7 @@ The interactive dashboard (textual) is the top-level `./vicegerent tui`.
 
 ```bash
 ./vicegerent mcp start
+./vicegerent mcp start --operator-vmcp  # also expose http://127.0.0.1:4484/mcp to native harnesses
 ./vicegerent mcp status
 ./vicegerent tui
 ./vicegerent mcp stop
@@ -204,6 +222,7 @@ THV                     thv binary (default: thv, resolved on PATH)
 THV_GROUP               ToolHive group name (default: vicegerent)
 VMCP_HOST / VMCP_PORT   vMCP loopback target (default 127.0.0.1:4483)
 VMCP_OPTIMIZER          0 disables --optimizer, exposing every tool raw (default: on)
+OPERATOR_VMCP_PORT      opt-in unscoped host vMCP port (default: 4484)
 LISTEN                  ghostunnel listen address (default 127.0.0.1:8453)
 GHOSTUNNEL_HOST_DIR     host mTLS material (default ~/.vicegerent/ghostunnel)
 RCLONE_ADDR             rclone serve s3 listen address (default 127.0.0.1:9899)
@@ -218,6 +237,7 @@ RCLONE_SERVE_DIR        directory rclone serves as the Velero bucket (default <r
 ~/.vicegerent/mcp/supervisord.pid         # supervisord pid (stale-process detection)
 ~/.vicegerent/mcp/supervisor.sock         # supervisord control socket
 ~/.vicegerent/mcp/vmcp-config.json        # generated + validated vMCP config
+~/.vicegerent/mcp/operator-vmcp-config.json # generated unscoped config when --operator-vmcp is enabled
 ~/.vicegerent/mcp/vmcp-init.yaml          # raw `thv vmcp init` output, post-processed into vmcp-config.json
 ~/.vicegerent/mcp/servers-state.json      # which backends are enabled + their non-secret params
 ~/.vicegerent/mcp/kubeconfig-vicegerent.yaml  # kind --internal kubeconfig (mounted into the k8s workload)

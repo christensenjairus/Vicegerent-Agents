@@ -6,7 +6,7 @@ An [agentgateway](https://agentgateway.dev) **ExtMcp** policy server that author
 
 Tool *selection* (which tools an agent can see and call) and argument-level *authorization* are separate concerns, handled by separate layers.
 
-Tool selection here is done upstream in ToolHive's vMCP (`aggregation.tools` in `toolhive-servers.json`): an operator scopes a backend's tools by editing that file and restarting the host stack — no cluster round-trip. agentgateway can also enforce a per-tool allowlist itself (its MCP tool-filtering feature); a corporate/centralized deployment would put the allowlist there, version-controlled at the gateway. Which place owns it is a policy choice — this platform keeps it in ToolHive for developer flexibility.
+Tool selection on the sandbox path is done upstream in ToolHive's scoped vMCP (`aggregation.tools` in `toolhive-servers.json`): an operator scopes a backend's tools by editing that file and restarting the host stack — no cluster round-trip. agentgateway can also enforce a per-tool allowlist itself (its MCP tool-filtering feature); a corporate/centralized deployment would put the allowlist there, version-controlled at the gateway. Which place owns it is a policy choice — this platform keeps it in ToolHive for developer flexibility. The opt-in operator vMCP documented in `host/mcp/README.md` bypasses this path entirely for manually supervised native host harnesses.
 
 This shim + Cerbos are an orthogonal layer: argument-level authorization that denies by *resource* whatever the exposed tool set is. One Cerbos policy per resource under `charts/cerbos-policies/policies/`, currently denying:
 
@@ -43,7 +43,7 @@ Consequences:
 - The mapped tools are only the ones that can name a protected resource — the ~80 entries in `charts/mcp-cerbos-shim/files/mapping.yaml`, each carrying a comment for why it's mapped and, where it matters, why a sibling tool ISN'T. Everything else passes untouched. Two recurring reasons a tool stays unmapped: it names a resource without reading its data (Elastic's `product_documentation`/`get_entity`/`generate_esql`, AWS's `suggest_aws_commands`, whose output still has to come back through the gated `call_aws`), or its args carry no verifiable signal for this single-resource-per-call model (`grafana_check_datasources_health`'s plural `uids`; `jira_jira_search`'s free-form JQL, which `JIRA_PROJECTS_FILTER` confines server-side instead).
 - Where a call's own args can't be trusted to name the resource, the shim resolves it live instead of leaving the call unmapped. A `linear_save_issue`/`save_project` update that omits `team`/`addTeams` gets the real team from a `linear_get_issue`/`linear_get_project` lookup; a Jira/Linear write that carries no assignee gets the ticket's current one. See "Live-Resolved Ownership Gates".
 
-The shim mapping and Cerbos rules exist to *deny* protected resources, not to permit tools. To allow or disallow a tool outright, change the exposed tool set (ToolHive's `aggregation.tools` today, or an agentgateway per-tool allowlist in a centralized setup) — not the mapping or an `allow` rule here.
+The shim mapping and Cerbos rules exist to *deny* protected resources, not to permit tools. To allow or disallow a tool outright on the sandbox path, change its exposed tool set (ToolHive's `aggregation.tools` today, or an agentgateway per-tool allowlist in a centralized setup) — not the mapping or an `allow` rule here.
 
 ### Live-Resolved Ownership Gates
 
