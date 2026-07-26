@@ -239,6 +239,9 @@ python3 scripts/validate-model-switch-routing.py
 echo "INFO - Asserting gpt-5.4 fallback tool calls keep reasoning disabled"
 python3 images/hermes/patches/tests/test_gpt54_fallback_reasoning.py --chart-dir charts/agent --values values.defaults.yaml
 
+echo "INFO - Asserting harness config ownership reconciliation"
+python3 scripts/validate-config-reconciliation.py
+
 echo "INFO - Asserting the agent owns ~/.gitconfig instead of seeding it imperatively"
 python3 scripts/validate-gitconfig-immutable.py
 
