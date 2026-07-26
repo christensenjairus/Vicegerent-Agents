@@ -1,7 +1,5 @@
 ---
-# Real-world machine values, deltas only -- see values.defaults.yaml for the full
-# annotated menu of every setting and its default. The installer layers that file
-# under this one, so only the overrides for this machine appear here.
+# Work machine overrides. Omitted settings inherit values.defaults.yaml.
 clusterVars:
   githubAllowedRepos:
     - moveworks-emu/moveworks
@@ -26,7 +24,7 @@ clusterVars:
     - 6deab0c5-9bda-4f82-b552-41f4aa9e449b
     - DevOps
     - DEVOPS
-  # Email for a caller-set `assignee`; display name for the live-resolved get_issue path.
+  # Include both the caller-facing email and the display name returned by live lookup.
   linearAllowedAssignees: [jchristensen@moveworks.ai, Jairus Christensen]
   pagerdutyAllowedServiceIds: [PJD41LB, PV3S4O5, PORBNK3, P7X89U2]
   grafanaDeniedDatasourceUids: [fess5o6x6evb4b]

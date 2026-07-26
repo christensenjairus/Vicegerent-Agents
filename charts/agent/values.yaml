@@ -1,2 +1,1 @@
-# Defaults live in the repo-root values.defaults.yaml, layered under the machine
-# values.yaml by the installer and validate.sh. Intentionally empty.
+# Intentionally empty; the installer layers machine values over values.defaults.yaml.

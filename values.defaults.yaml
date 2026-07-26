@@ -1,39 +1,10 @@
 ---
-# ============================================================================
-# values.defaults.yaml — the committed, annotated default layer for the whole
-# platform. Think of this as the "defaults values.yaml" every Helm chart ships:
-# it documents every setting a machine can change, with a sane default for each.
+# Canonical platform defaults. The installer layers the machine's gitignored values.yaml over this file; values.example.yaml and examples/ contain deltas-only machine configurations.
 #
-# The installer (scripts/install/) and scripts/validate.sh layer this file
-# UNDERNEATH the operator's gitignored machine values.yaml, per chart:
-#   helm ... -f <slice of this file> -f <slice of the machine values.yaml>
-# so the machine file only needs to carry the handful of values that differ
-# from the defaults here — everything it omits falls through to this file.
-# See values.example.yaml (and examples/personal.yaml, examples/work.yaml) for
-# thin, deltas-only machine files.
-#
-# Schema is identical to the machine values.yaml so the two layer cleanly:
-#   clusterVars  -> charts/cerbos-policies + charts/mcp-cerbos-shim
-#   agents[]     -> one charts/agent release per entry (agents[0] here is the
-#                   default TEMPLATE layered under each machine agent)
-#   egress       -> charts/egress-proxy
-#   models       -> charts/platform (backend/route rendering)
-#
-# Helm merge semantics: maps deep-merge, LISTS REPLACE — a machine list
-# replaces the default below wholesale rather than appending to it.
-# ============================================================================
-# ----------------------------------------------------------------------------
-# clusterVars — machine identity/scoping tokens spliced into the Cerbos policies
-# (charts/cerbos-policies) and the mcp-cerbos-shim (env + mapping.yaml force
-# block). Defaults here are neutral fallbacks that render valid CEL standalone.
-# CEL-list tokens are clean YAML sequences (the chart quotes+joins them via the
-# celList helper); an empty ALLOW list denies the corresponding writes, ['*']
-# disables a check. Int tokens are quoted strings.
-# notionScratchpadPageId and alertmanagerCreatedBy are consumed by BOTH the
-# policies and the shim — single-sourced here so the create/delete halves of
-# each ownership gate cannot drift.
-# ----------------------------------------------------------------------------
+# Maps merge recursively, but lists replace their defaults. Empty allowlists deny access; empty denylists impose no restriction; ['*'] disables a supported check.
+# Machine-wide authorization, safety, and operational policy.
 clusterVars:
+  # Source-control scope and identity
   # GitHub owner/repo pairs agents may write to (resource_github.yaml). Empty = deny all writes.
   # Compared case-insensitively; capitalize however you like.
   githubAllowedRepos: []
@@ -43,19 +14,12 @@ clusterVars:
   # This machine's GitHub login (deny-not-own-pr live-author gate).
   githubUsername: ''
 
-  # GitLab projects agents may act on, reads included (resource_gitlab.yaml).
-  # List the NUMERIC project id — the shim resolves whatever form an agent
-  # sends (numeric, group/project path, percent-encoded, any casing) to that id
-  # before matching, so one entry per project is enough. A path works too and
-  # is matched case-insensitively, but the numeric id survives a project being
-  # renamed or moved between groups; a path does not. Empty = deny all GitLab
-  # calls.
+  # GitLab reads and writes are scoped together. Prefer numeric ids: paths are case-insensitive but break when a project is moved or renamed.
   gitlabAllowedProjects: []
-  # The login this machine's GitLab token authenticates as (deny-not-own-mr
-  # live-author gate) — whichever account the PAT belongs to, since that's the
-  # account the MRs get authored by.
+  # Login belonging to this machine's GitLab token.
   gitlabUsername: ''
 
+  # Work-management scope and identity
   # Jira projects agents may WRITE to (reads unrestricted). Issue/epic keys must
   # start with one of these + '-'. Empty = deny all writes.
   jiraAllowedProjects: []
@@ -63,46 +27,39 @@ clusterVars:
   jiraAllowedAssignees: ['*']
   jiraAllowedIssueTypes: ['*']
 
-  # Linear team agents may write to — the UUID, display name, and key prefix,
-  # since a caller's `team` arg may be any of the three. Empty = deny all writes.
+  # Include each team's UUID, display name, and key because callers may use any of them.
   linearAllowedTeams: []
-  # Linear assignees agents may set, checked against the caller's `assignee` arg AND the
-  # issue's live-resolved current assignee -- which get_issue returns as the DISPLAY NAME,
-  # not an email (unlike Jira), so list every form the identity appears as. 'me' is always
-  # valid. ['*'] disables.
+  # Include every form of an identity; live lookups return display names. 'me' is always valid.
   linearAllowedAssignees: ['*']
 
   # PagerDuty service ids agents may act on. ['*'] disables.
   pagerdutyAllowedServiceIds: ['*']
 
-  # Grafana datasources agents may NOT read, matched by uid or name. Empty = no restriction.
+  # Data-access denylists
+  # Grafana datasources agents may not read, matched by uid or name.
   grafanaDeniedDatasourceUids: []
   grafanaDeniedDatasourceNames: []
 
-  # Elastic index/datastream tokens agents may NOT read (substring match). Empty = no restriction.
+  # Elastic index/datastream tokens agents may not read (substring match).
   elasticDeniedIndexPatterns: []
 
-  # Notion 'Scratchpad' page create-pages is pinned to (also implicitly an allowed parent).
+  # Notion scope and identity
+  # Scratchpad is the only implicit allowed parent for page creation.
   notionScratchpadPageId: ''
   # Additional parent folders update-page/create-comment may target (Scratchpad implicit).
   notionAllowedParentPageIds: []
   # Operator's own Notion user id (deny-not-own-page live-author gate).
   notionUserId: ''
 
-  # 'enabled'/'disabled' only — never 'true'/'false'. Both route through the openai
-  # backend (moderation -> /v1/moderations, injection judge -> promptInjectionJudgeModel),
-  # so enabling either requires models.openai.enabled (and the openai provider).
+  # Content safety. Use enabled/disabled, not booleans. Both features require the OpenAI backend and provider.
   contentModeration: disabled
   promptInjectionDetection: disabled
-  # Model the content-moderation classifier and prompt-injection stage-2 judge use.
-  # These override the shim's own compiled defaults (main.go reads MODERATION_MODEL /
-  # PROMPT_INJECTION_JUDGE_MODEL); the values below reproduce those defaults exactly.
+  # Classifier and stage-two judge models.
   moderationModel: omni-moderation-latest
   promptInjectionJudgeModel: gpt-4.1-mini
 
-  # Alertmanager silence duration cap (seconds) + this machine's fixed silence-creator
-  # identity (createSilence force-stamps it; deleteSilence checks it live).
-  # Empty = deny every silence delete, there being no identity to check against.
+  # Operational limits
+  # Silence duration cap in seconds. An empty creator denies all silence deletion.
   alertmanagerMaxSilenceSeconds: '86400'
   alertmanagerCreatedBy: ''
 
@@ -110,20 +67,9 @@ clusterVars:
   webCrawlMaxLimit: '200'
   webCrawlMaxDepth: '3'
   webCrawlMaxBreadth: '50'
-# ----------------------------------------------------------------------------
-# agents — one charts/agent release per entry in the machine values.yaml.
-# The single entry below is the default TEMPLATE: the installer layers it under
-# EACH machine agents[i] (helm -f <this agents[0]> -f <machine agents[i]>), so a
-# machine agent only needs to carry what differs from these defaults.
-#
-# MAX 10 AGENTS per machine. The dashboard NodePort is derived as 30119 + the
-# agent's index in the list, and only ports 30119-30128 are published from the
-# Kind node to the host (scripts/install/kind-config.yaml). An 11th agent has no
-# host-reachable dashboard, so the installer refuses more than 10.
-# ----------------------------------------------------------------------------
+# Per-agent defaults. The installer layers this template under each machine agent. A machine supports at most ten agents; their dashboards use NodePorts 30119-30128 in list order.
 agents:
-    # Required in the machine values.yaml -- the installer names each agent's Helm
-    # release from it, so it has no default to fall back to.
+  # Required in machine values; used as the Helm release name.
   - name: ''
     image:
       # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/hermes-agent
@@ -145,10 +91,8 @@ agents:
       userEmail: ''
     # IANA timezone for the agent's config.yaml (timestamps, clarify/scheduling).
     timezone: America/Los_Angeles
-    # Per-agent model-provider opt-in. anthropic/openai default enabled; deepseek/zai are opt-in.
-    # Each provider carries the models Hermes reads from it: model (primary), auxiliaryModel
-    # (cheap aux: vision/titles/compression/approval), mnemosyneModel (memory consolidation --
-    # see the mnemosyne block). Fixed coding-harness models live under harnesses: below, not here.
+    # Model routing
+    # Each provider defines its primary, auxiliary, and memory-consolidation models.
     providers:
       anthropic:
         enabled: true
@@ -170,46 +114,29 @@ agents:
         model: glm-5.2
         auxiliaryModel: glm-4.7-flash
         mnemosyneModel: glm-4.7-flash
-    # Fixed models for the standalone coding harnesses, independent of the providers above.
-    # Claude Code is wired to Anthropic and Codex to OpenAI, so each pins one model. OpenCode
-    # picks its provider at runtime by priority (deepseek > zai > anthropic > openai): openCode
-    # is the model for its OpenAI fallback path, and it reuses that provider's `model` on the
-    # anthropic/deepseek/zai paths. codex/openCode are often newer coding-tuned models than a
-    # provider's `model`. claudeCode also backs Hermes' `opus` alias.
+    # Fixed standalone coding-harness models. OpenCode uses this value only on its OpenAI route; other routes reuse their provider model.
     harnesses:
       claudeCode: claude-opus-5
       codex: gpt-5.6-sol
       openCode: gpt-5.6-sol
-    # Which enabled provider backs memory consolidation (MNEMOSYNE_LLM_* -> that provider's
-    # mnemosyneModel over its OpenAI-Completions route; anthropic uses the mnemosyne-anthropic shim).
+    # Enabled provider used for memory consolidation.
     mnemosyne:
       provider: anthropic
-    # Hermes fallback_providers when the primary provider errors. model '' -> providers.<provider>.model;
-    # the provider must be enabled (its key_env is only present when enabled). '' disables failover.
+    # Fallback when the primary provider fails. Empty model inherits the provider model; empty provider disables failover.
     failover:
       provider: openai
       model: ''
-    # Machine-scoped egress allowlist for a direct (port-22) FQDN reached behind dynamic DNS/a CDN
-    # (charts/agent/templates/networkpolicy.yaml). Cilium's toFQDNs DNS proxy strips a CNAME answer
-    # unless every name in the resolution chain is itself allowlisted, so cnameChain (comma-joined)
-    # must list every intermediate hostname, not just the one actually queried. github.com is always
-    # allowed and not listed here.
+    # Direct egress. Every intermediate CNAME must be listed or Cilium strips the answer; github.com is always allowed.
     networkAllowlist:
       cnameChainedFQDN: ''
       cnameChain: ''
-      # Port-443 FQDNs allowed direct egress, bypassing the GET-only egress proxy (Slack Socket Mode
-      # needs POST + WebSocket). Empty = opt-in per agent, not silently inherited.
+      # Port-443 Slack endpoints that bypass the GET-only egress proxy for POST and WebSocket traffic.
       slackFQDNs: []
-      # Same WSS-bypass shape as slackFQDNs, for edge-tts (config.tts.provider: edge): its only
-      # endpoint is speech.platform.bing.com over WSS. Empty = opt-in per agent — text sent to TTS
-      # leaves the scrubbing proxy's protection entirely (no auth/DPA/retention guarantee).
+      # WSS endpoint for edge TTS. Text sent here bypasses the scrubbing proxy.
       edgeTtsFQDNs: []
-    # Hermes operational defaults injected into the rendered config.yaml (charts/agent
-    # _helpers.tpl defaultConfig). A machine's `config:` block below still overrides any of
-    # these via the normal config merge; tuning just moves the platform default out of the template.
+    # Hermes runtime tuning. The literal config block below may override these values.
     tuning:
-      # Model context window advertised to Hermes's compaction logic (model.context_length and
-      # auxiliary.compression.context_length — single-sourced). We standardize on 1M-context models.
+      # Shared primary and compression context window.
       contextLength: 1000000
       compressionThreshold: 0.5
       # Prompt-cache TTL (Go duration string).
@@ -235,25 +162,13 @@ agents:
     # Agent config.yaml as a literal YAML string, merged over the tuning-driven defaultConfig
     # and under the locked mandatoryConfig (charts/agent _helpers.tpl).
     config: ''
-# ----------------------------------------------------------------------------
-# egress — shared egress-proxy allowlist (charts/egress-proxy), comma-joined.
-# apexWildcardDomains get an exact + *.<domain> wildcard match; exactOnlyDomains
-# get an exact match only. internalAllowlistCIDRs carves RFC1918 hosts out of the
-# private-network deny. All empty by default so the allowlist is opt-in.
-# replicaCount lives inside this block (rather than top-level replicas: below)
-# because the installer/validate.sh feed charts/egress-proxy only the egress:
-# subtree, re-rooted to top level (machineValues: egress).
-# ----------------------------------------------------------------------------
+# Shared egress-proxy policy. Domain and CIDR fields are comma-separated; wildcard domains also permit the apex.
 egress:
   apexWildcardDomains: ''
   exactOnlyDomains: ''
   internalAllowlistCIDRs: ''
   replicaCount: 1
-# ----------------------------------------------------------------------------
-# models — platform model backends+routes to render (charts/platform). Disable
-# one to drop its AgentgatewayBackend + HTTPRoute; the per-agent providers toggle
-# above is separate.
-# ----------------------------------------------------------------------------
+# Platform model backends and routes. These switches are independent of each agent's provider switches.
 models:
   anthropic:
     enabled: true
@@ -263,18 +178,7 @@ models:
     enabled: true
   zai:
     enabled: true
-# ----------------------------------------------------------------------------
-# replicas — per-component replica counts. agentgatewayProxy/mcpCerbosShim/
-# searxng render via charts/platform + charts/mcp-cerbos-shim (both fed the
-# whole values.yaml, machineValues: full). cerbos is the upstream
-# oci://ghcr.io/cerbos/helm-charts/cerbos chart, which has no per-machine
-# override mechanism otherwise — the installer reads this value out of
-# values.yaml/values.defaults.yaml and passes it as `--set replicaCount=<n>`
-# alongside the static stages/values/cerbos.yaml (see stages/stages.yaml's
-# cerbos action `replicasValuePath`/`replicasSetKey` and
-# scripts/install/lib/helm.sh's helm_oci). egress-proxy's replica count is
-# NOT here -- see egress.replicaCount above.
-# ----------------------------------------------------------------------------
+# Shared component replicas. The egress proxy is configured separately under egress because that chart receives only the re-rooted egress subtree.
 replicas:
   agentgatewayProxy: 1
   mcpCerbosShim: 1

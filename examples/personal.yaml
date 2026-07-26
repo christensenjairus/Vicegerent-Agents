@@ -1,7 +1,5 @@
 ---
-# Real-world machine values, deltas only -- see values.defaults.yaml for the full
-# annotated menu of every setting and its default. The installer layers that file
-# under this one, so only the overrides for this machine appear here.
+# Personal machine overrides. Omitted settings inherit values.defaults.yaml.
 clusterVars:
   githubAllowedRepos:
     - christensenjairus/vicegerent-agents
