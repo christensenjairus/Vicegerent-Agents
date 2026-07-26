@@ -167,6 +167,16 @@ func TestCallToolRetriesOnceOnRejectedSession(t *testing.T) {
 	}
 }
 
+func TestInvalidateSessionDoesNotClearReplacement(t *testing.T) {
+	c := &Client{sessionID: "replacement"}
+
+	c.invalidateSession("rejected")
+
+	if c.sessionID != "replacement" {
+		t.Fatalf("sessionID = %q, want replacement session preserved", c.sessionID)
+	}
+}
+
 // TestCallToolDoesNotRetryForever guards the retry bound: a server that
 // rejects every session must produce an error rather than an unbounded loop
 // inside a gate holding an agent's call open.

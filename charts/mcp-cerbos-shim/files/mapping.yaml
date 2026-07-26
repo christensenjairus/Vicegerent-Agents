@@ -1,35 +1,6 @@
 ---
-# mcp-cerbos-shim mapping. See mapping.example.yaml + shim README for full docs.
-# Only resource-bearing tools are mapped (k8s kind, a Grafana datasource id, a
-# Jira project/issue key, a GitHub owner/repo[/branch], a GitLab project_id, a Linear teamId, an
-# Alertmanager silence duration, or a PagerDuty manage_incidents change);
-# unmapped tools pass (defaultAction: allow). Cerbos denies Secret reads,
-# OpenSearch-datasource reads, Elastic data-access calls targeting a denied
-# index/datastream token (${elasticDeniedIndexPatterns}), AWS call_aws commands
-# that mint credentials/tokens/access (eks get-token, sts assume-role, ecr/rds/
-# redshift auth tokens, kms decrypt, ...) or read secret values (Secrets Manager
-# get-secret-value/batch, SSM get-parameter*), Jira WRITES targeting a project outside
-# ${jiraAllowedProjects} (reads are unrestricted), GitHub calls targeting a repo outside the allowlist or writing
-# directly to a protected branch, GitLab calls targeting a project outside
-# ${gitlabAllowedProjects} (reads included) or setting reviewers/assignees on a
-# merge request, Linear calls targeting a team other than
-# DEVOPS, Alertmanager silences over the duration cap, a deleteSilence call
-# whose target silence the shim resolves as created by someone other than
-# ${alertmanagerCreatedBy} (a live getSilences lookup, since deleteSilence's
-# own silenceId arg proves nothing about who created it), Alertmanager
-# getAlerts calls with no filterLabel (an unfiltered call returns every
-# active alert and reliably times out; see
-# resource_alertmanager_alert_query.yaml for why the earlier "mcp-
-# alertmanager's own hardcoded 30s client timeout" attribution was
-# retracted), out-of-scope PagerDuty incident changes, Notion create-pages calls whose parent isn't
-# the Scratchpad folder, and Tavily/Firecrawl crawl+map calls targeting an
-# internal-only host or exceeding the limit/depth/breadth caps. A `force` block instead
-# allows-with-rewritten-args — that's a mutation, not a deny (see server.go):
-# GitHub PR create/update and GitLab MR create/update force draft: true; Alertmanager createSilence force
-# createdBy: ${alertmanagerCreatedBy}, so deleteSilence's live lookup above
-# has a real identity to check against instead of the tool's own unauthenticated
-# default. Adding a tool here to permit it is wrong; that belongs in the
-# gateway allowlist.
+# Maps tool arguments to Cerbos resources and mutations. Tool selection belongs
+# in ToolHive's allowlist; see the shim README for the authorization model.
 backends:
   vmcp:
     defaultAction: allow
@@ -63,74 +34,15 @@ backends:
         action: listResources
         id: "''"
         attrFrom: canonicalK8s(args)
-      # GitLab project-bearing tools -> gitlab_project; Cerbos denies any call
-      # whose project_id (or create_merge_request's second, target_project_id)
-      # isn't in ${gitlabAllowedProjects}, any MR create/
-      # update naming a protected branch as its target, any MR create/update
-      # that sets reviewer_ids/assignee_ids, and any update_merge_request
-      # against an MR this agent didn't author. This block is a deliberate
-      # mirror of the github_repo block below -- the two forges get the same
-      # guardrails, and a rule added to one is ported to the other or its
-      # absence justified in the receiving policy's header (resource_gitlab.yaml
-      # carries the current not-ported list).
-      #
-      # EVERY tool carrying a project_id is mapped, reads included (36 of the
-      # 38 in the vMCP allowlist), because ${gitlabAllowedProjects} is a
-      # project boundary rather than a write gate -- same posture as
-      # github_repo, the opposite of jira_project's read-everywhere model. The
-      # two exceptions are mark_todo_done/mark_all_todos_done, which take no
-      # project_id at all (a todo id, or nothing) and so cannot be scoped to a
-      # project by any check here: a documented residual gap, same class as
-      # elastic's arg-less platform_streams_list_streams, and low-stakes
-      # (they clear entries off the bot's own todo list, they don't touch
-      # project content).
-      #
-      # Two capability removals mirror the GitHub side and live in the tool
-      # allowlist (toolhive-servers.json) rather than here, so nothing below
-      # maps them:
-      #   - push_files/create_or_update_file/create_branch, plus
-      #     merge_merge_request: the bot has direct SSH access to
-      #     gitlab.hahomelabs.com, so routine git operations go through git
-      #     itself, not a GitLab-API tool. Nothing here can merge.
-      #   - every note/thread/discussion/draft-note WRITE tool (create_note,
-      #     create/update/delete_merge_request_note, the _discussion_note
-      #     variants, create_merge_request_thread, resolve_merge_request_thread,
-      #     create/update/delete/publish_draft_note, bulk_publish_draft_notes,
-      #     create/update_issue_note): the operator does not want the bot
-      #     leaving ANY comment/review text on an MR under their identity --
-      #     the same decision, for the same reason, as GitHub's
-      #     pull_request_review_write/add_reply_to_pull_request_comment removal.
-      #     The edit/delete variants were the sharper half: note_id is an opaque
-      #     integer, so a hallucinated id silently rewrote or DELETED a human's
-      #     comment, and unlike an MR's author there is no "wrong id" signal in
-      #     the call itself. Removing the capability is strictly stronger than
-      #     gating it, so no note-author lookup gate exists or is needed. The
-      #     READ side (mr_discussions/get_merge_request_note(s)/get_draft_note/
-      #     list_draft_notes) stays -- reading review threads is why GitLab
-      #     keeps a note surface GitHub doesn't.
-      # get_project carries the anchor every other project-scoped GitLab tool
-      # references. It is the tool the canonicalization gate itself calls, and
-      # it is mapped anyway: an AGENT calling it directly is an ordinary
-      # project-scoped read that must obey the allowlist like every other read,
-      # and leaving it unmapped would be an unscoped project read. That makes
-      # the gate structurally recursive, so the shim short-circuits its OWN
-      # lookup before it reaches the gate, keyed on the secret self-token it
-      # stamps on every re-entrant call (server.go's selfLookupTools). Do NOT
-      # assume the reserved vmcp-internal backend prevents this on its own: it
-      # does not, because service_names carries the MCP target name (`vmcp` for
-      # both backends), which is exactly how this recursed in production.
+      # GitLab reads and writes are project-scoped. get_project is also the
+      # canonicalization lookup, so self-token-authenticated re-entrant calls
+      # bypass this mapping in server.go to prevent recursion.
       gitlab_get_project: &gitlab_project
         resourceType: gitlab_project
         action: access
         id: get(args,'project_id','')
         attrFrom: gitlabProjectAttr(args)
-      # Issue READS only. create_issue/update_issue/create_issue_link were
-      # removed from the tool allowlist entirely (toolhive-servers.json) rather
-      # than gated here, so GitLab's issue surface is read-only exactly as
-      # GitHub's is -- removing the capability is stronger than policing it, the
-      # same call made for the note/comment write tools. This also closes the
-      # one place where GitLab could mutate a resource with no author-ownership
-      # gate: an agent hallucinating an issue_iid can no longer write anything.
+      # GitLab issue writes are absent from the ToolHive allowlist.
       gitlab_get_issue: *gitlab_project
       gitlab_list_issues: *gitlab_project
       gitlab_my_issues: *gitlab_project
@@ -140,49 +52,9 @@ backends:
       gitlab_list_todos: *gitlab_project
       gitlab_list_labels: *gitlab_project
       gitlab_get_label: *gitlab_project
-      # create/update_merge_request force draft: true regardless of what's sent,
-      # exactly as create/update_pull_request does on the GitHub side -- every MR
-      # the agent opens (or un-drafts via update) stays a draft, so a human
-      # marks it ready. A mutation (allow-with-rewritten-args), not a deny: see
-      # server.go's Force handling, applied only after the checks below pass.
-      # These two are also the only tools carrying reviewer_ids/assignee_ids and
-      # the only ones that SET an MR's target_branch, so they get
-      # gitlabMergeRequestAttr (projectId + targetProjectId + hasReviewers +
-      # branch) instead of the plain projectId body.
-      #
-      # `branch` carries target_branch ONLY, and is the GitLab analog of the
-      # branch attr feeding github_repo's deny-protected-branch. GitHub's rule
-      # guards tools that write file contents INTO a branch; GitLab has no such
-      # tool left in the allowlist, but target_branch is a genuine reachable
-      # write to a protected branch's future contents -- retargeting an
-      # already-approved MR at main is how an unreviewed diff gets merged there,
-      # and update_merge_request can do exactly that to an existing MR.
-      # source_branch is deliberately NOT carried: it names the MR's own feature
-      # branch (and doubles as get_merge_request's selector), nothing is written
-      # to it, and an MR whose source happens to be named main is not the risk
-      # this guards.
-      #
-      # isMrCreate is the GitLab analog of github_repo's isPrCreate: a literal
-      # constant (not derived from args) distinguishing create from update, so
-      # deny-protected-branch can fire on a RETARGET while leaving MR creation
-      # alone. It is load-bearing here in a way it is not on GitHub: GitHub's
-      # branch attr reads a `branch` arg that create_pull_request does not have
-      # (it takes base/head), so that attr is always "" on create and the rule
-      # cannot misfire. GitLab's target_branch IS present on create, so without
-      # this flag the rule denied every `create_merge_request` into main/master/
-      # production -- i.e. essentially every merge request an agent opens. See
-      # resource_gitlab.yaml's deny-protected-branch comment.
-      #
-      # forceFrom (not force) carries the draft override. GitLab has no draft
-      # boolean: draft status is derived from the TITLE ("Draft: ..."), verified
-      # live -- passing draft:true is silently ignored, so the `force: {draft:
-      # true}` copied from github_create_pull_request was a NO-OP and every
-      # agent-opened MR shipped ready-for-review. gitlabDraftTitleForce reads
-      # the incoming title and prefixes it, which a literal cannot do. It
-      # deliberately yields "" (dropped, not forwarded) when the title is
-      # absent -- update_merge_request's title is optional, and forcing one
-      # would overwrite the MR's real title -- or already carries a Draft:/WIP:
-      # marker, which would otherwise double-prefix.
+      # isMrCreate lets policy permit creation into the normal target branch but
+      # deny retargeting an existing MR. Draft state is derived from the title,
+      # so forceFrom prefixes a supplied title without inventing one on update.
       gitlab_create_merge_request:
         <<: *gitlab_project
         forceFrom: gitlabDraftTitleForce(args)

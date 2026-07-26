@@ -60,6 +60,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -1805,22 +1806,32 @@ def ensure_ghostunnel_material() -> None:
     print(f"ghostunnel material missing {missing}; recovering from kind Secret {GHOSTUNNEL_SECRET} …")
     hd.mkdir(parents=True, exist_ok=True)
     hd.chmod(0o700)
-    for fname in missing:
-        key = GHOSTUNNEL_FILES[fname].replace(".", r"\.")
-        result = subprocess.run(
-            ["kubectl", "--context", ctx, "-n", GHOSTUNNEL_SECRET_NS,
-             "get", "secret", GHOSTUNNEL_SECRET, "-o", f"jsonpath={{.data.{key}}}"],
-            capture_output=True, text=True,
+    result = subprocess.run(
+        ["kubectl", "--context", ctx, "-n", GHOSTUNNEL_SECRET_NS,
+         "get", "secret", GHOSTUNNEL_SECRET, "-o", "json"],
+        capture_output=True, text=True,
+    )
+    try:
+        data = json.loads(result.stdout).get("data", {}) if result.returncode == 0 else {}
+        recovered = {
+            fname: base64.b64decode(data[GHOSTUNNEL_FILES[fname]], validate=True)
+            for fname in missing
+        }
+    except (KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        detail = result.stderr.strip() or str(exc) or "secret/key absent"
+        print(
+            f"  could not recover ghostunnel material from kind ({detail}).\n"
+            "  Run `./vicegerent setup secrets platform` to (re)generate the ghostunnel material.",
+            file=sys.stderr,
         )
-        if result.returncode != 0 or not result.stdout.strip():
-            print(
-                f"  could not recover {fname} from kind ({result.stderr.strip() or 'secret/key absent'}).\n"
-                "  Run `./vicegerent setup secrets platform` to (re)generate the ghostunnel material.",
-                file=sys.stderr,
-            )
-            return  # leave it missing; ghostshell.sh will fail with a clear message
-        (hd / fname).write_bytes(base64.b64decode(result.stdout))
-        (hd / fname).chmod(0o600)
+        return
+
+    for fname, content in recovered.items():
+        with tempfile.NamedTemporaryFile(dir=hd, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = Path(tmp.name)
+        tmp_path.chmod(0o600)
+        tmp_path.replace(hd / fname)
         print(f"  restored {fname} from kind")
 
 
