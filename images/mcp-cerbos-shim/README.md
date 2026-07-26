@@ -208,9 +208,9 @@ A `Makefile` wraps the common tasks (`make help` lists them). The image name is 
 
 ```bash
 make check                 # gofmt-check + go vet + go test ./... (CI parity)
-make image TAG=v0.33.12      # docker build
-make push  TAG=v0.33.12      # docker push to Harbor
-make release TAG=v0.33.12    # check + image + push
+make image TAG=v0.33.13      # docker build
+make push  TAG=v0.33.13      # docker push to Harbor
+make release TAG=v0.33.13    # check + image + push
 make proto                 # regenerate stubs (only when proto/ext_mcp.proto changes)
 ```
 
