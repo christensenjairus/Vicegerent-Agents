@@ -99,9 +99,8 @@ class P(NamedTuple):
 
     inp/out are required. cache_read/cache_write are optional and are used only
     for the usage_pricing sink -- agentburn's table has no cache dimension.
-    burn_slug overrides the agentburn "vendor/model" slug when it differs from
-    the usage_pricing (provider, model) key; None means skip the agentburn sink
-    entirely (used for Bedrock-style keys agentburn has no concept of).
+    The agentburn sink is derived from the resulting usage_pricing table rather
+    than from this tuple, so there is no per-entry slug override to set here.
     """
 
     provider: str
@@ -112,7 +111,6 @@ class P(NamedTuple):
     cache_write: Optional[str] = None
     source_url: str = "https://platform.claude.com/docs/en/about-claude/pricing"
     pricing_version: str = "vicegerent-pricing-2026-07"
-    burn_slug: Optional[str] = ""  # "" = derive as f"{provider}/{model}"
 
 
 # ---------------------------------------------------------------------------
@@ -303,12 +301,6 @@ def _patch_usage_pricing() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _burn_slug(p: P) -> Optional[str]:
-    if p.burn_slug is None:
-        return None
-    return p.burn_slug or f"{p.provider}/{p.model}"
-
-
 def _patch_agentburn_prices() -> None:
     spec = importlib.util.find_spec("agentburn.prices")
     if spec is None or not spec.origin:
@@ -322,21 +314,67 @@ def _patch_agentburn_prices() -> None:
         print(f"patch(agentburn): already applied to {path} -- no-op")
         return
 
-    rows = []
-    for p in _PRICES:
-        slug = _burn_slug(p)
-        if slug is None:
+    # Mirror the FULL post-patch usage_pricing table, not just _PRICES.
+    #
+    # This is deliberately derived rather than hand-listed. An earlier cut of
+    # this patch emitted only _PRICES here, which silently REGRESSED 13 models
+    # that the old 0004 used to feed agentburn (claude-haiku-4-5 -- all nine
+    # auxiliary tasks and mnemosyne -- plus gpt-5.6-sol/terra/luna backing
+    # codex/openCode, the 4.5-4.8 Claude generations, gpt-4.1, gpt-4o-mini).
+    # _PRICES only ever contained models MISSING from usage_pricing, so
+    # anything already correct upstream got dropped from burn_report. Live
+    # billing was unaffected (different sink), which is exactly what made the
+    # regression easy to miss: burn_report just quietly reported cost_known
+    # false. Deriving from usage_pricing means the two sinks cannot disagree
+    # about which models exist, and adding a model to _PRICES automatically
+    # reaches both.
+    #
+    # Only providers agentburn can actually key on are mirrored: its PRICES is
+    # flat "vendor/model" strings, so Bedrock's "anthropic.claude-*" ids and
+    # provider-specific rehostings (fireworks' glm-5p2, minimax-cn) have no
+    # meaningful slug and are skipped rather than guessed at.
+    import importlib as _il
+
+    # Force a reload: _patch_usage_pricing() already imported this module for
+    # its conflict check, so sys.modules holds the PRE-patch table. Without the
+    # reload the mirror silently misses every model _PRICES just added (caught
+    # in testing: opus-5, glm-4.7-flash and fable-5 came back None here even
+    # though they were correctly written to usage_pricing moments earlier).
+    _il.invalidate_caches()
+    _stale = _il.import_module("agent.usage_pricing")
+    mod = _il.reload(_stale)
+    table = getattr(mod, "_OFFICIAL_DOCS_PRICING", {})
+    mirrored = {"anthropic", "openai", "deepseek", "zai", "google", "minimax"}
+
+    rows: list[str] = []
+    seen: set[str] = set()
+    for (provider, model), entry in sorted(table.items()):
+        if provider not in mirrored:
             continue
-        rows.append(f'    "{slug}": ({float(p.inp)}, {float(p.out)}),')
-    for slug, (i, o) in sorted(_BURN_CORRECTIONS.items()):
-        rows.append(f'    "{slug}": ({float(i)}, {float(o)}),  # corrects stale median')
+        if entry.input_cost_per_million is None or entry.output_cost_per_million is None:
+            continue
+        slug = f"{provider}/{model}"
+        if slug in seen:
+            continue
+        seen.add(slug)
+        rows.append(
+            f'    "{slug}": '
+            f"({float(entry.input_cost_per_million)}, "
+            f"{float(entry.output_cost_per_million)}),"
+        )
+
+    # Explicit corrections last so they win over the mirrored value.
+    for slug, (inp, out) in sorted(_BURN_CORRECTIONS.items()):
+        rows.append(f'    "{slug}": ({float(inp)}, {float(out)}),  # corrects stale median')
 
     src += (
         f"\n\n# {APPLIED_MARKER}: canonical vicegerent model prices.\n"
-        "# Generated from the same _PRICES table as the agent/usage_pricing.py\n"
-        "# block, so the two tables cannot drift. Overwrite (not fail-loud) is\n"
-        "# intentional here: upstream PRICES is an OpenRouter median snapshot,\n"
-        "# ours are official rate-card figures.\n"
+        "# DERIVED from the post-patch agent/usage_pricing.py table (not from\n"
+        "# _PRICES alone) so the two sinks cannot disagree about which models\n"
+        "# exist -- hand-listing here previously dropped 13 models from\n"
+        "# burn_report while live billing stayed correct. Overwrite (not\n"
+        "# fail-loud) is intentional: upstream PRICES is an OpenRouter median\n"
+        "# snapshot, ours are official rate-card figures.\n"
         "PRICES.update({\n" + "\n".join(rows) + "\n})\n"
     )
 
@@ -344,7 +382,7 @@ def _patch_agentburn_prices() -> None:
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
     print(
-        f"patch(agentburn): {len(rows)} canonical prices appended to {path}"
+        f"patch(agentburn): {len(rows)} prices mirrored from usage_pricing into {path}"
     )
 
 
