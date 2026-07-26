@@ -38,6 +38,11 @@ Mnemosyne is the only memory store; use it for facts, preferences, and insights.
 {{- if .Values.obsidian.vaultPath }} `OBSIDIAN_VAULT_PATH` points to the shared git-synced Obsidian vault at `{{ .Values.obsidian.vaultPath }}`. The vault is an Open Knowledge Format (OKF) bundle; before reading or writing it, consult its root `index.md` to locate and read the vault's complete OKF specification, then follow that local spec for concept frontmatter, bundle-relative Markdown links, indexes, and changelogs. Use the `obsidian` skill for vault reads, writes, and search, but the vault's own OKF spec overrides generic Obsidian conventions. After medium-to-large vault changes, commit and push the vault so the work is durable and visible to other users. Treat the vault's `vicegerent` branch as its primary branch and push there as you would normally push to `main`, because agents cannot push to the protected `main` branch. Keep the vault, skills, and Mnemosyne as separate systems: durable human-reviewable knowledge belongs in the vault, reusable procedures belong in skills, and Mnemosyne should hold short recall facts or pointers to vault paths rather than copied vault content.{{- end }}
 {{- end -}}
 
+{{- /* Shared repository-authorship instruction for Hermes and every standalone coding harness. */ -}}
+{{- define "vicegerent-agent.neutralAuthorship" -}}
+Keep repository authorship neutral. Use the repository's configured git identity without supplementing it, and never add model, harness, or agent attribution to commit messages or trailers (including `Co-Authored-By`, `Generated-By`, or phrases such as "authored by Opus via Claude Code"). Do not claim credit in branch names, pull or merge request titles and descriptions, review comments, or other repository metadata. Describe only the change and its verification in the project's normal, bland voice.
+{{- end -}}
+
 {{- /* The common prompt shared by Hermes and every standalone coding harness. */ -}}
 {{- define "vicegerent-agent.sharedSystemPrompt" -}}
 {{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
@@ -45,6 +50,8 @@ Mnemosyne is the only memory store; use it for facts, preferences, and insights.
 {{ include "vicegerent-agent.worktreeDiscipline" . | trim }}
 
 {{ include "vicegerent-agent.sharedKnowledge" . | trim }}
+
+{{ include "vicegerent-agent.neutralAuthorship" . | trim }}
 {{- end -}}
 
 {{- /* Standalone harnesses differ from Hermes only in their web tooling. */ -}}
