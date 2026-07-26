@@ -49,7 +49,10 @@ def find_violations(lines: Iterable[str]) -> Iterable[int]:
 
     for number, raw_line in enumerate(lines, start=1):
         quote_depth, line = split_blockquote(raw_line)
-        if quote_depth != previous_quote_depth:
+        is_lazy_blockquote_continuation = (
+            quote_depth < previous_quote_depth and previous_kind == "prose"
+        )
+        if quote_depth != previous_quote_depth and not is_lazy_blockquote_continuation:
             previous_kind = None
             previous_was_pipe_row = False
             in_table = False
