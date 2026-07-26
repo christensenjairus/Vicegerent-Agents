@@ -187,7 +187,7 @@ validate:tag-bump-head:
 
 validate:renovate-config:
   stage: validate
-  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:43.281.0
+  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:43.281.1
   interruptible: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -260,7 +260,7 @@ image:publish:mcp-cerbos-shim:
 
 scan:renovate:
   stage: scan
-  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:43.281.0
+  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:43.281.1
   resource_group: renovate-main
   interruptible: false
   needs: []
