@@ -82,5 +82,21 @@ class StoreHiddenSecretTests(unittest.TestCase):
         run.assert_not_called()
 
 
+class WorkloadLogProcessTests(unittest.TestCase):
+    def test_follows_named_workload_logs(self) -> None:
+        with (
+            patch.object(vicegerent_mcp, "_thv_path", return_value="/opt/homebrew/bin/thv"),
+            patch.object(vicegerent_mcp.subprocess, "Popen") as popen,
+        ):
+            vicegerent_mcp.workload_log_process("gitlab")
+
+        popen.assert_called_once_with(
+            ["/opt/homebrew/bin/thv", "logs", "gitlab", "--follow"],
+            stdout=vicegerent_mcp.subprocess.PIPE,
+            stderr=vicegerent_mcp.subprocess.STDOUT,
+            text=True,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
