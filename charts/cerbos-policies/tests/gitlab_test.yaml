@@ -141,37 +141,53 @@ resources:
     kind: gitlab_project
     attr: {projectId: jchristensen/vicegerent-agents}
   mr_targeting_protected_branch:
-    # create/update_merge_request pointed at main — denied. Retargeting an
+    # update_merge_request RETARGETED at main — denied. Retargeting an
     # already-approved MR at a protected branch is how an unreviewed diff gets
-    # merged there, so update is as gated as create.
+    # merged there. isMrCreate 'false' marks this as the update path; the
+    # create path below is deliberately NOT denied.
     id: '148'
     kind: gitlab_project
-    attr: {projectId: '148', hasReviewers: 'false', branch: main}
+    attr: {projectId: '148', hasReviewers: 'false', branch: main, isMrCreate: 'false'}
   mr_targeting_master_branch:
     id: '148'
     kind: gitlab_project
-    attr: {projectId: '148', hasReviewers: 'false', branch: master}
+    attr: {projectId: '148', hasReviewers: 'false', branch: master, isMrCreate: 'false'}
   mr_targeting_production_branch:
     id: '148'
     kind: gitlab_project
-    attr: {projectId: '148', hasReviewers: 'false', branch: production}
+    attr: {projectId: '148', hasReviewers: 'false', branch: production, isMrCreate: 'false'}
+  mr_created_against_protected_branch:
+    # create_merge_request INTO main — allowed. Opening an MR against the
+    # default branch is the normal shape of nearly every merge request; only a
+    # retarget of an existing MR is the risk deny-protected-branch guards.
+    # Regression fixture: the rule originally omitted the isMrCreate guard and
+    # denied this, blocking essentially all agent MR creation.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'false', branch: main, isMrCreate: 'true'}
+  mr_created_against_production_branch:
+    # Same, for a project whose DEFAULT branch is 'production' (project 7,
+    # Flux-Kubernetes) — the case that surfaced this bug in production.
+    id: '7'
+    kind: gitlab_project
+    attr: {projectId: '7', hasReviewers: 'false', branch: production, isMrCreate: 'true'}
   mr_targeting_feature_branch:
     # An ordinary target_branch is untouched.
     id: '148'
     kind: gitlab_project
-    attr: {projectId: '148', hasReviewers: 'false', branch: develop}
+    attr: {projectId: '148', hasReviewers: 'false', branch: develop, isMrCreate: 'false'}
   mr_no_target_branch:
     # target_branch is optional on both tools, so the helper resolves it to ''
     # — the empty-guard must not deny an MR that simply doesn't retarget.
     id: '148'
     kind: gitlab_project
-    attr: {projectId: '148', hasReviewers: 'false', branch: ''}
+    attr: {projectId: '148', hasReviewers: 'false', branch: '', isMrCreate: 'false'}
   branch_named_like_protected_but_not:
     # Exact-match membership, not a prefix/substring test: 'main' is denied,
     # 'maintenance' is not.
     id: '148'
     kind: gitlab_project
-    attr: {projectId: '148', hasReviewers: 'false', branch: maintenance}
+    attr: {projectId: '148', hasReviewers: 'false', branch: maintenance, isMrCreate: 'false'}
 tests:
   - name: calls confined to an allowed project are allowed
     input:
@@ -297,7 +313,7 @@ tests:
       - principal: hermes
         resource: read_tool_no_author_attr
         actions: {access: EFFECT_ALLOW}
-  - name: merge requests targeting a protected branch are denied
+  - name: merge requests RETARGETED at a protected branch are denied
     input:
       principals: [hermes]
       resources:
@@ -315,6 +331,20 @@ tests:
       - principal: hermes
         resource: mr_targeting_production_branch
         actions: {access: EFFECT_DENY}
+  - name: merge requests CREATED against a protected branch are allowed
+    input:
+      principals: [hermes]
+      resources:
+        - mr_created_against_protected_branch
+        - mr_created_against_production_branch
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: mr_created_against_protected_branch
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: mr_created_against_production_branch
+        actions: {access: EFFECT_ALLOW}
   - name: merge requests targeting an ordinary branch, or no branch at all, are allowed
     input:
       principals: [hermes]
