@@ -48,6 +48,7 @@ ${B}Usage:${N}
   ${C}vicegerent setup secrets agent <name>${N}   provision a named agent's secrets (idempotent)
   ${C}vicegerent setup mcp${N}                    set up host-side MCP prerequisites
   ${C}vicegerent install${N}                      (re-)install the platform via the staged Helm reconciler
+  ${C}vicegerent logs${N}                         open the VictoriaLogs dashboard
   ${C}vicegerent creds <name>${N}                 show an agent's dashboard credentials and URL
   ${C}vicegerent ssh <name>${N}                   open a shell inside an agent container
   ${C}vicegerent test gateway${N}                 run MCP gateway tests
@@ -326,6 +327,41 @@ case "${1:-}" in
       exit 0
     fi
     exec "$REPO_ROOT/scripts/install/install.sh" "$@"
+    ;;
+  logs)
+    shift
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+      echo "vicegerent logs — port-forward VictoriaLogs and open its dashboard"
+      exit 0
+    fi
+    [[ $# -eq 0 ]] || { echo "vicegerent logs takes no arguments" >&2; exit 2; }
+    require_kind_context
+
+    LOGS_URL='http://localhost:9428/select/vmui/?#/?g0.range_input=5m&g0.relative_time=last_5_minutes&query=*&refresh=3s'
+    kubectl --context "$KUBE_CONTEXT" -n victoria-logs \
+      port-forward svc/victoria-logs-server 9428:9428 >/dev/null 2>&1 &
+    PF_PID=$!
+    trap 'kill "${PF_PID:-}" 2>/dev/null || true' EXIT INT TERM
+
+    i=0
+    while ! python3 -c "import socket; s=socket.create_connection(('127.0.0.1',9428),0.25); s.close()" 2>/dev/null; do
+      kill -0 "$PF_PID" 2>/dev/null || { echo "ERROR: VictoriaLogs port-forward exited before becoming ready" >&2; exit 1; }
+      i=$((i + 1))
+      [[ $i -lt 60 ]] || { echo "ERROR: VictoriaLogs port-forward did not become ready after 15s" >&2; exit 1; }
+      sleep 0.25
+    done
+
+    if command -v open >/dev/null 2>&1; then
+      open "$LOGS_URL"
+    elif command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "$LOGS_URL"
+    else
+      echo "ERROR: no browser opener found (expected 'open' or 'xdg-open')" >&2
+      exit 1
+    fi
+    echo "VictoriaLogs dashboard: $LOGS_URL"
+    echo "Press Ctrl-C to stop the port-forward."
+    wait "$PF_PID"
     ;;
   creds)
     shift

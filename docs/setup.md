@@ -232,10 +232,10 @@ To get a shell inside a running agent's container — it drops you into a shell 
 ./vicegerent ssh <name>
 ```
 
-VictoriaLogs (cluster-wide log aggregation) has no NodePort — port-forward its server Service and open the web UI (vmui) at `http://127.0.0.1:9428/select/vmui/`:
+VictoriaLogs (cluster-wide log aggregation) has no NodePort. Port-forward its server Service and open the web UI with:
 
 ```bash
-kubectl --context kind-vicegerent -n victoria-logs port-forward svc/victoria-logs-server 9428:9428
+./vicegerent logs
 ```
 
 ## Development
