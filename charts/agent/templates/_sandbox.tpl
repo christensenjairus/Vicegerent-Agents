@@ -34,6 +34,7 @@ spec:
             - |
               set -eu
               chown 10000:10000 /run
+              chown 10000:10000 /opt/data
               # chown -R: stale uid-0 dirs from old subPath design cause EPERM on reseed; idempotent on fresh PVCs.
               mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode
               chown -R 10000:10000 /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode

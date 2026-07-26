@@ -110,7 +110,7 @@ Choose the harness based on both the task and the model that produced the work. 
 Within that constraint, pick the model that fits the task: heavier reasoning for complex/design work, lighter/faster for quick fixes and alternatives.
 
 # Memory
-- **Repo knowledge**: also add a terse bullet to `AGENTS.md` in your next PR.
+- Add to `AGENTS.md` only when a task establishes a durable, repository-wide contributor rule that future work must follow and that cannot be enforced by code or validation. Do not record one-off implementation details, task-specific root causes, or behavior already captured by tests, validators, or subsystem documentation.
 
 # Expectations
 - Workspace layout: one full clone per repo under /workspace/<repo-name> (git blame/log -p work inline).

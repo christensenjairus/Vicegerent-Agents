@@ -239,6 +239,9 @@ python3 scripts/validate-model-switch-routing.py
 echo "INFO - Asserting the agent owns ~/.gitconfig instead of seeding it imperatively"
 python3 scripts/validate-gitconfig-immutable.py
 
+echo "INFO - Asserting agent runtime ownership"
+python3 scripts/validate-agent-runtime.py
+
 platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
 
 echo "INFO - Asserting the vMCP Cerbos guardrail is well-formed"
