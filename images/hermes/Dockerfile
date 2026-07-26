@@ -67,7 +67,8 @@ RUN case "${TARGETARCH}" in \
     && chmod +x /usr/local/bin/tirith \
     && rm /tmp/tirith.tar.gz
 
-# Bake jq/yq only; cluster/cloud CLIs belong in MCP servers, not the sandbox image.
+# Bake local repository inspection, formatting, and linting tools. Cluster/cloud
+# CLIs belong in MCP servers, not the sandbox image.
 # renovate: datasource=github-releases depName=jqlang/jq
 ARG JQ_VERSION=1.8.2
 # renovate: datasource=github-releases depName=mikefarah/yq
@@ -78,6 +79,38 @@ RUN curl -fsSL -o /usr/local/bin/jq \
     && curl -fsSL -o /usr/local/bin/yq \
         "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${TARGETARCH}" \
     && chmod +x /usr/local/bin/yq
+
+# Developer tools used directly by the repositories mounted under /workspace.
+# renovate: datasource=github-releases depName=mvdan/sh
+ARG SHFMT_VERSION=v3.13.1
+# renovate: datasource=github-releases depName=sharkdp/fd
+ARG FD_VERSION=v10.4.2
+# renovate: datasource=github-releases depName=hadolint/hadolint
+ARG HADOLINT_VERSION=v2.14.0
+# renovate: datasource=github-releases depName=golangci/golangci-lint
+ARG GOLANGCI_LINT_VERSION=v2.12.2
+RUN case "${TARGETARCH}" in \
+        arm64) FD_ARCH=aarch64; HADOLINT_ARCH=arm64 ;; \
+        amd64) FD_ARCH=x86_64; HADOLINT_ARCH=x86_64 ;; \
+        *) echo "developer tools: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /usr/local/bin/shfmt \
+        "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_${TARGETARCH}" \
+    && chmod +x /usr/local/bin/shfmt \
+    && curl -fsSL -o /tmp/fd.tar.gz \
+        "https://github.com/sharkdp/fd/releases/download/${FD_VERSION}/fd-${FD_VERSION}-${FD_ARCH}-unknown-linux-musl.tar.gz" \
+    && tar -xz -C /usr/local/bin --strip-components=1 -f /tmp/fd.tar.gz \
+        "fd-${FD_VERSION}-${FD_ARCH}-unknown-linux-musl/fd" \
+    && rm /tmp/fd.tar.gz \
+    && curl -fsSL -o /usr/local/bin/hadolint \
+        "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-linux-${HADOLINT_ARCH}" \
+    && chmod +x /usr/local/bin/hadolint \
+    && GOLANGCI_LINT_VER="${GOLANGCI_LINT_VERSION#v}" \
+    && curl -fsSL -o /tmp/golangci-lint.tar.gz \
+        "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VER}-linux-${TARGETARCH}.tar.gz" \
+    && tar -xz -C /usr/local/bin --strip-components=1 -f /tmp/golangci-lint.tar.gz \
+        "golangci-lint-${GOLANGCI_LINT_VER}-linux-${TARGETARCH}/golangci-lint" \
+    && rm /tmp/golangci-lint.tar.gz
 
 # Bake buf for repos with a protobuf pre-commit toolchain (buf lint/format).
 # renovate: datasource=github-releases depName=bufbuild/buf
@@ -303,8 +336,11 @@ RUN apt-get update \
         iproute2 \
         netcat-openbsd \
         openjdk-21-jre-headless \
+        rsync \
         shellcheck \
+        sqlite3 \
         tmux \
+        tree \
         vim \
     && rm -rf /var/lib/apt/lists/* \
     && keytool -help >/dev/null
@@ -358,11 +394,15 @@ RUN ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel \
 COPY --from=tools \
     /usr/local/bin/buf \
     /usr/local/bin/cerbos \
+    /usr/local/bin/fd \
+    /usr/local/bin/golangci-lint \
+    /usr/local/bin/hadolint \
     /usr/local/bin/helm \
     /usr/local/bin/jq \
     /usr/local/bin/kubeconform \
     /usr/local/bin/kustomize \
     /usr/local/bin/rtk \
+    /usr/local/bin/shfmt \
     /usr/local/bin/terraform-ls \
     /usr/local/bin/terragrunt \
     /usr/local/bin/tirith \
@@ -370,11 +410,15 @@ COPY --from=tools \
     /usr/local/bin/
 RUN buf --version \
     && cerbos --version \
+    && fd --version \
+    && golangci-lint version \
+    && hadolint --version \
     && helm version \
     && jq --version \
     && kubeconform -v \
     && kustomize version \
     && rtk --version \
+    && shfmt --version \
     && tirith --version \
     && yq --version
 
