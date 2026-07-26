@@ -131,6 +131,20 @@ def _harvest(cfg: dict, rendered: str, scenario: str) -> list[tuple]:
             add(entry.get("provider"), entry.get("model"),
                 entry.get("base_url"), f"fallback_providers[{i}] (failover)")
 
+    for preset_name, preset in ((cfg.get("moa") or {}).get("presets") or {}).items():
+        if not isinstance(preset, dict):
+            continue
+        for i, entry in enumerate(preset.get("reference_models") or []):
+            if isinstance(entry, dict):
+                add(entry.get("provider"), entry.get("model"),
+                    entry.get("base_url"),
+                    f"moa.presets.{preset_name}.reference_models[{i}]")
+        aggregator = preset.get("aggregator") or {}
+        if isinstance(aggregator, dict):
+            add(aggregator.get("provider"), aggregator.get("model"),
+                aggregator.get("base_url"),
+                f"moa.presets.{preset_name}.aggregator")
+
     for provider, spec in (cfg.get("providers") or {}).items():
         for model in ((spec or {}).get("models") or []):
             add(provider, model, (spec or {}).get("api"),

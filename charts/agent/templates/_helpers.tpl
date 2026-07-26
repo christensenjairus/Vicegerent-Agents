@@ -160,7 +160,9 @@ providers:
     key_env: DEEPSEEK_API_KEY
     transport: chat_completions
     models:
-      - {{ .Values.providers.deepseek.model }}
+{{- range (list .Values.providers.deepseek.model .Values.providers.deepseek.moaModels.balanced .Values.providers.deepseek.moaModels.frontier | uniq) }}
+      - {{ . }}
+{{- end }}
 {{- end }}
 {{- if .Values.providers.zai.enabled }}
   zai:
@@ -169,7 +171,9 @@ providers:
     key_env: ZAI_API_KEY
     transport: chat_completions
     models:
-      - {{ .Values.providers.zai.model }}
+{{- range (list .Values.providers.zai.model .Values.providers.zai.moaModels.balanced .Values.providers.zai.moaModels.frontier | uniq) }}
+      - {{ . }}
+{{- end }}
 {{- end }}
 model_catalog:
   excluded_providers:
@@ -226,6 +230,33 @@ model_aliases:
     model: {{ .Values.providers.zai.model }}
     provider: zai
 {{- end }}
+moa:
+  default_preset: balanced
+  presets:
+    balanced:
+      reference_models:
+{{- range $provider := list "anthropic" "openai" "deepseek" "zai" }}
+{{- if (index $.Values.providers $provider "enabled") }}
+        - provider: {{ $provider }}
+          model: {{ index $.Values.providers $provider "moaModels" "balanced" }}
+{{- end }}
+{{- end }}
+      aggregator:
+        provider: {{ $primaryProvider }}
+        model: {{ index .Values.providers $primaryProvider "moaModels" "balanced" }}
+      enabled: true
+    frontier:
+      reference_models:
+{{- range $provider := list "anthropic" "openai" "deepseek" "zai" }}
+{{- if (index $.Values.providers $provider "enabled") }}
+        - provider: {{ $provider }}
+          model: {{ index $.Values.providers $provider "moaModels" "frontier" }}
+{{- end }}
+{{- end }}
+      aggregator:
+        provider: {{ $primaryProvider }}
+        model: {{ index .Values.providers $primaryProvider "moaModels" "frontier" }}
+      enabled: true
 {{- $fp := .Values.failover.provider -}}
 {{- if $fp }}
 {{- if not (has $fp (list "anthropic" "openai" "deepseek" "zai")) }}{{- fail (printf "failover.provider %q must be one of anthropic/openai/deepseek/zai" $fp) -}}{{- end -}}

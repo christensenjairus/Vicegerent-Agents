@@ -91,28 +91,40 @@ agentDefaults:
     userEmail: ''
   # IANA timezone for timestamps and scheduling.
   timezone: America/Los_Angeles
-  # Each provider defines its primary, auxiliary, and memory-consolidation models.
+  # Each provider defines its primary, auxiliary, memory-consolidation, and MoA tier models.
   providers:
     anthropic:
       enabled: true
       model: claude-sonnet-5
       auxiliaryModel: claude-haiku-4-5
       mnemosyneModel: claude-haiku-4-5
+      moaModels:
+        balanced: claude-sonnet-5
+        frontier: claude-opus-5
     openai:
       enabled: true
       model: gpt-5.4
       auxiliaryModel: gpt-4o-mini
       mnemosyneModel: gpt-4o-mini
+      moaModels:
+        balanced: gpt-5.4
+        frontier: gpt-5.6-sol
     deepseek:
       enabled: false
       model: deepseek-v4-pro
       auxiliaryModel: deepseek-v4-flash
       mnemosyneModel: deepseek-v4-flash
+      moaModels:
+        balanced: deepseek-v4-pro
+        frontier: deepseek-v4-pro
     zai:
       enabled: false
       model: glm-5.2
       auxiliaryModel: glm-4.7-flash
       mnemosyneModel: glm-4.7-flash
+      moaModels:
+        balanced: glm-5.2
+        frontier: glm-5.2
   # Fixed standalone coding-harness models.
   harnesses:
     claudeCode: claude-opus-5
