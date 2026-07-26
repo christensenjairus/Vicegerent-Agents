@@ -58,12 +58,24 @@ def main() -> int:
             aliases = config.get("model_aliases") or {}
 
             if "openai-api" in providers:
+                if providers["openai-api"].get("transport") != "codex_responses":
+                    failures.append(
+                        f"{example}: Agentgateway OpenAI transport is not codex_responses"
+                    )
                 for alias in ("gpt-5", "sol", "terra", "luna"):
                     spec = aliases.get(alias) or {}
                     if spec.get("provider") != "openai-api":
                         failures.append(
                             f"{example}: model_aliases.{alias} does not use openai-api"
                         )
+                model_config = config.get("model") or {}
+                if (
+                    model_config.get("provider") == "openai-api"
+                    and model_config.get("api_mode") != "codex_responses"
+                ):
+                    failures.append(
+                        f"{example}: OpenAI primary model does not use codex_responses"
+                    )
 
             for alias, spec in aliases.items():
                 if not isinstance(spec, dict):
@@ -82,6 +94,15 @@ def main() -> int:
                     failures.append(
                         f"{example}: OpenAI failover uses the OpenRouter alias 'openai'"
                     )
+                expected_mode = {
+                    "anthropic": "anthropic_messages",
+                    "openai-api": "codex_responses",
+                }.get(fallback.get("provider"))
+                if expected_mode and fallback.get("api_mode") != expected_mode:
+                    failures.append(
+                        f"{example}: {fallback.get('provider')} failover does not declare "
+                        f"api_mode={expected_mode}"
+                    )
 
             for preset, spec in (config.get("moa") or {}).get("presets", {}).items():
                 routes = list(spec.get("reference_models") or []) + [spec.get("aggregator") or {}]
@@ -94,6 +115,7 @@ def main() -> int:
                         )
 
         try:
+            from agent.auxiliary_client import resolve_provider_client
             from hermes_cli.model_switch import DIRECT_ALIASES, switch_model
         except ImportError:
             switch_model = None
@@ -101,19 +123,29 @@ def main() -> int:
         if switch_model is not None:
             old_env = {
                 name: os.environ.get(name)
-                for name in ("HERMES_HOME", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+                for name in (
+                    "HERMES_HOME", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
+                    "OPENAI_API_KEY", "OPENAI_BASE_URL",
+                )
             }
             try:
-                for index, (example, _rendered, config) in enumerate(rendered_configs):
+                for index, (example, rendered, config) in enumerate(rendered_configs):
                     providers = config.get("providers") or {}
                     if not {"anthropic", "openai-api"}.issubset(providers):
                         continue
                     home = tmpdir / f"home-{index}"
                     home.mkdir()
                     (home / "config.yaml").write_text(yaml.safe_dump(config))
+                    anthropic_env = re.search(
+                        r"name:\s*ANTHROPIC_BASE_URL\s*\n\s*value:\s*(\S+)", rendered
+                    )
+                    if not anthropic_env:
+                        failures.append(f"{example}: ANTHROPIC_BASE_URL is not rendered")
+                        continue
                     os.environ.update({
                         "HERMES_HOME": str(home),
                         "ANTHROPIC_API_KEY": "none",  # pragma: allowlist secret
+                        "ANTHROPIC_BASE_URL": anthropic_env.group(1).strip('"'),
                         "OPENAI_API_KEY": "none",  # pragma: allowlist secret
                         "OPENAI_BASE_URL": providers["openai-api"]["api"],
                     })
@@ -140,10 +172,29 @@ def main() -> int:
                             not result.success
                             or result.target_provider != expected
                             or result.base_url != providers[expected]["api"]
+                            or result.api_mode != providers[expected]["transport"]
                         ):
                             failures.append(
                                 f"{example}: /model {requested} from {current} resolved to "
-                                f"provider={result.target_provider!r}, base_url={result.base_url!r}"
+                                f"provider={result.target_provider!r}, base_url={result.base_url!r}, "
+                                f"api_mode={result.api_mode!r}"
+                            )
+
+                    for fallback in config.get("fallback_providers") or []:
+                        if fallback.get("provider") != "anthropic":
+                            continue
+                        client, _ = resolve_provider_client(
+                            "anthropic",
+                            model=fallback.get("model"),
+                            explicit_base_url=fallback.get("base_url"),
+                            explicit_api_key="none",  # pragma: allowlist secret
+                        )
+                        actual = str(getattr(client, "base_url", "")).rstrip("/")
+                        expected = providers["anthropic"]["api"].rstrip("/")
+                        if actual != expected:
+                            failures.append(
+                                f"{example}: Anthropic failover client resolved to {actual!r}, "
+                                f"expected {expected!r}"
                             )
             finally:
                 DIRECT_ALIASES.clear()
