@@ -42,23 +42,14 @@
 # GitLab block for the full list and rationale.
 #
 # deny-non-allowed-project matches ${gitlabAllowedProjects} against a
-# CANONICALIZED project id, so an operator lists ONE value per project rather
-# than guessing how an agent will spell it. GitLab addresses the same project
-# four equally valid ways — the numeric id (148), the path (group/project), the
-# percent-encoded path (group%2Fproject), and any casing of either path form;
-# all four were verified live to hit the same project. Matching the raw
-# argument would therefore deny the SAME allowlisted project named a different
-# way: fail-closed, but a false deny on legitimate work, with a message that
-# actively misleads and no way for the agent to know it should retry.
-# Two layers prevent that. The shim resolves any non-numeric project_id to its
-# numeric id via a live get_project lookup before Cerbos runs
-# (server.go's checkGitlabProjectCanonical; fails closed, and an
-# already-numeric id short-circuits with no network call), and both sides of
-# the comparison are lowercased here so a path-form allowlist entry still
-# matches if that lookup is ever unavailable. PREFER THE NUMERIC ID in the
-# allowlist: it survives a project being renamed or moved between groups, which
-# a path does not. An empty list denies every GitLab call, reads included,
-# exactly as an empty githubAllowedRepos does.
+# canonical project id. The shim resolves a non-numeric project_id with a live
+# get_project lookup before Cerbos runs (server.go's
+# checkGitlabProjectCanonical); numeric ids skip the lookup. Resolution fails
+# closed. Prefer numeric ids in the allowlist: they avoid lookup ambiguity and
+# survive project renames and group moves. Plain and mixed-case path forms are
+# accepted, but percent-encoded paths are not supported by the current tool
+# wrapper. An empty list denies every GitLab call, reads included, exactly as
+# an empty githubAllowedRepos does.
 # Reads are scoped here rather than left unrestricted (unlike jira_project):
 # GitHub scopes its reads the same way, and a GitLab call that omits its
 # project_id (optional on list_issues/my_issues/list_todos/list_merge_requests)
@@ -83,16 +74,9 @@
 # GitHub's rule never checked create_pull_request's base/head: opening an MR
 # against main is normal and is not blocked here.
 #
-# That last clause is enforced by the isMrCreate guard rather than implied.
-# GitHub gets it for free — its branch attr reads a `branch` arg that
-# create_pull_request doesn't have (base/head instead), so the attr is always
-# "" on create and the rule can't misfire. GitLab's target_branch IS present on
-# create, so the rule as first written denied EVERY create_merge_request
-# targeting main/master/production, which is the normal shape of nearly every
-# merge request an agent opens (Flux-Kubernetes, project 7, uses `production`
-# as its default branch, so its MRs were blocked outright). The rule now fires
-# only when isMrCreate != "true", i.e. on update_merge_request — the retarget
-# case that is actually the risk. Mirrors github_repo's isPrCreate.
+# The isMrCreate guard keeps normal MR creation against a protected target
+# branch available; the rule applies only when an existing MR is retargeted.
+# This mirrors github_repo's isPrCreate distinction.
 #
 # deny-reviewers: create_merge_request/update_merge_request's reviewer_ids and
 # assignee_ids both pull a real human into the agent's own MR — the same

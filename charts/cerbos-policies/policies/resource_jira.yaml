@@ -23,17 +23,10 @@
 # extraParent key's "-123" prefix, the same any-element pattern as the
 # GitHub/Linear allowlists just applied per-key instead of to a single
 # scalar -- OR if assignee is set to anyone outside ${jiraAllowedAssignees}
-# (a wildcard "*" entry in that list disables the assignee check entirely,
-# the safe default until the operator opts into scoping it -- unlike the
-# project allowlist, which already had real enforced values before this
-# change, there's no pre-existing assignee restriction to preserve, so a
-# silent behavior change on deploy would be a surprise).
+# (a wildcard "*" entry in that list disables the assignee check entirely).
 #
-# deny-create-missing-assignee (force-self-assignee follow-up): every NEW
-# issue must set assignee, not just avoid a disallowed one -- an omitted
-# assignee on create used to fall through to allow-all (verified live: a
-# create_issue call with no assignee reached Jira's own API and only failed
-# there on unrelated required-field validation, never denied by Cerbos).
+# deny-create-missing-assignee: every new issue must set an assignee, not just
+# avoid a disallowed one.
 # create_issue is distinguished from every other jira_* tool mapped here by
 # shape, not a dedicated attr: it's the only one that supplies project_key
 # without an issue_key (update/transition/comment/link/link_to_epic all take
@@ -42,8 +35,8 @@
 # with no mapping.yaml/helper change needed. Updates that don't touch
 # assignee at all are untouched by this rule (issueKey is set, so the
 # create-shape condition never matches) -- reassigning an EXISTING issue
-# away from ${jiraAllowedAssignees} is still caught by
-# deny-assignee-outside-allowed below, same as before. The "*" bypass is
+# away from ${jiraAllowedAssignees} is caught by
+# deny-assignee-outside-allowed below. The "*" bypass is
 # honored here too, matching the disable-the-whole-check semantics.
 # deny-issue-type-outside-allowed: create/update calls that set
 # issueType (create's top-level issue_type arg, or an 'issuetype'/'issueType'
@@ -52,17 +45,14 @@
 # ${jiraAllowedIssueTypes} are denied -- project scoping alone doesn't stop
 # an agent from creating/reshaping a project's planning hierarchy with an
 # Epic/Subtask it shouldn't. Mirrors the assignee allowlist's "*" bypass
-# semantics exactly: "*" disables the check entirely, the safe default until
-# the operator opts in, since there was no pre-existing issue-type
-# restriction to preserve.
+# semantics exactly: "*" disables the check entirely.
 #
-# deny-write-unassigned-issue: closes a real enforcement gap in
-# deny-assignee-outside-allowed above -- that rule only fires when
+# deny-write-unassigned-issue covers the empty-assignee case that
+# deny-assignee-outside-allowed cannot match because it only fires when
 # attr.assignee is non-empty, so an update_issue/add_comment/transition_issue
 # against a genuinely UNASSIGNED issue left the assignee attr empty and fell
-# through to allow-all regardless of ${jiraAllowedAssignees}, since there was
-# no non-"" value to compare. server.go's ticket-assignee resolution gate now
-# also sets an assigneeVerified=true marker whenever it runs the live lookup
+# through to allow-all, since there is no non-empty value to compare.
+# server.go's ticket-assignee resolution gate sets an assigneeVerified=true marker whenever it runs the live lookup
 # and gets a definitive answer (including "no assignee") -- this rule denies
 # specifically when that marker is true and the resolved assignee still came
 # back empty. Scoped to actions:[write] like every other rule here; the "*"

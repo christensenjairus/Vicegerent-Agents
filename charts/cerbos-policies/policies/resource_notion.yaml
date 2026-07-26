@@ -3,12 +3,8 @@
 # commands, and (b) a hard deny on create-pages calls whose parent isn't the
 # Scratchpad folder.
 #
-# create-pages: mapping.yaml used to `force`-rewrite every call's `parent` to
-# the Scratchpad page id, so a wrong/omitted parent silently landed under
-# Scratchpad anyway instead of erroring. That taught a calling agent nothing —
-# it never saw feedback that its intended parent was ignored, so it kept
-# guessing wrong on future calls. This denies instead, with a message naming
-# the correct page_id, so the agent corrects itself going forward.
+# create-pages: a wrong or omitted parent is denied with a message naming the
+# required Scratchpad page_id; the shim does not rewrite the requested parent.
 # parentKind/parentPageId come from notionCreateAttr (helpers_notion.go);
 # parentKind is "" when parent was omitted (creates a private workspace-level
 # page, also not under Scratchpad) or set to database_id/data_source_id

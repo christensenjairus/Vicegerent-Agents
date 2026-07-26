@@ -2,9 +2,10 @@ IMAGE := harbor.hahomelabs.com/vicegerent/agentgateway
 # <upstream-version>-rev<N>, same scheme as hermes-agent: the base tracks the
 # AGW_VERSION it was built from and -rev<N> increments on every rebuild that
 # changes what the image contains (patches/, Dockerfile, builder base), resetting
-# to -rev1 when AGW_VERSION bumps. Renovate reads it under `versioning: loose`.
+# to -rev1 when AGW_VERSION bumps. Renovate's explicit regex treats revN as a
+# numeric build, so rev10 sorts after rev2 and bare upstream tags are excluded.
 AGW_VERSION ?= v1.3.1
-TAG         ?= $(AGW_VERSION)-rev1
+TAG         ?= $(AGW_VERSION)-rev2
 REF         := $(IMAGE):$(TAG)
 
 DOCKER    ?= docker

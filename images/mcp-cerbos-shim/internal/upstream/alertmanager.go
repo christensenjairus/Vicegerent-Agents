@@ -6,42 +6,19 @@ import (
 	"fmt"
 )
 
-// alertmanagerSilence is the subset of getSilences' JSON result this package
-// needs. Alertmanager's documented v2 REST API (GET /api/v2/silences,
-// GET /api/v2/silence/{id}) returns each silence as an object carrying its
-// own "id" and "createdBy" fields alongside matchers/startsAt/endsAt/status --
-// a well-documented, stable part of Alertmanager's public OpenAPI spec.
-//
-// NOTE: this field shape is inferred from Alertmanager's own documented v2
-// REST API, NOT verified against a live call to mcp-alertmanager's specific
-// getSilences tool (this sandbox has no Alertmanager credentials to test
-// against) -- unlike linear.go's IssueTeam, which was confirmed against a
-// real live response. If getSilences' actual result nests these fields
-// differently (or wraps them in an envelope the way notion-search/notion-
-// fetch do), SilenceCreatedBy below fails closed: a shape mismatch, a
-// silence not present in the list, or a present silence with no resolvable
-// createdBy all return an error rather than a silent empty/zero value. Live
-// verification against a real Alertmanager instance is a mandatory follow-up
-// before relying on this in production -- see the MR's own follow-up
-// section.
+// alertmanagerSilence contains the ownership fields returned by getSilences.
+// The shape follows Alertmanager's v2 API; missing or malformed ownership
+// data causes SilenceCreatedBy to return an error so authorization fails
+// closed.
 type alertmanagerSilence struct {
 	ID        string `json:"id"`
 	CreatedBy string `json:"createdBy"`
 }
 
-// SilenceCreatedBy resolves a silenceID to its creator via ONE getSilences
-// call, against getSilencesTool -- the caller's job to pass the SAME
-// backend's own getSilences tool name (e.g. "alertmanager_gov_getSilences"
-// for an alertmanager_gov-originated call), since this shim fronts more than
-// one Alertmanager instance and a silence only exists in the one it actually
-// belongs to (mirrors pagerduty.go's IncidentServiceID contract exactly).
-//
-// Unlike a single-object lookup, getSilences has no per-id variant --
-// Alertmanager's MCP tool set only exposes a list-everything call (optionally
-// filtered by state), so this fetches the full list and filters by id
-// client-side (the same list-then-filter shape notion_author.go's
-// PageAuthoredByOperator uses, for the same reason: no direct single-object
-// fetch exists).
+// SilenceCreatedBy resolves a silence to its creator with one getSilences
+// call and filters the result by ID. getSilencesTool must name the lookup tool
+// on the same backend as the original request because the shim fronts multiple
+// Alertmanager instances.
 //
 // Returns an error on any lookup failure (timeout, non-200, malformed
 // result, tool-reported error, the silence not appearing in the list, or a

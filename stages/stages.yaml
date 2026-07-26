@@ -1,8 +1,7 @@
 ---
 # Control plane for `./vicegerent install`: ordered stages. The installer runs each
 # stage's actions in order and health-gates before moving on. Everything here is
-# machine-invariant and
-# Renovate-tracked (chart versions, image tags, `?ref=` pins); the machine plane
+# machine-invariant and Renovate-tracked (chart versions, image tags, and refs); the machine plane
 # (policy/agents/egress/models/replicas) lives in the gitignored values.yaml.
 #
 # Action types:

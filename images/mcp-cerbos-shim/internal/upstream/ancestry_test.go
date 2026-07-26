@@ -68,16 +68,8 @@ const underDifferentTree = `<page url="https://app.notion.com/p/1234abcd1234abcd
 </ancestor-path>
 </page>`
 
-// deepNestedUnderTeamFolder mirrors the EXACT live-captured shape (HAH
-// multi-parent scoping validation) of a page 3 levels under a team folder:
-// Notion tags only the immediate parent <parent-page>; deeper ancestors use
-// <ancestor-2-page>, <ancestor-3-page>, etc, NOT another <parent-page>
-// (verified live against a real page 3 levels under "Teamspace Home"). The
-// target ancestor here is scratchpadID (this table test's fixed target) at
-// the ancestor-3-page depth, so it still exercises the exact tag-name gap
-// that caused a real false-negative deny in production: the original
-// parentPageIDRe only matched literal "parent-page" and silently missed any
-// ancestor beyond the immediate parent.
+// deepNestedUnderTeamFolder covers Notion's numbered tags for ancestors
+// beyond the immediate parent. The allowed ancestor appears at depth three.
 const deepNestedUnderTeamFolder = `<page url="https://app.notion.com/p/1ccde885971081c2a0a8caa913e4e3c0" icon="tag">
 <ancestor-path>
 <parent-page url="https://app.notion.com/p/1ccde885971081a5a020e73928f42fbe" title=""/>
@@ -86,15 +78,9 @@ const deepNestedUnderTeamFolder = `<page url="https://app.notion.com/p/1ccde8859
 </ancestor-path>
 </page>`
 
-// realWireEnvelope is the ACTUAL shape CallToolResult.Content[].Text carries
-// in production: not bare <page> XML, but a JSON object (Notion's own
-// notion-fetch result shape) whose "text" field holds that XML, still
-// JSON-string-escaped (backslash-quote, backslash-n). Captured live against
-// the real cluster during post-merge validation -- the escaping means
-// pageIsUnderAncestor's regexes never match this until extractNotionFetchText
-// unwraps the JSON layer first. This is the exact production shape that the
-// bare-XML fixtures above never exercised, which is why 147 tests passed
-// while every real update-page call was denied.
+// realWireEnvelope covers the production notion-fetch shape: a JSON object
+// whose text field contains escaped page markup. extractNotionFetchText must
+// unwrap this layer before ancestry matching.
 const realWireEnvelope = `{"metadata":{"type":"page"},"title":"post-merge validation - correct parent","url":"https://app.notion.com/p/395de8859710818c9345eaf50f004790","text":"Here is the result of \"view\" for the Page with URL https://app.notion.com/p/395de8859710818c9345eaf50f004790 as of 2026-07-06T03:15:36.560Z:\n<page url=\"https://app.notion.com/p/395de8859710818c9345eaf50f004790\">\n<ancestor-path>\n<parent-page url=\"https://app.notion.com/p/393de8859710809c9f5ec57a91d2c81a\" title=\"Scratchpad\"/>\n</ancestor-path>\n<properties>\n{\"title\":\"post-merge validation - correct parent\"}\n</properties>\n<blank-page>This page is blank and has no content.</blank-page>\n</page>"}`
 
 // realWireEnvelopeNotUnderScratchpad is the same real JSON-wrapped shape but
@@ -102,15 +88,8 @@ const realWireEnvelope = `{"metadata":{"type":"page"},"title":"post-merge valida
 // unwrapping is exercised on both the true and false branches.
 const realWireEnvelopeNotUnderScratchpad = `{"metadata":{"type":"page"},"title":"Elsewhere","url":"https://app.notion.com/p/1234abcd1234abcd1234abcd1234abcd","text":"<page url=\"https://app.notion.com/p/1234abcd1234abcd1234abcd1234abcd\">\n<ancestor-path>\n<parent-page url=\"https://app.notion.com/p/9999000099990000999900009999abcd\" title=\"Other Folder\"/>\n</ancestor-path>\n</page>"}`
 
-// underDatabaseParent mirrors the EXACT live-captured shape (work-cluster
-// notionAllowedParentPageIds rollout, MR !390 post-merge validation) of a
-// page whose immediate parent is a wiki DATABASE, not a plain page --
-// e.g. a page living directly inside DevSecOps or DevOps WIP, both wiki
-// databases. Notion tags this <parent-database>, not <parent-page>; the
-// target ancestor here (the database's own id) must still match via the
-// -database tag variant, exercising the exact gap that caused a real
-// false-negative deny in production: a page under an allowlisted database
-// folder was denied because the original regex only matched "-page" tags.
+// underDatabaseParent covers wiki database ancestry, which uses a
+// <parent-database> tag instead of <parent-page>.
 const underDatabaseParent = `<page url="https://app.notion.com/p/395588d8909f809293facb344df0b71d">
 <ancestor-path>
 <parent-database url="https://app.notion.com/p/1de588d8909f80458ad6c0a831284768" title="Engineering Wiki"/>
@@ -200,10 +179,8 @@ func TestPageIsUnderAnyAncestor_EmptyTargetErrors(t *testing.T) {
 	}
 }
 
-// TestPageIsUnderAnyAncestor_DatabaseParentTag proves a page whose immediate
-// parent is a wiki database (<parent-database>, not <parent-page>) still
-// matches against that database's own id -- MR !390 post-merge validation
-// found the original page-only regex silently denied this real shape.
+// TestPageIsUnderAnyAncestor_DatabaseParentTag proves a wiki database parent
+// matches through <parent-database> rather than <parent-page>.
 func TestPageIsUnderAnyAncestor_DatabaseParentTag(t *testing.T) {
 	f := &fakeCaller{text: underDatabaseParent}
 	got, err := PageIsUnderAnyAncestor(context.Background(), f, "leaf-page-id", []string{databaseParentID})
