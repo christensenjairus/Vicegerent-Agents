@@ -27,7 +27,7 @@ Layers 3 and 4 share one path: host vMCP → ghostunnel (mTLS) → agentgateway'
 charts/               Helm charts: agent, egress-proxy, platform (gateway/models/vmcp/searxng/host-firewall), cerbos-policies, mcp-cerbos-shim
 stages/               staged installer manifest (stages.yaml), per-controller upstream-chart values (values/), and kubectl-applied kustomize overlays (kustomize/) incl. the one vendored tree, csi-driver-host-path (documented exception)
 values.defaults.yaml  committed, fully-annotated default layer for every platform setting; layered UNDER your machine values.yaml by the installer and validate.sh
-values.example.yaml   deltas-only starter; copy to a gitignored values.yaml that overrides just what differs from values.defaults.yaml (cluster vars + agents)
+values.example.yaml   deltas-only starter; copy to a gitignored values.yaml that overrides just what differs from values.defaults.yaml (policy + agents)
 examples/             two complete real-world delta configs (personal.yaml, work.yaml) to model your values.yaml on
 charts/*/values.yaml  intentionally empty pointer files — the platform defaults live in values.defaults.yaml
 host/mcp/             host-side MCP control plane (ToolHive + vMCP) — see docs/setup.md

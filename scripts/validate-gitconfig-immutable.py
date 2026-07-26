@@ -31,9 +31,11 @@ def die(msg: str) -> None:
 def render() -> list[dict]:
     with tempfile.TemporaryDirectory() as tmp:
         defaults, machine = Path(tmp) / "d.yaml", Path(tmp) / "m.yaml"
-        for src, dst in ((REPO / "values.defaults.yaml", defaults),
-                         (REPO / "values.example.yaml", machine)):
-            out = subprocess.run(["yq", ".agents[0]", str(src)],
+        for src, expression, dst in (
+            (REPO / "values.defaults.yaml", ".agentDefaults", defaults),
+            (REPO / "values.example.yaml", ".agents[0]", machine),
+        ):
+            out = subprocess.run(["yq", expression, str(src)],
                                  capture_output=True, text=True, check=True)
             dst.write_text(out.stdout)
         out = subprocess.run(

@@ -2,7 +2,7 @@
 # Staged, idempotent (re-)install of the vicegerent platform onto a local Kind
 # cluster. The control plane (stage order, chart coords, pinned versions, image
 # tags) lives in stages/stages.yaml, and the machine plane
-# (clusterVars/agents/egress/models) in a gitignored values.yaml
+# (policy/agents/egress/models/replicas) in a gitignored values.yaml
 # copied from values.example.yaml. Every stage runs its actions in order and
 # health-gates (helm --wait / kubectl wait) before the next, so a `git pull` +
 # re-run delivers upgrades with no gaps.
@@ -103,6 +103,7 @@ require_kind_context
 [[ -f "$VALUES_FILE" ]] \
   || die "machine values not found: $VALUES_FILE — copy values.example.yaml to values.yaml and edit it"
 kc cluster-info >/dev/null || die "cannot reach cluster on context '$KUBE_CONTEXT'"
+validate_values_schema
 require_agent_names
 info "Tools present; context '$KUBE_CONTEXT' reachable; using $VALUES_FILE"
 

@@ -1,6 +1,6 @@
 ---
 # gitlab_project policy: deny any GitLab call whose project_id isn't in the
-# allowed list (${gitlabAllowedProjects}, from values.yaml (clusterVars)), any
+# allowed list (policy.sourceControl.gitlab.allowedProjects), any
 # merge_request create/update that retargets a protected branch or sets
 # reviewer_ids/assignee_ids, and any write to a merge request this agent didn't
 # author; allow everything else.
@@ -129,12 +129,12 @@ resourcePolicy:
         match:
           expr: >-
             !(request.resource.attr.projectId.lowerAscii() in
-            [{{ include "cerbos-policies.celListLower" .Values.clusterVars.gitlabAllowedProjects }}])
+            [{{ include "cerbos-policies.celListLower" .Values.policy.sourceControl.gitlab.allowedProjects }}])
             ||
             (has(request.resource.attr.targetProjectId)
             && request.resource.attr.targetProjectId != ""
             && !(request.resource.attr.targetProjectId.lowerAscii() in
-            [{{ include "cerbos-policies.celListLower" .Values.clusterVars.gitlabAllowedProjects }}]))
+            [{{ include "cerbos-policies.celListLower" .Values.policy.sourceControl.gitlab.allowedProjects }}]))
       output:
         when:
           ruleActivated: >-
@@ -180,7 +180,7 @@ resourcePolicy:
         match:
           expr: >-
             has(request.resource.attr.mrAuthor) && request.resource.attr.mrAuthor
-            != "{{ .Values.clusterVars.gitlabUsername }}"
+            != "{{ .Values.policy.sourceControl.gitlab.username }}"
       output:
         when:
           ruleActivated: >-

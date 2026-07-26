@@ -7,7 +7,7 @@ metadata:
   labels:
     app.kubernetes.io/name: egress-proxy
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.replicas.egressProxy }}
   selector:
     matchLabels:
       app.kubernetes.io/name: egress-proxy

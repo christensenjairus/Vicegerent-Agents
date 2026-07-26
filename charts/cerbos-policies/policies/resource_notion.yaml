@@ -82,12 +82,12 @@ resourcePolicy:
         match:
           expr: >-
             request.resource.attr.parentKind != "page_id" ||
-            request.resource.attr.parentPageId != "{{ .Values.clusterVars.notionScratchpadPageId }}"
+            request.resource.attr.parentPageId != "{{ .Values.policy.notion.scratchpadPageId }}"
       output:
         when:
           ruleActivated: >-
             "New Notion pages may only be created with parent.page_id set to the"
-            + " Scratchpad folder (page_id {{ .Values.clusterVars.notionScratchpadPageId }}). Pass that id"
+            + " Scratchpad folder (page_id {{ .Values.policy.notion.scratchpadPageId }}). Pass that id"
             + " as parent.page_id, or omit new pages from this call and use"
             + " update-page on an existing page under Scratchpad instead."
     - name: deny-not-own-page

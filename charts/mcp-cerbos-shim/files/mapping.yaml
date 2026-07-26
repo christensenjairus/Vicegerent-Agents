@@ -575,9 +575,9 @@ backends:
         action: create
         id: get(args,'alertName','')
         attrFrom: alertmanagerAttr(args)
-{{- if .Values.clusterVars.alertmanagerCreatedBy }}
+{{- if .Values.policy.alertmanager.createdBy }}
         force:
-          createdBy: {{ .Values.clusterVars.alertmanagerCreatedBy | quote }}
+          createdBy: {{ .Values.policy.alertmanager.createdBy | quote }}
 {{- end }}
       # alertmanager_gov backend (toolhive-servers.json): same duration cap
       # and forced createdBy, reused verbatim -- neither depends on which

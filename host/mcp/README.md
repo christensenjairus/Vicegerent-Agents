@@ -165,7 +165,7 @@ thv secret setup                    # choose 'encrypted' (persists OAuth tokens 
 
 A `<server>_<param>` name (`gitlab_api_url`, `kubernetes_kubeconfig`, `alertmanager_url`) is a `params[]` entry marked `"secret": true`: params normally live in the disposable `servers-state.json`, and one that's a pain to re-enter opts into the durable `thv` store instead.
 
-`notion` `create-pages` is confined to the **Scratchpad** page by `charts/cerbos-policies/policies/resource_notion.yaml`: a create naming any other parent is denied, with the correct `page_id` in the message. Retarget it via `clusterVars.notionScratchpadPageId` in your machine `values.yaml` (32 hex, dashes stripped, lowercase), not here.
+`notion` `create-pages` is confined to the **Scratchpad** page by `charts/cerbos-policies/policies/resource_notion.yaml`: a create naming any other parent is denied, with the correct `page_id` in the message. Retarget it via `policy.notion.scratchpadPageId` in your machine `values.yaml` (32 hex, dashes stripped, lowercase), not here.
 
 `./vicegerent setup secrets platform` writes the host ghostunnel mTLS material to `~/.vicegerent/ghostunnel`.
 

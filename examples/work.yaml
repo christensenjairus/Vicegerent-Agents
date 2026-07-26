@@ -1,45 +1,60 @@
 ---
 # Work machine overrides. Omitted settings inherit values.defaults.yaml.
-clusterVars:
-  githubAllowedRepos:
-    - moveworks-emu/moveworks
-    - moveworks-emu/k8s-manifests
-    - moveworks-emu/sec
-    - jchristensen_movester/moveworks
-    - jchristensen_movester/k8s-manifests
-    - christensenjairus/vicegerent-agents
-    - jchristensen_movester/Knowledge-Vault
-  githubForkRequiredOwners: [moveworks-emu]
-  githubForkOwners: [jchristensen_movester]
-  githubUsername: jchristensen_movester
-  gitlabAllowedProjects: ['148']
-  gitlabUsername: jchristensen
-  jiraAllowedProjects: [CHANGE]
-  jiraAllowedAssignees: [jchristensen@moveworks.ai]
-  jiraAllowedIssueTypes:
-    - Environment Change
-    - Deploy Service Specific
-    - Service Restart
-  linearAllowedTeams:
-    - 6deab0c5-9bda-4f82-b552-41f4aa9e449b
-    - DevOps
-    - DEVOPS
-  # Include both the caller-facing email and the display name returned by live lookup.
-  linearAllowedAssignees: [jchristensen@moveworks.ai, Jairus Christensen]
-  pagerdutyAllowedServiceIds: [PJD41LB, PV3S4O5, PORBNK3, P7X89U2]
-  grafanaDeniedDatasourceUids: [fess5o6x6evb4b]
-  grafanaDeniedDatasourceNames: [dev-opensearch-datasource]
-  elasticDeniedIndexPatterns: [snowflake]
-  notionScratchpadPageId: 1ea588d8909f80edb0cef38d0aeaf64f
-  notionAllowedParentPageIds:
-    - 6fc3f07af7084089a14088581502e3f1
-    - 1de588d8909f80458ad6c0a831284768
-    - 306588d8909f806d9e78f7004cf3b9db
-    - 41348461628a472bbc16c14e2e866a89
-  notionUserId: 1ded872b-594c-813d-aa2c-000228ba9671
-  contentModeration: enabled
-  promptInjectionDetection: enabled
-  alertmanagerCreatedBy: jchristensen
+policy:
+  sourceControl:
+    github:
+      allowedRepos:
+        - moveworks-emu/moveworks
+        - moveworks-emu/k8s-manifests
+        - moveworks-emu/sec
+        - jchristensen_movester/moveworks
+        - jchristensen_movester/k8s-manifests
+        - christensenjairus/vicegerent-agents
+        - jchristensen_movester/Knowledge-Vault
+      forkRequiredOwners: [moveworks-emu]
+      forkOwners: [jchristensen_movester]
+      username: jchristensen_movester
+    gitlab:
+      allowedProjects: ['148']
+      username: jchristensen
+  workManagement:
+    jira:
+      allowedProjects: [CHANGE]
+      allowedAssignees: [jchristensen@moveworks.ai]
+      allowedIssueTypes:
+        - Environment Change
+        - Deploy Service Specific
+        - Service Restart
+    linear:
+      allowedTeams:
+        - 6deab0c5-9bda-4f82-b552-41f4aa9e449b
+        - DevOps
+        - DEVOPS
+      # Include both the caller-facing email and the display name returned by live lookup.
+      allowedAssignees: [jchristensen@moveworks.ai, Jairus Christensen]
+    pagerduty:
+      allowedServiceIds: [PJD41LB, PV3S4O5, PORBNK3, P7X89U2]
+  dataAccess:
+    grafana:
+      deniedDatasourceUids: [fess5o6x6evb4b]
+      deniedDatasourceNames: [dev-opensearch-datasource]
+    elastic:
+      deniedIndexPatterns: [snowflake]
+  notion:
+    scratchpadPageId: 1ea588d8909f80edb0cef38d0aeaf64f
+    allowedParentPageIds:
+      - 6fc3f07af7084089a14088581502e3f1
+      - 1de588d8909f80458ad6c0a831284768
+      - 306588d8909f806d9e78f7004cf3b9db
+      - 41348461628a472bbc16c14e2e866a89
+    userId: 1ded872b-594c-813d-aa2c-000228ba9671
+  contentSafety:
+    moderation:
+      status: enabled
+    promptInjection:
+      status: enabled
+  alertmanager:
+    createdBy: jchristensen
 agents:
   - name: hermes
     obsidian:
@@ -48,19 +63,21 @@ agents:
       userName: jchristensen_movester
       userEmail: jchristensen@moveworks.ai
     timezone: America/Denver
-    networkAllowlist:
-      cnameChainedFQDN: gitlab.hahomelabs.com
-      cnameChain: uw1-ddns.hahomelabs.com,uw1-hahomelabs.ddns.net
+    directEgress:
+      ssh:
+        fqdn: gitlab.hahomelabs.com
+        cnameChain: [uw1-ddns.hahomelabs.com, uw1-hahomelabs.ddns.net]
       slackFQDNs:
         - slack.com
         - wss-primary.slack.com
         - wss-backup.slack.com
         - files.slack.com
-    config: |-
+    config:
       model:
         provider: anthropic
       agent:
-        system_prompt: You are a technical expert. Provide detailed, accurate technical information.
+        system_prompt: You are a technical expert. Provide detailed, accurate technical
+          information.
     soul: |-
       # Personality
       You are a pragmatic senior engineer with strong taste.
@@ -89,10 +106,15 @@ agents:
       - When a task needs external data or a real action, search your available tools for the right one and use it
       - Don't guess, hand-wave, or give up when a tool could get the real answer
 egress:
-  apexWildcardDomains: github.com,githubusercontent.com
-  exactOnlyDomains: pypi.org,files.pythonhosted.org,proxy.golang.org,sum.golang.org,storage.googleapis.com,artifactory.global.mgmt.moveworks.io
-  internalAllowlistCIDRs: 10.230.0.0/16
-  replicaCount: 2
+  wildcardDomains: [github.com, githubusercontent.com]
+  exactDomains:
+    - pypi.org
+    - files.pythonhosted.org
+    - proxy.golang.org
+    - sum.golang.org
+    - storage.googleapis.com
+    - artifactory.global.mgmt.moveworks.io
+  internalAllowedCIDRs: [10.230.0.0/16]
 # Defaults render all four model backends; this machine drops deepseek and zai.
 models:
   deepseek:
@@ -104,3 +126,4 @@ replicas:
   mcpCerbosShim: 2
   searxng: 2
   cerbos: 2
+  egressProxy: 2

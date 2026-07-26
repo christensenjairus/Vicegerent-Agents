@@ -2,7 +2,7 @@
 # jira_project policy: reads (jira_get_issue/get_project_issues/get_transitions)
 # are allowed against ANY project; only writes (create/update/transition/
 # comment/link) are denied when they target a project outside the allowed
-# list (${jiraAllowedProjects}, from values.yaml (clusterVars)), or
+# list (policy.workManagement.jira.allowedProjects), or
 # assign an issue to someone outside ${jiraAllowedAssignees} -- mirrors
 # Notion's read-everywhere/write-scoped model and Linear's teamId allowlist
 # pattern (note there is no `reporter` field on this Jira tool at all, only
@@ -99,7 +99,7 @@ resourcePolicy:
       condition:
         match:
           expr: >-
-            !([{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedProjects }}].exists(p,
+            !([{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedProjects }}].exists(p,
             (!has(request.resource.attr.projectKey) || request.resource.attr.projectKey
             == "" || request.resource.attr.projectKey == p)
             && (!has(request.resource.attr.issueKey) || request.resource.attr.issueKey
@@ -131,7 +131,7 @@ resourcePolicy:
             request.resource.attr.issueKey == "" &&
             (!has(request.resource.attr.assignee) || request.resource.attr.assignee
             == "")
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedAssignees }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedAssignees }}])
       output:
         when:
           ruleActivated: >-
@@ -147,8 +147,8 @@ resourcePolicy:
             has(request.resource.attr.assignee) && request.resource.attr.assignee
             != ""
             && !(has(request.resource.attr.assigneeVerified) && request.resource.attr.assigneeVerified == true)
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedAssignees }}])
-            && !(request.resource.attr.assignee in [{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedAssignees }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedAssignees }}])
+            && !(request.resource.attr.assignee in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedAssignees }}])
       output:
         when:
           ruleActivated: >-
@@ -165,8 +165,8 @@ resourcePolicy:
             request.resource.attr.assigneeVerified == true &&
             has(request.resource.attr.assignee) && request.resource.attr.assignee
             != ""
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedAssignees }}])
-            && !(request.resource.attr.assignee in [{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedAssignees }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedAssignees }}])
+            && !(request.resource.attr.assignee in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedAssignees }}])
       output:
         when:
           ruleActivated: >-
@@ -182,8 +182,8 @@ resourcePolicy:
           expr: >-
             has(request.resource.attr.issueType) && request.resource.attr.issueType
             != ""
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedIssueTypes }}])
-            && !(request.resource.attr.issueType in [{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedIssueTypes }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedIssueTypes }}])
+            && !(request.resource.attr.issueType in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedIssueTypes }}])
       output:
         when:
           ruleActivated: >-
@@ -200,7 +200,7 @@ resourcePolicy:
             request.resource.attr.assigneeVerified == true &&
             (!has(request.resource.attr.assignee) || request.resource.attr.assignee
             == "")
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.jiraAllowedAssignees }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.jira.allowedAssignees }}])
       output:
         when:
           ruleActivated: >-

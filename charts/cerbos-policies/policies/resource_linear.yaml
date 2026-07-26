@@ -1,7 +1,7 @@
 ---
 # linear_team policy: deny a save_issue call that supplies (or
 # whose target issue currently HAS, per a live resolution) a team other than
-# the allowed one (${linearAllowedTeams}, from values.yaml (clusterVars));
+# the allowed one (policy.workManagement.linear.allowedTeams);
 # deny a save_project call whose addTeams/setTeams (or whose
 # target project's CURRENT teams, per a live resolution) contain any team
 # other than the allowed one; deny a save_comment
@@ -99,7 +99,7 @@ resourcePolicy:
           expr: >-
             has(request.resource.attr.teamId) &&
             !(request.resource.attr.teamId in
-            [{{ include "cerbos-policies.celList" .Values.clusterVars.linearAllowedTeams }}])
+            [{{ include "cerbos-policies.celList" .Values.policy.workManagement.linear.allowedTeams }}])
       output:
         when:
           ruleActivated: >-
@@ -113,7 +113,7 @@ resourcePolicy:
           expr: >-
             has(request.resource.attr.teams) &&
             request.resource.attr.teams.exists(t, !(t in
-            [{{ include "cerbos-policies.celList" .Values.clusterVars.linearAllowedTeams }}]))
+            [{{ include "cerbos-policies.celList" .Values.policy.workManagement.linear.allowedTeams }}]))
       output:
         when:
           ruleActivated: >-
@@ -129,7 +129,7 @@ resourcePolicy:
             request.resource.attr.isCreate == "true" &&
             (!has(request.resource.attr.assignee) || request.resource.attr.assignee
             == "")
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.linearAllowedAssignees }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.linear.allowedAssignees }}])
       output:
         when:
           ruleActivated: >-
@@ -146,8 +146,8 @@ resourcePolicy:
             != ""
             && request.resource.attr.assignee != "me"
             && !(has(request.resource.attr.assigneeVerified) && request.resource.attr.assigneeVerified == true)
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.linearAllowedAssignees }}])
-            && !(request.resource.attr.assignee in [{{ include "cerbos-policies.celList" .Values.clusterVars.linearAllowedAssignees }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.linear.allowedAssignees }}])
+            && !(request.resource.attr.assignee in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.linear.allowedAssignees }}])
       output:
         when:
           ruleActivated: >-
@@ -165,8 +165,8 @@ resourcePolicy:
             has(request.resource.attr.assignee) && request.resource.attr.assignee
             != ""
             && request.resource.attr.assignee != "me"
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.linearAllowedAssignees }}])
-            && !(request.resource.attr.assignee in [{{ include "cerbos-policies.celList" .Values.clusterVars.linearAllowedAssignees }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.linear.allowedAssignees }}])
+            && !(request.resource.attr.assignee in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.linear.allowedAssignees }}])
       output:
         when:
           ruleActivated: >-
@@ -184,7 +184,7 @@ resourcePolicy:
             request.resource.attr.assigneeVerified == true &&
             (!has(request.resource.attr.assignee) || request.resource.attr.assignee
             == "")
-            && !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.linearAllowedAssignees }}])
+            && !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.linear.allowedAssignees }}])
       output:
         when:
           ruleActivated: >-

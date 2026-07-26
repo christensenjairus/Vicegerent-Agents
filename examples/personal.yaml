@@ -1,24 +1,31 @@
 ---
 # Personal machine overrides. Omitted settings inherit values.defaults.yaml.
-clusterVars:
-  githubAllowedRepos:
-    - christensenjairus/vicegerent-agents
-    - christensenjairus/clustercreator
-  githubUsername: christensenjairus
-  gitlabAllowedProjects: ['7', '148', '150']
-  gitlabUsername: jchristensen
-  jiraAllowedProjects: [CHANGE]
-  linearAllowedTeams:
-    - 91f312b9-73e9-45ea-8b80-4d3a1ef7aff9
-    - HAHomelabs
-    - HAH
-  grafanaDeniedDatasourceUids: [fess5o6x6evb4b]
-  grafanaDeniedDatasourceNames: [dev-opensearch-datasource]
-  notionScratchpadPageId: 393de8859710809c9f5ec57a91d2c81a
-  notionAllowedParentPageIds: [1ccde885971080989baffe615ee5922b]
-  notionUserId: 80ef9a06-7ab7-4479-b971-effdd3aa247c
-  alertmanagerMaxSilenceSeconds: '1209600'
-  alertmanagerCreatedBy: jchristensen
+policy:
+  sourceControl:
+    github:
+      allowedRepos:
+        - christensenjairus/vicegerent-agents
+        - christensenjairus/clustercreator
+      username: christensenjairus
+    gitlab:
+      allowedProjects: ['7', '148', '150']
+      username: jchristensen
+  workManagement:
+    jira:
+      allowedProjects: [CHANGE]
+    linear:
+      allowedTeams: [91f312b9-73e9-45ea-8b80-4d3a1ef7aff9, HAHomelabs, HAH]
+  dataAccess:
+    grafana:
+      deniedDatasourceUids: [fess5o6x6evb4b]
+      deniedDatasourceNames: [dev-opensearch-datasource]
+  notion:
+    scratchpadPageId: 393de8859710809c9f5ec57a91d2c81a
+    allowedParentPageIds: [1ccde885971080989baffe615ee5922b]
+    userId: 80ef9a06-7ab7-4479-b971-effdd3aa247c
+  alertmanager:
+    maxSilenceSeconds: 1209600
+    createdBy: jchristensen
 agents:
   - name: hermes
     obsidian:
@@ -32,24 +39,23 @@ agents:
         enabled: true
       zai:
         enabled: true
-    networkAllowlist:
-      cnameChainedFQDN: gitlab.hahomelabs.com
-      cnameChain: uw1-ddns.hahomelabs.com,uw1-hahomelabs.ddns.net
+    directEgress:
+      ssh:
+        fqdn: gitlab.hahomelabs.com
+        cnameChain: [uw1-ddns.hahomelabs.com, uw1-hahomelabs.ddns.net]
       slackFQDNs:
         - slack.com
         - wss-primary.slack.com
         - wss-backup.slack.com
         - files.slack.com
       edgeTtsFQDNs: [speech.platform.bing.com]
-    config: |-
+    config:
       model:
         provider: anthropic
       agent:
-        system_prompt: You are a technical expert. Provide detailed, accurate technical information.
-        disabled_toolsets:
-          - computer_use
-          - browser
-          - image_gen
+        system_prompt: You are a technical expert. Provide detailed, accurate technical
+          information.
+        disabled_toolsets: [computer_use, browser, image_gen]
       tts:
         provider: edge
     soul: |-
@@ -80,11 +86,16 @@ agents:
       - When a task needs external data or a real action, search your available tools for the right one and use it
       - Don't guess, hand-wave, or give up when a tool could get the real answer
 egress:
-  apexWildcardDomains: github.com,githubusercontent.com
-  exactOnlyDomains: pypi.org,files.pythonhosted.org,proxy.golang.org,sum.golang.org,storage.googleapis.com
-  replicaCount: 2
+  wildcardDomains: [github.com, githubusercontent.com]
+  exactDomains:
+    - pypi.org
+    - files.pythonhosted.org
+    - proxy.golang.org
+    - sum.golang.org
+    - storage.googleapis.com
 replicas:
   agentgatewayProxy: 2
   mcpCerbosShim: 2
   searxng: 2
   cerbos: 2
+  egressProxy: 2

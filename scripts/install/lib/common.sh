@@ -34,14 +34,6 @@ helmc() { helm --kube-context "$KUBE_CONTEXT" "$@"; }
 mktemp_f() { mktemp "$WORKDIR/f.XXXXXX"; }
 mktemp_d() { mktemp -d "$WORKDIR/d.XXXXXX"; }
 
-# Write the values.yaml `egress:` block, re-rooted to top level, to a temp file
-# consumable as `charts/egress-proxy` values. Prints the temp file path.
-mv_slice_egress() {
-  local out; out="$(mktemp_f)"
-  yq '.egress' "$VALUES_FILE" > "$out"
-  printf '%s' "$out"
-}
-
 # Write the values.yaml `agents[<idx>]` entry, re-rooted to top level, to a temp
 # file consumable as `charts/agent` values. Prints the temp file path.
 mv_slice_agent() {
@@ -50,19 +42,11 @@ mv_slice_agent() {
   printf '%s' "$out"
 }
 
-# Write the values.defaults.yaml `egress:` block, re-rooted to top level, to a
-# temp file layered UNDER the machine egress slice. Prints the temp file path.
-defaults_slice_egress() {
-  local out; out="$(mktemp_f)"
-  yq '.egress' "$DEFAULTS_FILE" > "$out"
-  printf '%s' "$out"
-}
-
-# Write the values.defaults.yaml `agents[0]` default template, re-rooted to top
+# Write the values.defaults.yaml `agentDefaults` map, re-rooted to top
 # level, to a temp file layered UNDER each machine agent slice. Prints the path.
 defaults_slice_agent() {
   local out; out="$(mktemp_f)"
-  yq '.agents[0]' "$DEFAULTS_FILE" > "$out"
+  yq '.agentDefaults' "$DEFAULTS_FILE" > "$out"
   printf '%s' "$out"
 }
 
@@ -117,6 +101,23 @@ require_agent_names() {
     [[ -n "$n" && "$n" != "null" ]] \
       || die "agents[$i].name is required in $VALUES_FILE (it names the Helm release and every resource)"
   done
+}
+
+validate_values_schema() {
+  local legacy
+  legacy="$(yq -r '[
+    (has("clusterVars")),
+    ((.egress // {}) | has("apexWildcardDomains")),
+    ((.egress // {}) | has("exactOnlyDomains")),
+    ((.egress // {}) | has("internalAllowlistCIDRs")),
+    ((.egress // {}) | has("replicaCount")),
+    ([.agents[]? | has("networkAllowlist")] | any),
+    ([.agents[]? | (.storage // {}) | has("gitrepos")] | any),
+    ([.agents[]? | (.tuning // {}) | has("gatewayTimeout") or has("clarifyTimeout")] | any),
+    ([.agents[]? | (.tuning.vmcp // {}) | has("timeout") or has("connectTimeout")] | any),
+    ([.agents[]? | .config? | type == "!!str"] | any)
+  ] | any' "$VALUES_FILE")"
+  [[ "$legacy" != "true" ]] || die "$VALUES_FILE uses the retired values schema; migrate it from clusterVars/networkAllowlist/comma-separated egress fields to policy/directEgress/list fields (see values.example.yaml)"
 }
 
 preflight_agent_secrets() {

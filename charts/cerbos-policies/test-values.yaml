@@ -3,41 +3,51 @@
 # (the operator's real work-cluster scoping). NOT machine config and NOT secret
 # -- these are public repo/project/team identifiers used only so validate.sh can
 # run `cerbos compile` WITH the test fixtures. See charts/cerbos-policies/tests/.
-clusterVars:
-  githubAllowedRepos:
-    - moveworks-emu/moveworks
-    - moveworks-emu/k8s-manifests
-    - moveworks-emu/sec
-    - jchristensen_movester/moveworks
-    - jchristensen_movester/k8s-manifests
-    - christensenjairus/vicegerent-agents
-    - jchristensen_movester/Knowledge-Vault
-  githubForkRequiredOwners: [moveworks-emu]
-  githubForkOwners: [jchristensen_movester]
-  githubUsername: jchristensen_movester
+policy:
+  sourceControl:
+    github:
+      allowedRepos:
+        - moveworks-emu/moveworks
+        - moveworks-emu/k8s-manifests
+        - moveworks-emu/sec
+        - jchristensen_movester/moveworks
+        - jchristensen_movester/k8s-manifests
+        - christensenjairus/vicegerent-agents
+        - jchristensen_movester/Knowledge-Vault
+      forkRequiredOwners: [moveworks-emu]
+      forkOwners: [jchristensen_movester]
+      username: jchristensen_movester
   # Both a numeric id and a path form on purpose: production canonicalizes to
   # the numeric id, but the fixtures also exercise the policy's own
   # case-insensitive path fallback for when canonicalization is unavailable.
-  gitlabAllowedProjects: ['148', '7', jchristensen/vicegerent-agents]
-  gitlabUsername: jchristensen
-  jiraAllowedProjects: [CHANGE]
-  jiraAllowedAssignees: [jchristensen@moveworks.ai]
-  jiraAllowedIssueTypes:
-    - Environment Change
-    - Deploy Service Specific
-    - Service Restart
-  linearAllowedTeams:
-    - 6deab0c5-9bda-4f82-b552-41f4aa9e449b
-    - DevOps
-    - DEVOPS
-  linearAllowedAssignees: [jchristensen@moveworks.ai, Jairus Christensen]
-  pagerdutyAllowedServiceIds: [PJD41LB, PV3S4O5, PORBNK3, P7X89U2]
-  grafanaDeniedDatasourceUids: [fess5o6x6evb4b]
-  grafanaDeniedDatasourceNames: [dev-opensearch-datasource]
-  elasticDeniedIndexPatterns: [snowflake, Salesforce]
-  notionScratchpadPageId: 1ea588d8909f80edb0cef38d0aeaf64f  # pragma: allowlist secret (Notion page id)
-  alertmanagerMaxSilenceSeconds: '86400'
-  alertmanagerCreatedBy: jchristensen
-  webCrawlMaxLimit: '200'
-  webCrawlMaxDepth: '3'
-  webCrawlMaxBreadth: '50'
+    gitlab:
+      allowedProjects: ['148', '7', jchristensen/vicegerent-agents]
+      username: jchristensen
+  workManagement:
+    jira:
+      allowedProjects: [CHANGE]
+      allowedAssignees: [jchristensen@moveworks.ai]
+      allowedIssueTypes:
+        - Environment Change
+        - Deploy Service Specific
+        - Service Restart
+    linear:
+      allowedTeams: [6deab0c5-9bda-4f82-b552-41f4aa9e449b, DevOps, DEVOPS]
+      allowedAssignees: [jchristensen@moveworks.ai, Jairus Christensen]
+    pagerduty:
+      allowedServiceIds: [PJD41LB, PV3S4O5, PORBNK3, P7X89U2]
+  dataAccess:
+    grafana:
+      deniedDatasourceUids: [fess5o6x6evb4b]
+      deniedDatasourceNames: [dev-opensearch-datasource]
+    elastic:
+      deniedIndexPatterns: [snowflake, Salesforce]
+  notion:
+    scratchpadPageId: 1ea588d8909f80edb0cef38d0aeaf64f  # pragma: allowlist secret (Notion page id)
+  alertmanager:
+    maxSilenceSeconds: 86400
+    createdBy: jchristensen
+  webCrawl:
+    maxLimit: 200
+    maxDepth: 3
+    maxBreadth: 50

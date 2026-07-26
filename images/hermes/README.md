@@ -30,7 +30,7 @@ make push
 
 ## Base pin
 
-`FROM` is pinned by **tag + digest**. The tag keeps the reference Renovate-trackable (an upstream bump opens an MR); the digest makes the build reproducible. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agents[0].image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
+`FROM` is pinned by **tag + digest**. The tag keeps the reference Renovate-trackable (an upstream bump opens an MR); the digest makes the build reproducible. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
 
 ## Bakes
 

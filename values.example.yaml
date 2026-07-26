@@ -2,25 +2,33 @@
 # Copy this deltas-only example to the gitignored values.yaml and customize it for your machine. Omitted settings inherit values.defaults.yaml; secrets are provisioned separately with `./vicegerent setup secrets`.
 # See examples/ for complete personal and work configurations.
 # Machine-wide authorization and identity
-clusterVars:
+policy:
+  sourceControl:
+    github:
   # GitHub owner/repo pairs agents may write to, and this machine's GitHub login.
-  githubAllowedRepos: [your-org/your-repo]
-  githubUsername: your-github-username
+      allowedRepos: [your-org/your-repo]
+      username: your-github-username
   # GitLab projects agents may act on (reads included). Prefer the numeric id:
   # any spelling an agent sends is resolved to it before matching.
-  gitlabAllowedProjects: ['12345']
-  gitlabUsername: your-gitlab-username
+    gitlab:
+      allowedProjects: ['12345']
+      username: your-gitlab-username
   # Linear live lookups return display names, so include every form of an identity.
-  jiraAllowedProjects: [PROJ]
-  jiraAllowedAssignees: [you@example.com]
-  linearAllowedTeams: [your-linear-team-uuid, YourTeam, TEAM]
-  linearAllowedAssignees: [you@example.com, Your Name]
+  workManagement:
+    jira:
+      allowedProjects: [PROJ]
+      allowedAssignees: [you@example.com]
+    linear:
+      allowedTeams: [your-linear-team-uuid, YourTeam, TEAM]
+      allowedAssignees: [you@example.com, Your Name]
   # Notion Scratchpad page, and this machine's Notion user id (deny-not-own-page gate).
-  notionScratchpadPageId: your-notion-scratchpad-page-id
-  notionUserId: your-notion-user-id
+  notion:
+    scratchpadPageId: your-notion-scratchpad-page-id
+    userId: your-notion-user-id
   # Empty Grafana and Elastic denylists impose no restriction. Empty notionAllowedParentPageIds keeps writes Scratchpad-only.
   # This machine's fixed Alertmanager silence-creator identity.
-  alertmanagerCreatedBy: your-username
+  alertmanager:
+    createdBy: your-username
 # One chart release per agent, up to ten. Dashboard NodePorts use 30119-30128 in list order.
 agents:
   - name: my-first-agent
@@ -37,19 +45,21 @@ agents:
     failover:
       provider: ''
     # Cilium requires every intermediate CNAME in the chain.
-    networkAllowlist:
-      cnameChainedFQDN: git.example.com
-      cnameChain: ddns-a.example.com,ddns-b.example.net
+    directEgress:
+      ssh:
+        fqdn: git.example.com
+        cnameChain: [ddns-a.example.com, ddns-b.example.net]
       slackFQDNs:
         - slack.com
         - wss-primary.slack.com
         - wss-backup.slack.com
         - files.slack.com
-    config: |-
+    config:
       model:
         provider: anthropic
       agent:
-        system_prompt: You are a technical expert. Provide detailed, accurate technical information.
+        system_prompt: You are a technical expert. Provide detailed, accurate technical
+          information.
     # Personality and voice only; the chart appends its fixed environment guidance.
     soul: |-
       # Personality
@@ -61,8 +71,13 @@ agents:
       - Push back when something is a bad idea
       - Admit uncertainty plainly
 egress:
-  apexWildcardDomains: github.com,githubusercontent.com
-  exactOnlyDomains: pypi.org,files.pythonhosted.org,proxy.golang.org,sum.golang.org,storage.googleapis.com
+  wildcardDomains: [github.com, githubusercontent.com]
+  exactDomains:
+    - pypi.org
+    - files.pythonhosted.org
+    - proxy.golang.org
+    - sum.golang.org
+    - storage.googleapis.com
 # Render only the Anthropic platform backend.
 models:
   openai:

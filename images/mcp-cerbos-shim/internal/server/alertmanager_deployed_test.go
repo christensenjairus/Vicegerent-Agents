@@ -259,11 +259,11 @@ func TestDeployedAlertmanagerMapping_CreateSilenceForcesCreatedBy(t *testing.T) 
 	}
 	_, args := decodeMutated(t, res)
 	// The mapping is Helm-rendered here (deployedMapping renders the chart), so
-	// .Values.clusterVars.alertmanagerCreatedBy is substituted -- values.example.yaml
+	// .Values.policy.alertmanager.createdBy is substituted -- values.example.yaml
 	// sets it to "your-username". The force override must replace the caller's value
-	// with that resolved cluster-var identity.
+	// with that resolved policy identity.
 	if args["createdBy"] != "your-username" {
-		t.Errorf("forced arg createdBy = %v, want the resolved cluster-var your-username (not the caller-supplied value)", args["createdBy"])
+		t.Errorf("forced arg createdBy = %v, want the resolved policy identity your-username (not the caller-supplied value)", args["createdBy"])
 	}
 }
 

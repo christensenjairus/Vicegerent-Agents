@@ -84,8 +84,8 @@ resourcePolicy:
         match:
           expr: >-
             has(request.resource.attr.serviceIds) &&
-            !("*" in [{{ include "cerbos-policies.celList" .Values.clusterVars.pagerdutyAllowedServiceIds }}]) &&
-            request.resource.attr.serviceIds.exists(s, !(s in [{{ include "cerbos-policies.celList" .Values.clusterVars.pagerdutyAllowedServiceIds }}]))
+            !("*" in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.pagerduty.allowedServiceIds }}]) &&
+            request.resource.attr.serviceIds.exists(s, !(s in [{{ include "cerbos-policies.celList" .Values.policy.workManagement.pagerduty.allowedServiceIds }}]))
       output:
         when:
           ruleActivated: >-

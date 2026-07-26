@@ -127,23 +127,17 @@ data:
     ]
 
     EXTERNAL_FQDN_ALLOWLIST = {
-        {{- range (splitList "," .Values.apexWildcardDomains) }}
-        {{- if . }}
+        {{- range .Values.egress.wildcardDomains }}
         "{{ . }}",
         {{- end }}
-        {{- end }}
-        {{- range (splitList "," .Values.exactOnlyDomains) }}
-        {{- if . }}
+        {{- range .Values.egress.exactDomains }}
         "{{ . }}",
-        {{- end }}
         {{- end }}
         "httpbin.io",  # echo service — used by the redaction test suite only.
     }
     EXTERNAL_FQDN_WILDCARD_SUFFIXES = (
-        {{- range (splitList "," .Values.apexWildcardDomains) }}
-        {{- if . }}
+        {{- range .Values.egress.wildcardDomains }}
         ".{{ . }}",
-        {{- end }}
         {{- end }}
     )
 

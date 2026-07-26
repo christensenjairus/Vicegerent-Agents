@@ -63,11 +63,11 @@ resourcePolicy:
         match:
           expr: >-
             has(request.resource.attr.limit) &&
-            int(request.resource.attr.limit) > {{ .Values.clusterVars.webCrawlMaxLimit }}
+            int(request.resource.attr.limit) > {{ .Values.policy.webCrawl.maxLimit }}
       output:
         when:
           ruleActivated: >-
-            "Crawl/map limit exceeds this agent's cap of {{ .Values.clusterVars.webCrawlMaxLimit }}"
+            "Crawl/map limit exceeds this agent's cap of {{ .Values.policy.webCrawl.maxLimit }}"
             + " links. Lower the limit, or ask a human to raise the cap."
     - name: deny-depth-too-high
       actions: [crawl]
@@ -77,11 +77,11 @@ resourcePolicy:
         match:
           expr: >-
             has(request.resource.attr.maxDepth) &&
-            int(request.resource.attr.maxDepth) > {{ .Values.clusterVars.webCrawlMaxDepth }}
+            int(request.resource.attr.maxDepth) > {{ .Values.policy.webCrawl.maxDepth }}
       output:
         when:
           ruleActivated: >-
-            "Crawl/map depth exceeds this agent's cap of {{ .Values.clusterVars.webCrawlMaxDepth }}."
+            "Crawl/map depth exceeds this agent's cap of {{ .Values.policy.webCrawl.maxDepth }}."
             + " Lower max_depth/maxDiscoveryDepth, or ask a human to raise the cap."
     - name: deny-breadth-too-high
       actions: [crawl]
@@ -91,11 +91,11 @@ resourcePolicy:
         match:
           expr: >-
             has(request.resource.attr.maxBreadth) &&
-            int(request.resource.attr.maxBreadth) > {{ .Values.clusterVars.webCrawlMaxBreadth }}
+            int(request.resource.attr.maxBreadth) > {{ .Values.policy.webCrawl.maxBreadth }}
       output:
         when:
           ruleActivated: >-
-            "Crawl/map breadth exceeds this agent's cap of {{ .Values.clusterVars.webCrawlMaxBreadth }}."
+            "Crawl/map breadth exceeds this agent's cap of {{ .Values.policy.webCrawl.maxBreadth }}."
             + " Lower max_breadth, or ask a human to raise the cap."
     - name: allow-all
       actions: ['*']
