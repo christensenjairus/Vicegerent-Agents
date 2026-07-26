@@ -61,48 +61,48 @@ agents:
     config:
       model:
         default: gpt-5.6-terra
-        provider: openai
+        provider: openai-api
       model_aliases:
         sol:
           model: gpt-5.6-sol
-          provider: openai
+          provider: openai-api
         terra:
           model: gpt-5.6-terra
-          provider: openai
+          provider: openai-api
         luna:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
       delegation:
         model: gpt-5.6-terra
-        provider: openai
+        provider: openai-api
       auxiliary:
         vision:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
         title_generation:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
         approval:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
         compression:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
         web_extract:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
         triage_specifier:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
         kanban_decomposer:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
         curator:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
         monitor:
           model: gpt-5.6-luna
-          provider: openai
+          provider: openai-api
       agent:
         system_prompt: You are a technical expert. Provide detailed, accurate technical
           information.
