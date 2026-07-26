@@ -6,7 +6,9 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import stat
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -17,6 +19,19 @@ SPEC = importlib.util.spec_from_file_location("vicegerent_mcp", MODULE_PATH)
 assert SPEC and SPEC.loader
 vicegerent_mcp = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(vicegerent_mcp)
+
+
+class InternalKubeconfigTests(unittest.TestCase):
+    def test_generated_kubeconfig_is_owner_readable_only(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="apiVersion: v1\n", stderr="")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp.subprocess, "run", return_value=completed),
+        ):
+            path = vicegerent_mcp.write_internal_kubeconfig("vicegerent", Path(directory))
+
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            self.assertEqual(path.read_text(encoding="utf-8"), completed.stdout)
 
 
 class StoreHiddenSecretTests(unittest.TestCase):
