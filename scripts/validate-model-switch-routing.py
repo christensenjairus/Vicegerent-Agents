@@ -257,7 +257,43 @@ def main() -> int:
         for index, (label, agent, enabled) in enumerate(scenarios):
             rendered, config = render(defaults, agent, tmpdir / f"agent-{index}.yaml")
             inspect(label, rendered, config, enabled, failures)
+            expected_reasoning = {
+                default_values["providers"][name]["model"]:
+                    default_values["providers"][name]["reasoningEffort"]
+                for name in enabled
+            }
+            actual_reasoning = (config.get("agent") or {}).get("reasoning_overrides") or {}
+            if actual_reasoning != expected_reasoning:
+                failures.append(
+                    f"{label}: reasoning overrides are {actual_reasoning!r}, "
+                    f"expected {expected_reasoning!r}"
+                )
             rendered_configs.append((label, rendered, config))
+
+        custom_efforts = {
+            "anthropic": "low", "openai": "high", "deepseek": "medium", "zai": "max",
+        }
+        custom_reasoning_agent = {
+            "providers": {
+                name: {"enabled": True, "reasoningEffort": effort}
+                for name, effort in custom_efforts.items()
+            },
+            "tuning": {"reasoningEffort": "none"},
+        }
+        _, custom_reasoning_config = render(
+            defaults, custom_reasoning_agent, tmpdir / "custom-reasoning.yaml"
+        )
+        expected_reasoning = {
+            default_values["providers"][name]["model"]: effort
+            for name, effort in custom_efforts.items()
+        }
+        custom_agent_config = custom_reasoning_config.get("agent") or {}
+        if custom_agent_config.get("reasoning_effort") != "none":
+            failures.append("custom-reasoning: global reasoning fallback was not preserved")
+        if custom_agent_config.get("reasoning_overrides") != expected_reasoning:
+            failures.append(
+                "custom-reasoning: provider-specific reasoning efforts were not preserved"
+            )
 
         invalid = (
             ("unknown-failover", {"failover": {"provider": "evil"}}),

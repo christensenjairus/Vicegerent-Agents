@@ -21,9 +21,10 @@ Usage:
         --chart-dir /path/to/charts/agent \\
         --values /path/to/values.defaults.yaml
 
-`--values` may be either the repo-root values.defaults.yaml (its agents[0]
-entry is sliced out automatically) or an already-sliced single-agent values
-file. charts/agent/values.yaml is intentionally empty and won't render.
+`--values` may be either the repo-root values.defaults.yaml (its
+`agentDefaults` entry is sliced out automatically) or an already-sliced
+single-agent values file. charts/agent/values.yaml is intentionally empty and
+won't render.
 
 Requires `helm` on PATH and, for the behavioral check, a Hermes install on
 PYTHONPATH (set HERMES_HOME or just run inside the hermes-agent image/venv
@@ -50,7 +51,12 @@ def render_config_yaml(chart_dir: str, values_path: str) -> dict:
     # agent slice (no top-level `agents`) is passed through unchanged.
     with open(values_path) as f:
         loaded = yaml.safe_load(f) or {}
-    agent_values = loaded["agents"][0] if isinstance(loaded, dict) and loaded.get("agents") else loaded
+    if isinstance(loaded, dict) and loaded.get("agents"):
+        agent_values = loaded["agents"][0]
+    elif isinstance(loaded, dict) and loaded.get("agentDefaults"):
+        agent_values = loaded["agentDefaults"]
+    else:
+        agent_values = loaded
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
         yaml.safe_dump(agent_values, tf)
         tmp = tf.name
