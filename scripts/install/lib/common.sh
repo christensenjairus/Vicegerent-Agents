@@ -126,3 +126,22 @@ preflight_agent_secrets() {
   done < <(yq -r '.agents[].name' "$VALUES_FILE")
   info "Agent secrets present."
 }
+
+# True if the host's `thv vmcp serve` process is running. The agent pod's
+# wait-deps initContainer (charts/agent/templates/_sandbox.tpl) blocks startup
+# until it can reach vMCP through agentgateway, so an agents-stage install with
+# vMCP down leaves the pod stuck in Init until the operator runs `vicegerent
+# start`.
+vmcp_running() {
+  pgrep -f "vmcp serve" >/dev/null 2>&1
+}
+
+# Yellow heads-up, only shown when vMCP isn't up, right before the agents stage
+# installs the agent chart -- so the operator sees it before the pod goes
+# Pending/Init instead of discovering it later via `kubectl get pods`.
+warn_vmcp_down() {
+  vmcp_running && return 0
+  warn "vMCP does not appear to be running on the host (no 'vmcp serve' process found)."
+  warn "The agent pod's wait-deps init step blocks until vMCP is reachable, so it may not finish starting."
+  warn "Run './vicegerent start' (or './vicegerent mcp start') to bring up the host MCP stack."
+}

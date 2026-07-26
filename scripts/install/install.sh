@@ -192,7 +192,7 @@ for ((si = 0; si < stage_count; si++)); do
   case "$sname" in
     controllers) preflight_controller_secrets ;;
     platform)    preflight_platform_secrets ;;
-    agents)      preflight_agent_secrets ;;
+    agents)      preflight_agent_secrets; warn_vmcp_down ;;
   esac
 
   action_count="$(yq ".stages[$si].actions | length" "$STAGES_FILE")"
