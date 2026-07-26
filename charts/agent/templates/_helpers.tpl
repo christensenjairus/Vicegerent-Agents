@@ -2,17 +2,14 @@
 {{- .Release.Name -}}
 {{- end -}}
 
-{{- /* Shared coding-agent instruction: web_search/WebSearch/WebFetch are disabled
-      in codex, claude-code, and opencode because they're server-side and bypass the sealed
-      egress proxy. Single source of truth for codex's developer_instructions,
-      claude-code's seeded CLAUDE.md, and opencode's seeded AGENTS.md — keep them in sync by editing only here. */ -}}
+{{- /* Coding-harness-only instruction: Hermes uses the proxied web_search tool. */ -}}
 {{- define "vicegerent-agent.webSearchInstructions" -}}
 WebSearch/web_search and WebFetch are disabled — both are server-side tools that bypass the sealed egress proxy. For web search, curl $SEARXNG_URL/search?q=<query>&format=json instead.
 {{- end -}}
 
 {{- /* Shared coding-agent instruction: every external capability is exposed through the
       single vmcp MCP server, discovered by tool search rather than a fixed named list.
-      Single source of truth for hermes-agent's SOUL.md (via vicegerent-agent.environment),
+      Single source of truth for hermes-agent's SOUL.md,
       codex's developer_instructions, claude-code's seeded CLAUDE.md, and opencode's seeded AGENTS.md. */ -}}
 {{- define "vicegerent-agent.vmcpToolDiscovery" -}}
 Every external capability you need (Kubernetes, GitLab, Notion, monitoring, etc.) is exposed through the single `vmcp` MCP server's tool search, not a fixed list you already know. Before telling the user an action isn't possible, exhaustively search vmcp (vary your query wording) — most capabilities already exist there and just need the right search terms.
@@ -20,7 +17,7 @@ Every external capability you need (Kubernetes, GitLab, Notion, monitoring, etc.
 
 {{- /* Shared coding-agent instruction: use .worktrees correctly for any repo with a
       persistent clone under /workspace. Single source of truth for hermes-agent's
-      SOUL.md (via vicegerent-agent.environment), codex's developer_instructions,
+      SOUL.md, codex's developer_instructions,
       claude-code's seeded CLAUDE.md, and opencode's seeded AGENTS.md — a wrong-worktree edit was observed live wasting
       most of an hour of agent runtime (edits landed in the primary clone instead of
       the assigned .worktrees/<branch>, and a full-repo validation script then scanned
@@ -38,10 +35,26 @@ When working on a dedicated branch in a repo that already has a persistent clone
       the implementation differs, but the store and operating policy do not. */ -}}
 {{- define "vicegerent-agent.sharedKnowledge" -}}
 Mnemosyne is the only memory store; use it for facts, preferences, and insights. Its memories are shared by Hermes, Claude Code, Codex, and OpenCode, so never maintain a harness-specific memory store. The same is true of skills: Hermes owns the canonical tree at `$HERMES_HOME/skills`, published to every harness through its native skill-discovery path; skills created or updated from any harness must remain useful across all four.
-{{- if .Values.obsidian.vaultPath }} `OBSIDIAN_VAULT_PATH` points to the shared git-synced Obsidian vault at `{{ .Values.obsidian.vaultPath }}`. The vault is an Open Knowledge Format (OKF) bundle; before reading or writing it, consult its root `index.md` to locate and read the vault's complete OKF specification, then follow that local spec for concept frontmatter, bundle-relative Markdown links, indexes, and changelogs. Use the `obsidian` skill for vault reads, writes, and search, but the vault's own OKF spec overrides generic Obsidian conventions. Keep the vault, skills, and Mnemosyne as separate systems: durable human-reviewable knowledge belongs in the vault, reusable procedures belong in skills, and Mnemosyne should hold short recall facts or pointers to vault paths rather than copied vault content.{{- end }}
+{{- if .Values.obsidian.vaultPath }} `OBSIDIAN_VAULT_PATH` points to the shared git-synced Obsidian vault at `{{ .Values.obsidian.vaultPath }}`. The vault is an Open Knowledge Format (OKF) bundle; before reading or writing it, consult its root `index.md` to locate and read the vault's complete OKF specification, then follow that local spec for concept frontmatter, bundle-relative Markdown links, indexes, and changelogs. Use the `obsidian` skill for vault reads, writes, and search, but the vault's own OKF spec overrides generic Obsidian conventions. After medium-to-large vault changes, commit and push the vault so the work is durable and visible to other users. Treat the vault's `vicegerent` branch as its primary branch and push there as you would normally push to `main`, because agents cannot push to the protected `main` branch. Keep the vault, skills, and Mnemosyne as separate systems: durable human-reviewable knowledge belongs in the vault, reusable procedures belong in skills, and Mnemosyne should hold short recall facts or pointers to vault paths rather than copied vault content.{{- end }}
 {{- end -}}
 
-{{- define "vicegerent-agent.environment" -}}
+{{- /* The common prompt shared by Hermes and every standalone coding harness. */ -}}
+{{- define "vicegerent-agent.sharedSystemPrompt" -}}
+{{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
+
+{{ include "vicegerent-agent.worktreeDiscipline" . | trim }}
+
+{{ include "vicegerent-agent.sharedKnowledge" . | trim }}
+{{- end -}}
+
+{{- /* Standalone harnesses differ from Hermes only in their web tooling. */ -}}
+{{- define "vicegerent-agent.codingHarnessSystemPrompt" -}}
+{{ include "vicegerent-agent.webSearchInstructions" . | trim }}
+
+{{ include "vicegerent-agent.sharedSystemPrompt" . | trim }}
+{{- end -}}
+
+{{- define "vicegerent-agent.hermesInstructions" -}}
 # Environment
 You run inside a sealed agent sandbox: a non-root container on a
 locked-down Kubernetes cluster, installed by a staged Helm script. The platform is
@@ -60,16 +73,11 @@ your own capabilities, models, tools, and limits are configured.
 - **No cluster credentials by default.** Your service-account token is not
   mounted; you cannot read Secrets or mutate the cluster unless a specific
   capability was granted to you in the repo.
-- **Tools are an allowlist, but discovery is search, not memory.**
-  {{ include "vicegerent-agent.vmcpToolDiscovery" . }}
-  Only conclude a tool isn't wired up after exhausting vmcp search — that's a real gap, not a transient error.
 - **The filesystem is mostly ephemeral.** Only the mounted data and
   workspace volumes persist; everything else resets when the pod restarts.
   Clone repos and keep git worktrees under `/workspace` — it's the
   persistent volume for git repos and survives pod restarts; anywhere
   else is wiped.
-- **Use `.worktrees` correctly for any repo already cloned under `/workspace`.**
-  {{ include "vicegerent-agent.worktreeDiscipline" . }}
 
 ## When you hit a wall
 If a task is blocked by the sandbox itself — a missing tool, a sealed
@@ -94,30 +102,7 @@ Use `claude-code`, `codex`, or `opencode` for medium/large tasks and all code re
 Pick the model that fits the task: heavier reasoning for complex/design work, lighter/faster for quick fixes and alternatives.
 
 # Memory
-- {{ include "vicegerent-agent.sharedKnowledge" . }}
 - **Repo knowledge**: also add a terse bullet to `AGENTS.md` in your next PR.
-{{- if .Values.obsidian.vaultPath }}
-
-# Obsidian vault
-- `OBSIDIAN_VAULT_PATH` is set to `{{ .Values.obsidian.vaultPath }}` — a git-synced Obsidian vault.
-  It is the durable, version-controlled knowledge base: prefer it over ad-hoc notes for anything
-  meant to survive indefinitely and be reviewed/edited by a human.
-- Treat the vault as an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
-  bundle unless the user's existing vault says otherwise: one concept per markdown file, YAML
-  frontmatter (`type` required), `index.md` per directory for progressive disclosure, bundle-relative
-  links (`[text](/topic/concept.md)`), a `log.md` changelog.
-- Use the `obsidian` skill for reads/writes/search. Don't `git commit`/`git push` after every single
-  edit — batch them. Commit and push at the end of a work session, or at least once a day if the
-  session runs long, using the already-configured SSH key. The vault directory persists across pod
-  restarts either way; committing regularly is about off-site durability and human visibility, not
-  preventing data loss.
-- Keep skills (`$HERMES_HOME/skills/`) and the vault as separate systems — don't move or symlink
-  skills into the vault. Skills carry their own curator lifecycle (usage telemetry, staleness,
-  archiving) that assumes a skill-shaped directory, not an OKF bundle; cross-reference a skill by
-  name from a vault concept instead of merging the two.
-- Mnemosyne stays the fast-recall layer: store short pointers to vault concept paths there, not
-  copies of vault content, so the two stores don't drift out of sync.
-{{- end }}
 
 # Expectations
 - Workspace layout: one full clone per repo under /workspace/<repo-name> (git blame/log -p work inline).

@@ -7,5 +7,6 @@ metadata:
 data:
   SOUL.md: |-
     {{- $personality := .Values.soul | trimSuffix "\n" }}
-    {{- $environment := include "vicegerent-agent.environment" . }}
-    {{- printf "%s\n\n%s" $personality $environment | nindent 4 }}
+    {{- $shared := include "vicegerent-agent.sharedSystemPrompt" . }}
+    {{- $hermes := include "vicegerent-agent.hermesInstructions" . }}
+    {{- printf "%s\n\n%s\n\n%s" $personality $shared $hermes | nindent 4 }}
