@@ -158,6 +158,25 @@ var githubExistingPRTools = map[string]bool{
 	"github_request_copilot_review":     true,
 }
 
+// gitlabProjectResource and gitlabExistingMRTools identify the GitLab write
+// calls the MR-author resolution gate applies to -- the GitLab counterpart of
+// githubExistingPRTools above, same "a hallucinated resource id must not be
+// writable" rationale. Only update_merge_request qualifies: it is the one
+// mapped tool that mutates an EXISTING merge request's own fields (title/
+// description/labels/target_branch/state_event). create_merge_request has no
+// prior MR to check, the reads carry no ownership risk, and the MR note/thread/
+// discussion/draft-note tools are deliberately left OUT -- commenting on merge
+// requests the agent doesn't own is the intended use of those tools here (the
+// operator kept them in the allowlist for exactly that, unlike GitHub where
+// every PR-comment tool was removed outright). As with GitHub, no argument on
+// this tool could ever supply "author" directly -- an MR's author isn't
+// reassignable -- so this gate always resolves live state.
+const gitlabProjectResource = "gitlab_project"
+
+var gitlabExistingMRTools = map[string]bool{
+	"gitlab_update_merge_request": true,
+}
+
 // jiraProjectResource and jiraAssigneeGatedTools identify the Jira write
 // calls the ticket-assignee resolution gate applies to: update_issue,
 // add_comment, and transition_issue -- tools that directly edit/comment/
@@ -341,6 +360,30 @@ type Server struct {
 	// against ${githubUsername}.
 	githubPRAuthor upstream.ToolCaller
 
+	// gitlabMRAuthor, when set, resolves a project_id + merge_request_iid (or
+	// source_branch) to a merge request's real author via a live
+	// get_merge_request lookup -- a network round trip the CEL/Cerbos path
+	// can't make, same rationale as githubPRAuthor above. Used by every tool
+	// that writes to an EXISTING MR's own fields (gitlabExistingMRTools);
+	// create_merge_request has no prior MR to check. Injects the resolved
+	// username into the resource's mrAuthor attr so Cerbos's deny-not-own-mr
+	// rule (resource_gitlab.yaml) evaluates it against ${gitlabUsername}.
+	gitlabMRAuthor upstream.ToolCaller
+
+	// gitlabProjectCanonicalizer, when set, resolves any spelling of a GitLab
+	// project (numeric id, group/project path, percent-encoded path, or any
+	// casing of either path form -- all four verified live) to the single
+	// numeric id that project actually has, via a live get_project lookup.
+	// Unlike the ownership gates above this resolves an IDENTITY rather than
+	// an owner: without it ${gitlabAllowedProjects} is compared against
+	// project_id exactly as sent, so the same project named a different but
+	// equally valid way misses the allowlist and is denied -- fail-closed, but
+	// a false deny on legitimate work that the agent cannot diagnose. Injects
+	// the resolved id as the projectId attr Cerbos's deny-non-allowed-project
+	// rule reads, so an operator lists ONE canonical value per project instead
+	// of guessing every spelling agents might send.
+	gitlabProjectCanonicalizer upstream.ToolCaller
+
 	// jiraIssueAssignee, when set, resolves a Jira issue key to its CURRENT
 	// assignee via a live jira_jira_get_issue lookup -- a network round trip
 	// the CEL/Cerbos path can't make, same rationale as linearIssueTeam
@@ -466,6 +509,32 @@ func WithPagerdutyIncidentService(client upstream.ToolCaller) Option {
 func WithGithubPRAuthor(client upstream.ToolCaller) Option {
 	return func(s *Server) {
 		s.githubPRAuthor = client
+	}
+}
+
+// WithGitlabMRAuthor enables the GitLab existing-MR-write author-resolution
+// gate: every update_merge_request call has its target MR's real author
+// resolved via a live lookup. client resolves project_id + merge_request_iid
+// (or source_branch) to the MR's author username (production: an
+// upstream.Client to vMCP; tests: a stub). No identity parameter needed -- the
+// comparison value lives entirely in Cerbos's ${gitlabUsername}, same shape as
+// WithGithubPRAuthor.
+func WithGitlabMRAuthor(client upstream.ToolCaller) Option {
+	return func(s *Server) {
+		s.gitlabMRAuthor = client
+	}
+}
+
+// WithGitlabProjectCanonicalizer enables the GitLab project-canonicalization
+// gate: every mapped GitLab call has its project_id resolved to the project's
+// numeric id via a live get_project lookup before Cerbos evaluates the
+// allowlist. client resolves any accepted spelling to that id (production: an
+// upstream.Client to vMCP; tests: a stub). Without it the allowlist is matched
+// against the raw argument, so an operator must enumerate every spelling
+// agents might send; with it they list one canonical id per project.
+func WithGitlabProjectCanonicalizer(client upstream.ToolCaller) Option {
+	return func(s *Server) {
+		s.gitlabProjectCanonicalizer = client
 	}
 }
 
@@ -888,6 +957,72 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 		}
 	}
 
+	// GitLab project-canonicalization gate: runs BEFORE Cerbos and before the
+	// MR-author gate below, and unlike the ownership gates it resolves the
+	// resource's IDENTITY rather than its owner. GitLab accepts a project
+	// named four different ways -- numeric id, group/project path, the
+	// percent-encoded path, and any casing of either path form (all four
+	// verified against the live instance to hit the same project) -- but
+	// deny-non-allowed-project compares ${gitlabAllowedProjects} against
+	// project_id exactly as sent. Without this, the SAME allowlisted project
+	// named a different but equally valid way misses the list and is denied:
+	// fail-closed, but a false deny on legitimate work with a message
+	// ("outside the allowed project list") that actively misleads, and no way
+	// for the agent to know it should retry with another spelling. Resolving
+	// to the numeric id here means an operator lists ONE value per project.
+	//
+	// Applies to both project attrs: projectId, and targetProjectId (the
+	// second project create_issue_link/create_merge_request carry), which the
+	// same Cerbos rule checks against the same allowlist and so needs the same
+	// canonical form. Fails closed on lookup error -- an unresolvable project
+	// is not an allowlisted one. An already-numeric value short-circuits with
+	// no network call, so the common case costs nothing.
+	if res.ResourceType == gitlabProjectResource {
+		for _, key := range []string{"projectId", "targetProjectId"} {
+			raw, _ := res.Attr[key].(string)
+			if raw == "" {
+				continue
+			}
+			canonical, derr := s.checkGitlabProjectCanonical(ctx, raw)
+			if derr != nil {
+				log.Printf("deny: %s project canonicalization (%s=%q backend=%s): %v", cp.Name, key, raw, backend, derr)
+				return deny(derr.Error()), nil
+			}
+			res.Attr[key] = canonical
+		}
+	}
+
+	// GitLab MR-author gate: the GitLab counterpart of the GitHub gate above,
+	// same inject-then-Cerbos-decides shape -- it resolves the target merge
+	// request's real author via a live get_merge_request lookup and injects it
+	// into the resource's mrAuthor attr, so Cerbos's deny-not-own-mr rule
+	// (resource_gitlab.yaml) can catch a hallucinated/wrong merge_request_iid
+	// even though nothing in update_merge_request's own arguments ever names an
+	// "author" to check directly. The MR is selected exactly as the gated call
+	// selected it: by merge_request_iid when given, else by source_branch
+	// (update_merge_request accepts either, and get_merge_request takes both the
+	// same way), so the lookup can't resolve a DIFFERENT merge request than the
+	// one about to be written to. A call carrying no project_id or neither
+	// selector is already malformed and the gate is skipped rather than
+	// specially fail-closed here -- same "nothing verifiable, nothing to
+	// inject" posture as the GitHub gate's own missing-arg case. scalarArg
+	// (not a bare string assertion) because these are declared string but a
+	// caller naming a project/MR by number sends a JSON number, the same
+	// silent-miss the gitlabProjectAttr CEL helper guards against.
+	if gitlabExistingMRTools[cp.Name] && res.ResourceType == gitlabProjectResource {
+		projectID := scalarArg(cp.Arguments, "project_id")
+		mrIID := scalarArg(cp.Arguments, "merge_request_iid")
+		sourceBranch := scalarArg(cp.Arguments, "source_branch")
+		if projectID != "" && (mrIID != "" || sourceBranch != "") {
+			author, derr := s.checkGitlabMRAuthor(ctx, projectID, mrIID, sourceBranch)
+			if derr != nil {
+				log.Printf("deny: %s MR author lookup (project=%s iid=%q source_branch=%q backend=%s): %v", cp.Name, projectID, mrIID, sourceBranch, backend, derr)
+				return deny(derr.Error()), nil
+			}
+			res.Attr["mrAuthor"] = author
+		}
+	}
+
 	// Alertmanager silence-owner resolution gate: this runs BEFORE Cerbos
 	// and, like the GitHub PR-author gate above, doesn't deny directly -- it
 	// resolves the target silence's real createdBy via a live getSilences
@@ -1184,6 +1319,68 @@ func (s *Server) checkGithubPRAuthor(ctx context.Context, owner, repo string, pu
 	return author, nil
 }
 
+// checkGitlabProjectCanonical resolves any accepted spelling of a GitLab
+// project to its numeric id via a live lookup, or returns an error (used
+// verbatim as the deny reason) on any failure -- fail-closed, same contract as
+// checkGitlabMRAuthor above. An unresolvable project is not an allowlisted
+// one, so a 404 denying is correct rather than a regression.
+//
+// A value that is ALREADY all-digits is returned as-is with no network call:
+// GitLab project ids are numeric, a numeric project_id is by definition
+// already canonical, and this keeps the common case (and every existing
+// numeric-id allowlist entry) free of an extra round trip.
+func (s *Server) checkGitlabProjectCanonical(ctx context.Context, projectID string) (string, error) {
+	if isAllDigits(projectID) {
+		return projectID, nil
+	}
+	if s.gitlabProjectCanonicalizer == nil {
+		return "", fmt.Errorf("gitlab project-canonicalization gate not configured; denying call against project %q", projectID)
+	}
+	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
+	defer cancel()
+	canonical, err := upstream.CanonicalProjectID(ctx, s.gitlabProjectCanonicalizer, projectID)
+	if err != nil {
+		return "", fmt.Errorf("could not resolve this GitLab project (failing closed): %v", err)
+	}
+	return canonical, nil
+}
+
+// isAllDigits reports whether s is a non-empty run of ASCII digits. Used to
+// skip the canonicalization lookup for a project_id that is already a numeric
+// id. Deliberately not strconv.Atoi: that accepts a leading sign and would
+// treat "-148" as numeric.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// checkGitlabMRAuthor resolves project_id + merge_request_iid (or
+// source_branch) to the MR's real author username via a live lookup, or returns
+// an error (used verbatim as the deny reason) on any failure -- fail-closed
+// contract mirrors checkGithubPRAuthor above: an unconfigured gate or a lookup
+// error both deny rather than silently allow-through with no mrAuthor attr
+// (which would let the call skip Cerbos's deny-not-own-mr rule entirely, the
+// exact hole this gate closes).
+func (s *Server) checkGitlabMRAuthor(ctx context.Context, projectID, mrIID, sourceBranch string) (string, error) {
+	if s.gitlabMRAuthor == nil {
+		return "", fmt.Errorf("gitlab MR-author gate not configured; denying write to project %s merge request %s%s", projectID, mrIID, sourceBranch)
+	}
+	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
+	defer cancel()
+	author, err := upstream.MRAuthor(ctx, s.gitlabMRAuthor, projectID, mrIID, sourceBranch)
+	if err != nil {
+		return "", fmt.Errorf("could not verify this GitLab merge request's author (failing closed): %v", err)
+	}
+	return author, nil
+}
+
 // checkAlertmanagerSilenceOwner resolves silenceID to its real createdBy via
 // a live getSilences lookup, or returns an error (used verbatim as the deny
 // reason) on any failure -- fail-closed contract mirrors checkGithubPRAuthor
@@ -1252,6 +1449,28 @@ func coerceNumber(v any) (float64, bool) {
 		return f, err == nil
 	}
 	return 0, false
+}
+
+// scalarArg reads args[key] and renders a string or JSON number as its string
+// form ("" for a missing key or any other type). GitLab's project_id and
+// merge_request_iid are declared strings by the tool schema, but a caller naming
+// a project or MR by its number sends a JSON number (float64 after decoding), so
+// a bare args[key].(string) assertion reads it as absent -- the same silent-miss
+// the gitlabProjectAttr CEL helper guards against on the policy-attr side.
+// Numbers route through coerceNumber so this shares one definition of "what
+// shapes count as a number" with the PR-number gate rather than drifting from it.
+func scalarArg(args map[string]any, key string) string {
+	v, ok := args[key]
+	if !ok {
+		return ""
+	}
+	if s, isStr := v.(string); isStr {
+		return s
+	}
+	if n, isNum := coerceNumber(v); isNum {
+		return strconv.FormatFloat(n, 'f', -1, 64)
+	}
+	return ""
 }
 
 // pagerdutyIncidentIDsFromArgs extracts every incident id a

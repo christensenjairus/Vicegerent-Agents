@@ -30,12 +30,14 @@ type fakeUpstream struct {
 	text    string
 	err     error
 	calls   int
-	gotTool string // last tool name CallTool was invoked with
+	gotTool string         // last tool name CallTool was invoked with
+	gotArgs map[string]any // last argument map CallTool was invoked with
 }
 
-func (f *fakeUpstream) CallTool(_ context.Context, tool string, _ map[string]any) (*upstream.CallToolResult, error) {
+func (f *fakeUpstream) CallTool(_ context.Context, tool string, args map[string]any) (*upstream.CallToolResult, error) {
 	f.calls++
 	f.gotTool = tool
+	f.gotArgs = args
 	if f.err != nil {
 		return nil, f.err
 	}

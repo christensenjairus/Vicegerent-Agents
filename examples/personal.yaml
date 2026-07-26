@@ -7,6 +7,8 @@ clusterVars:
     - christensenjairus/vicegerent-agents
     - christensenjairus/clustercreator
   githubUsername: christensenjairus
+  gitlabAllowedProjects: ['7', '148', '150']
+  gitlabUsername: jchristensen
   jiraAllowedProjects: [CHANGE]
   linearAllowedTeams:
     - 91f312b9-73e9-45ea-8b80-4d3a1ef7aff9

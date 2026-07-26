@@ -96,29 +96,62 @@ func TestDeployedMapping_ReadOnlyToolNeverInvokesModerationChecker(t *testing.T)
 	}
 }
 
-// GitLab has zero mapping.yaml entries by design (no Cerbos policy at all --
-// see AGENTS.md/README.md). This proves the moderation gate still fires for
-// a GitLab-shaped write tool: it must reach the moderation checker BEFORE
-// the "tool not mapped" pass()/deny() branch, not be silently skipped by it.
-func TestDeployedMapping_UnmappedGitLabWriteToolStillInvokesModerationChecker(t *testing.T) {
+// create_snippet is a real @zereight/mcp-gitlab tool that is neither in the
+// vMCP tool allowlist nor a mapping.yaml key, so it exercises the same
+// unenumerated-tool path the verb heuristic exists for (see
+// TestIsModeratedWriteTool_GeneralizesToUnenumeratedTools). This proves the
+// moderation gate still fires for an UNMAPPED write tool: it must reach the
+// moderation checker BEFORE the "tool not mapped" pass()/deny() branch, not be
+// silently skipped by it.
+func TestDeployedMapping_UnmappedWriteToolStillInvokesModerationChecker(t *testing.T) {
+	d := &stubDecider{allow: true}
+	m := &stubModerationChecker{flagged: true, categories: []string{"harassment"}}
+	s := newDeployedServerWithModeration(t, d, m)
+
+	res, err := s.CheckRequest(context.Background(),
+		mcpReq("vmcp", "tools/call", toolCall("gitlab_create_snippet",
+			map[string]any{"project_id": "123", "title": "some flagged content", "content": "body text"})))
+	if err != nil {
+		t.Fatalf("CheckRequest: %v", err)
+	}
+	if !isDeny(res) {
+		t.Fatalf("expected deny: flagged content on an unmapped write tool")
+	}
+	if reason := res.GetError().GetReason(); !strings.Contains(reason, "flagged by the moderation gate") {
+		t.Fatalf("expected the moderation deny reason, got %q (looks like the unmapped-tool pass()/deny() branch fired instead)", reason)
+	}
+	if m.calls != 1 {
+		t.Errorf("expected exactly one moderation check even though gitlab_create_snippet has no mapping.yaml entry, got %d", m.calls)
+	}
+	if d.calls != 0 {
+		t.Errorf("Cerbos must NOT be consulted once the moderation gate denies, got %d calls", d.calls)
+	}
+}
+
+// The counterpart for a MAPPED tool: gitlab_create_issue now maps to
+// gitlab_project/access, and moderation must still run BEFORE Cerbos -- flagged
+// content is denied without the project allowlist ever being consulted, so the
+// deny reason the agent sees is the moderation one rather than a project-scope
+// message that would misdescribe why the call failed.
+func TestDeployedMapping_MappedGitLabWriteToolModeratesBeforeCerbos(t *testing.T) {
 	d := &stubDecider{allow: true}
 	m := &stubModerationChecker{flagged: true, categories: []string{"harassment"}}
 	s := newDeployedServerWithModeration(t, d, m)
 
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("gitlab_create_issue",
-			map[string]any{"project_id": "123", "title": "some flagged content", "description": "body text"})))
+			map[string]any{"project_id": "148", "title": "some flagged content", "description": "body text"})))
 	if err != nil {
 		t.Fatalf("CheckRequest: %v", err)
 	}
 	if !isDeny(res) {
-		t.Fatalf("expected deny: flagged content on an unmapped GitLab write tool")
+		t.Fatalf("expected deny: flagged content on a mapped GitLab write tool")
 	}
 	if reason := res.GetError().GetReason(); !strings.Contains(reason, "flagged by the moderation gate") {
-		t.Fatalf("expected the moderation deny reason, got %q (looks like the unmapped-tool pass()/deny() branch fired instead)", reason)
+		t.Fatalf("expected the moderation deny reason, got %q", reason)
 	}
 	if m.calls != 1 {
-		t.Errorf("expected exactly one moderation check even though gitlab_create_issue has no mapping.yaml entry, got %d", m.calls)
+		t.Errorf("expected exactly one moderation check, got %d", m.calls)
 	}
 	if d.calls != 0 {
 		t.Errorf("Cerbos must NOT be consulted once the moderation gate denies, got %d calls", d.calls)

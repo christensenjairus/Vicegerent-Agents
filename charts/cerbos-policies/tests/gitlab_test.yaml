@@ -1,0 +1,335 @@
+---
+# Fixtures use literal projects matching test-values.yaml's
+# gitlabAllowedProjects (and gitlabUsername for the own-MR gate) — validate.sh
+# compiles the rendered policy against them, so keep the two in sync. The
+# allowlist deliberately carries both id forms GitLab accepts for a project (a
+# numeric id and a group/project path), since agents send either.
+name: gitlab_project_allowlist_block_test
+description: GitLab calls targeting a project outside the allowlist are denied, as
+  are merge-request calls retargeting a protected branch, setting reviewers/assignees,
+  or writing to a merge request this agent didn't author; everything else is allowed.
+options:
+  now: '2026-07-02T00:00:00Z'
+principals:
+  hermes:
+    id: hermes
+    roles: [agent]
+resources:
+  numeric_project:
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148'}
+  other_numeric_project:
+    id: '7'
+    kind: gitlab_project
+    attr: {projectId: '7'}
+  path_project:
+    id: jchristensen/vicegerent-agents
+    kind: gitlab_project
+    attr: {projectId: jchristensen/vicegerent-agents}
+  disallowed_project:
+    id: '999'
+    kind: gitlab_project
+    attr: {projectId: '999'}
+  disallowed_path_project:
+    id: someoneelse/some-project
+    kind: gitlab_project
+    attr: {projectId: someoneelse/some-project}
+  path_form_of_allowed_numeric_project:
+    # The path form of project 7, which the allowlist carries only in its
+    # numeric form. In production the shim canonicalizes this to '7' before
+    # Cerbos ever sees it, so the real call is ALLOWED; this fixture bypasses
+    # the shim and feeds the raw path straight to the policy, proving the
+    # policy's own last-resort behaviour if canonicalization is unavailable:
+    # deny, never allow-through.
+    id: some-group/project-7
+    kind: gitlab_project
+    attr: {projectId: some-group/project-7}
+  mixed_case_path_project:
+    # Path entries are compared case-insensitively (both sides lowercased), so
+    # the allowlisted jchristensen/vicegerent-agents matches however it's
+    # capitalized — GitLab's own path lookups ignore case, verified live.
+    id: JChristensen/Vicegerent-Agents
+    kind: gitlab_project
+    attr: {projectId: JChristensen/Vicegerent-Agents}
+  canonicalized_numeric_from_path:
+    # What the shim actually hands Cerbos for a path-form call: the resolved
+    # numeric id. This is the production path for every spelling.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148'}
+  missing_project_id:
+    # project_id is optional on list_issues/my_issues/list_todos/
+    # list_merge_requests: an omitted one resolves to '' and is denied, mirroring how github_search_pull_requests with no owner/repo
+    # resolves to '/' and is denied. The id is '*' rather than '' because an
+    # empty resource id is an InvalidArgument to Cerbos, so eval.go substitutes
+    # '*' for it (this fixture's shape is what the shim really sends); the rule
+    # reads the projectId attr, not the id.
+    id: '*'
+    kind: gitlab_project
+    attr: {projectId: ''}
+  cross_project_link_allowed_target:
+    # create_issue_link/create_merge_request carry a SECOND project. Both ends
+    # inside the allowlist — allowed.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', targetProjectId: '7'}
+  cross_project_link_disallowed_target:
+    # An ALLOWED project_id carrying a write whose effect lands outside the
+    # allowlist — the side-channel this second check closes.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', targetProjectId: '999'}
+  cross_project_link_empty_target:
+    # Most mapped tools have no target_project_id arg, so the helper resolves
+    # it to '' — the empty-guard must not deny them.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', targetProjectId: ''}
+  create_mr_with_reviewers:
+    # create_merge_request setting reviewer_ids is denied outright.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'true'}
+  update_mr_with_reviewers:
+    # Same for update_merge_request, and for either arg — reviewer_ids and
+    # assignee_ids collapse into one hasReviewers attr because either pulls a
+    # human into the agent's own MR.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'true', mrAuthor: jchristensen}
+  create_mr_no_reviewers:
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'false'}
+  create_mr_with_reviewers_disallowed_project:
+    # Both guardrails apply at once; either alone would deny.
+    id: '999'
+    kind: gitlab_project
+    attr: {projectId: '999', hasReviewers: 'true'}
+  issue_with_assignees:
+    # create_issue/update_issue carry assignee_ids too, and deliberately do NOT
+    # get gitlabMergeRequestAttr — issue assignment stays unrestricted, so no
+    # hasReviewers attr exists for these at all.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148'}
+  update_mr_own_author:
+    # gitlabUsername is jchristensen (matching test-values.yaml) — the account
+    # this machine's GitLab PAT authenticates as. An MR the shim resolved as
+    # authored by that same user is allowed.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', mrAuthor: jchristensen}
+  update_mr_other_author:
+    # The shim resolved a DIFFERENT real author — denied regardless of what the
+    # call's own args say (update_merge_request has no author-setting arg to
+    # begin with; this catches a hallucinated merge_request_iid).
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', mrAuthor: someoneelse}
+  update_mr_other_author_disallowed_project:
+    id: '999'
+    kind: gitlab_project
+    attr: {projectId: '999', mrAuthor: someoneelse}
+  read_tool_no_author_attr:
+    # Reads (including the surviving note/discussion READ tools) and
+    # create_merge_request never get an mrAuthor attr at all — server.go only
+    # injects it for update_merge_request, the one tool that mutates an existing
+    # MR. The rule is has()-guarded, so its absence must not deny.
+    id: jchristensen/vicegerent-agents
+    kind: gitlab_project
+    attr: {projectId: jchristensen/vicegerent-agents}
+  mr_targeting_protected_branch:
+    # create/update_merge_request pointed at main — denied. Retargeting an
+    # already-approved MR at a protected branch is how an unreviewed diff gets
+    # merged there, so update is as gated as create.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'false', branch: main}
+  mr_targeting_master_branch:
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'false', branch: master}
+  mr_targeting_production_branch:
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'false', branch: production}
+  mr_targeting_feature_branch:
+    # An ordinary target_branch is untouched.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'false', branch: develop}
+  mr_no_target_branch:
+    # target_branch is optional on both tools, so the helper resolves it to ''
+    # — the empty-guard must not deny an MR that simply doesn't retarget.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'false', branch: ''}
+  branch_named_like_protected_but_not:
+    # Exact-match membership, not a prefix/substring test: 'main' is denied,
+    # 'maintenance' is not.
+    id: '148'
+    kind: gitlab_project
+    attr: {projectId: '148', hasReviewers: 'false', branch: maintenance}
+tests:
+  - name: calls confined to an allowed project are allowed
+    input:
+      principals: [hermes]
+      resources:
+        - numeric_project
+        - other_numeric_project
+        - path_project
+        - mixed_case_path_project
+        - canonicalized_numeric_from_path
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: mixed_case_path_project
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: canonicalized_numeric_from_path
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: numeric_project
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: other_numeric_project
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: path_project
+        actions: {access: EFFECT_ALLOW}
+  - name: calls targeting a project outside the allowlist are denied
+    input:
+      principals: [hermes]
+      resources:
+        - disallowed_project
+        - disallowed_path_project
+        - path_form_of_allowed_numeric_project
+        - missing_project_id
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: disallowed_project
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: disallowed_path_project
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: path_form_of_allowed_numeric_project
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: missing_project_id
+        actions: {access: EFFECT_DENY}
+  - name: a second target project outside the allowlist is denied even from an allowed
+      project
+    input:
+      principals: [hermes]
+      resources:
+        - cross_project_link_allowed_target
+        - cross_project_link_disallowed_target
+        - cross_project_link_empty_target
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: cross_project_link_allowed_target
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: cross_project_link_disallowed_target
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: cross_project_link_empty_target
+        actions: {access: EFFECT_ALLOW}
+  - name: merge-request calls setting reviewers or assignees are denied
+    input:
+      principals: [hermes]
+      resources:
+        - create_mr_with_reviewers
+        - update_mr_with_reviewers
+        - create_mr_with_reviewers_disallowed_project
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: create_mr_with_reviewers
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_mr_with_reviewers
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: create_mr_with_reviewers_disallowed_project
+        actions: {access: EFFECT_DENY}
+  - name: merge requests without reviewers, and issue assignees, stay allowed
+    input:
+      principals: [hermes]
+      resources: [create_mr_no_reviewers, issue_with_assignees]
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: create_mr_no_reviewers
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: issue_with_assignees
+        actions: {access: EFFECT_ALLOW}
+  - name: writes to a merge request authored by someone else are denied
+    input:
+      principals: [hermes]
+      resources:
+        - update_mr_other_author
+        - update_mr_other_author_disallowed_project
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: update_mr_other_author
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_mr_other_author_disallowed_project
+        actions: {access: EFFECT_DENY}
+  - name: writes to the agent's own merge request, and calls with no resolved author,
+      are allowed
+    input:
+      principals: [hermes]
+      resources: [update_mr_own_author, read_tool_no_author_attr]
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: update_mr_own_author
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: read_tool_no_author_attr
+        actions: {access: EFFECT_ALLOW}
+  - name: merge requests targeting a protected branch are denied
+    input:
+      principals: [hermes]
+      resources:
+        - mr_targeting_protected_branch
+        - mr_targeting_master_branch
+        - mr_targeting_production_branch
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: mr_targeting_protected_branch
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: mr_targeting_master_branch
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: mr_targeting_production_branch
+        actions: {access: EFFECT_DENY}
+  - name: merge requests targeting an ordinary branch, or no branch at all, are allowed
+    input:
+      principals: [hermes]
+      resources:
+        - mr_targeting_feature_branch
+        - mr_no_target_branch
+        - branch_named_like_protected_but_not
+      actions: [access]
+    expected:
+      - principal: hermes
+        resource: mr_targeting_feature_branch
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: mr_no_target_branch
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: branch_named_like_protected_but_not
+        actions: {access: EFFECT_ALLOW}

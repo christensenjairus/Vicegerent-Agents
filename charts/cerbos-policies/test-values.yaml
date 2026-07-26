@@ -15,6 +15,11 @@ clusterVars:
   githubForkRequiredOwners: [moveworks-emu]
   githubForkOwners: [jchristensen_movester]
   githubUsername: jchristensen_movester
+  # Both a numeric id and a path form on purpose: production canonicalizes to
+  # the numeric id, but the fixtures also exercise the policy's own
+  # case-insensitive path fallback for when canonicalization is unavailable.
+  gitlabAllowedProjects: ['148', '7', jchristensen/vicegerent-agents]
+  gitlabUsername: jchristensen
   jiraAllowedProjects: [CHANGE]
   jiraAllowedAssignees: [jchristensen@moveworks.ai]
   jiraAllowedIssueTypes:

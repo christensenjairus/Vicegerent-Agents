@@ -13,6 +13,10 @@ clusterVars:
   # GitHub owner/repo pairs agents may write to, and this machine's GitHub login.
   githubAllowedRepos: [your-org/your-repo]
   githubUsername: your-github-username
+  # GitLab projects agents may act on (reads included). Prefer the numeric id:
+  # any spelling an agent sends is resolved to it before matching.
+  gitlabAllowedProjects: ['12345']
+  gitlabUsername: your-gitlab-username
   # Jira/Linear write scopes and the assignees agents may set. Linear's get_issue
   # returns the DISPLAY NAME, so list every form the identity appears as.
   jiraAllowedProjects: [PROJ]

@@ -1,0 +1,176 @@
+---
+# gitlab_project policy: deny any GitLab call whose project_id isn't in the
+# allowed list (${gitlabAllowedProjects}, from values.yaml (clusterVars)), any
+# merge_request create/update that retargets a protected branch or sets
+# reviewer_ids/assignee_ids, and any write to a merge request this agent didn't
+# author; allow everything else.
+#
+# This policy is a deliberate MIRROR of resource_github.yaml — the two forges
+# are held to the same standard, and a rule added to either one is ported to
+# the other or its absence justified in this header. Same deny-by-resource
+# shape, same single `access` action shared by every mapped tool including
+# reads. The shim maps every project_id-bearing GitLab tool to this resource,
+# carrying projectId (always populated, via the gitlabProjectAttr helper so a
+# numeric project_id can't silently miss) plus, for merge_request create/update
+# only, hasReviewers and branch. Do NOT add tools here to permit them; that
+# belongs in the vMCP tools allowlist.
+#
+# NOT ported from resource_github.yaml, with reasons:
+#   - deny-pr-not-from-fork: this operator doesn't use personal forks on
+#     GitLab, so there's no fork-owner boundary to enforce. Nothing in the
+#     GitLab tool surface carries a fork-qualified head arg to check either.
+#   - deny-pr-title-missing-ticket-ref / deny-pr-body-missing-change-link:
+#     these encode one specific WORK repo's change-ticket process
+#     (moveworks-emu/k8s-manifests, hardcoded there for exactly that reason).
+#     There is no equivalent process on this self-hosted GitLab, so porting
+#     them would enforce a rule that doesn't exist rather than close a gap.
+#     This is a difference in the surrounding process, not a difference in how
+#     strictly the two forges are policed.
+# Two GitHub capability removals are mirrored in the TOOL ALLOWLIST
+# (host/mcp/toolhive-servers.json) instead of as rules here, which is strictly
+# stronger than a policy rule: the git file/branch-write tools plus
+# merge_merge_request (the bot reaches gitlab.hahomelabs.com over SSH and uses
+# git itself), and every note/thread/discussion/draft-note WRITE tool — the
+# operator does not want the bot leaving ANY comment/review text on an MR under
+# their identity, the same call made on the GitHub side. See mapping.yaml's
+# GitLab block for the full list and rationale.
+#
+# deny-non-allowed-project matches ${gitlabAllowedProjects} against a
+# CANONICALIZED project id, so an operator lists ONE value per project rather
+# than guessing how an agent will spell it. GitLab addresses the same project
+# four equally valid ways — the numeric id (148), the path (group/project), the
+# percent-encoded path (group%2Fproject), and any casing of either path form;
+# all four were verified live to hit the same project. Matching the raw
+# argument would therefore deny the SAME allowlisted project named a different
+# way: fail-closed, but a false deny on legitimate work, with a message that
+# actively misleads and no way for the agent to know it should retry.
+# Two layers prevent that. The shim resolves any non-numeric project_id to its
+# numeric id via a live get_project lookup before Cerbos runs
+# (server.go's checkGitlabProjectCanonical; fails closed, and an
+# already-numeric id short-circuits with no network call), and both sides of
+# the comparison are lowercased here so a path-form allowlist entry still
+# matches if that lookup is ever unavailable. PREFER THE NUMERIC ID in the
+# allowlist: it survives a project being renamed or moved between groups, which
+# a path does not. An empty list denies every GitLab call, reads included,
+# exactly as an empty githubAllowedRepos does.
+# Reads are scoped here rather than left unrestricted (unlike jira_project):
+# GitHub scopes its reads the same way, and a GitLab call that omits its
+# project_id (optional on list_issues/my_issues/list_todos/list_merge_requests)
+# resolves to '' and is denied, mirroring how github_search_pull_requests with
+# no owner/repo resolves to '/' and is denied.
+# The same rule also checks targetProjectId, the SECOND project carried by
+# create_issue_link (an issue link's other end) and create_merge_request (an
+# MR's target project) — without it, an allowlisted project_id could carry a
+# write whose effect lands in a project outside the allowlist, the same
+# side-channel class as a Jira epicKey smuggled through additional_fields.
+# Guarded on non-empty, since most of the mapped tools have no such arg.
+#
+# deny-protected-branch is github_repo's rule of the same name, adapted to the
+# one branch a GitLab tool in this allowlist can still write through. On
+# GitHub the attr is populated by the tools that write file contents INTO a
+# branch; those were removed from GitLab's allowlist, so the GitLab attr
+# carries create/update_merge_request's target_branch instead — retargeting an
+# MR at main is a real, reachable write to a protected branch's future
+# contents, and update_merge_request can do it to an ALREADY-APPROVED MR,
+# landing an unreviewed diff. source_branch is deliberately not carried (it
+# names the MR's own feature branch and is never written to), exactly as
+# GitHub's rule never checked create_pull_request's base/head: opening an MR
+# against main is normal and is not blocked here.
+#
+# deny-reviewers: create_merge_request/update_merge_request's reviewer_ids and
+# assignee_ids both pull a real human into the agent's own MR — the same
+# capability resource_github.yaml denies via its reviewers arg, whose comment
+# calls reviewers "the actual PR analog of an assignee". Both are denied for
+# that same reason: rather than build an allowlist for a capability the
+# operator isn't sure should exist, request review manually instead. Issue
+# assignee_ids (create_issue/update_issue) is deliberately NOT covered — GitHub
+# contributes no issue tools to compare against, and assigning a ticket is the
+# Jira/Linear-shaped action this platform allows by default
+# (jiraAllowedAssignees/linearAllowedAssignees both default to unrestricted).
+#
+# deny-not-own-mr: the GitLab half of deny-not-own-pr, closing the same
+# incident class — an agent hallucinating a wrong MR iid and rewriting someone
+# else's merge request. update_merge_request is the only mapped tool that
+# mutates an EXISTING merge request (title/description/labels/target_branch/
+# state_event), so it's the only one gated: the shim resolves the MR's REAL
+# author via a live get_merge_request lookup BEFORE Cerbos is consulted
+# (server.go's checkGitlabMRAuthor — a network round trip Cerbos itself can't
+# make) and injects it as this mrAuthor attr. The note/thread/discussion tools
+# that would otherwise need the same treatment aren't gated because they no
+# longer exist in the allowlist at all (see above) — only reads remain, and a
+# read carries no ownership risk. has()-guarded, since gitlab_project has only
+# one Cerbos action shared by every mapped tool and nothing but
+# update_merge_request ever gets an mrAuthor attr at all.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: gitlab_project
+  rules:
+    - name: deny-non-allowed-project
+      actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            !(request.resource.attr.projectId.lowerAscii() in
+            [{{ include "cerbos-policies.celListLower" .Values.clusterVars.gitlabAllowedProjects }}])
+            ||
+            (has(request.resource.attr.targetProjectId)
+            && request.resource.attr.targetProjectId != ""
+            && !(request.resource.attr.targetProjectId.lowerAscii() in
+            [{{ include "cerbos-policies.celListLower" .Values.clusterVars.gitlabAllowedProjects }}]))
+      output:
+        when:
+          ruleActivated: >-
+            "GitLab project '" + request.resource.attr.projectId
+            + "' (or this call's target project) is outside the allowed project"
+            + " list for this agent."
+    - name: deny-protected-branch
+      actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.branch) && request.resource.attr.branch != ""
+            && request.resource.attr.branch in ["main", "master", "production"]
+      output:
+        when:
+          ruleActivated: >-
+            "Pointing a merge request at protected branch '"
+            + request.resource.attr.branch + "' is not allowed for this agent."
+            + " Target a non-protected branch, or have a human retarget it."
+    - name: deny-reviewers
+      actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.hasReviewers) && request.resource.attr.hasReviewers
+            == "true"
+      output:
+        when:
+          ruleActivated: >-
+            "This agent is not allowed to set reviewers or assignees on a merge"
+            + " request. Request review manually instead."
+    - name: deny-not-own-mr
+      actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.mrAuthor) && request.resource.attr.mrAuthor
+            != "{{ .Values.clusterVars.gitlabUsername }}"
+      output:
+        when:
+          ruleActivated: >-
+            "This agent may only write to merge requests it authored itself."
+            + " This MR was not authored by the configured user; the target"
+            + " merge_request_iid may be wrong."
+    - name: allow-all
+      actions: ['*']
+      effect: EFFECT_ALLOW
+      roles: ['*']
