@@ -35,10 +35,19 @@ agents:
       userEmail: christensenjairus@gmail.com
     timezone: America/Denver
     providers:
+      openai:
+        model: gpt-5.6-terra
+        auxiliaryModel: gpt-5.6-luna
+        mnemosyneModel: gpt-4o-mini
       deepseek:
         enabled: true
       zai:
         enabled: true
+    mnemosyne:
+      provider: openai
+    failover:
+      provider: anthropic
+      model: claude-sonnet-5
     directEgress:
       ssh:
         fqdn: gitlab.hahomelabs.com
@@ -51,7 +60,49 @@ agents:
       edgeTtsFQDNs: [speech.platform.bing.com]
     config:
       model:
-        provider: anthropic
+        default: gpt-5.6-terra
+        provider: openai
+      model_aliases:
+        sol:
+          model: gpt-5.6-sol
+          provider: openai
+        terra:
+          model: gpt-5.6-terra
+          provider: openai
+        luna:
+          model: gpt-5.6-luna
+          provider: openai
+      delegation:
+        model: gpt-5.6-terra
+        provider: openai
+      auxiliary:
+        vision:
+          model: gpt-5.6-luna
+          provider: openai
+        title_generation:
+          model: gpt-5.6-luna
+          provider: openai
+        approval:
+          model: gpt-5.6-luna
+          provider: openai
+        compression:
+          model: gpt-5.6-luna
+          provider: openai
+        web_extract:
+          model: gpt-5.6-luna
+          provider: openai
+        triage_specifier:
+          model: gpt-5.6-luna
+          provider: openai
+        kanban_decomposer:
+          model: gpt-5.6-luna
+          provider: openai
+        curator:
+          model: gpt-5.6-luna
+          provider: openai
+        monitor:
+          model: gpt-5.6-luna
+          provider: openai
       agent:
         system_prompt: You are a technical expert. Provide detailed, accurate technical
           information.

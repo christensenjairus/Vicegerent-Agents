@@ -16,7 +16,7 @@ data:
   opencode.json: |-
     {
       "$schema": "https://opencode.ai/config.json",
-      "model": "{{ if .Values.providers.deepseek.enabled }}deepseek/{{ .Values.providers.deepseek.model }}{{ else if .Values.providers.zai.enabled }}zhipuai/{{ .Values.providers.zai.model }}{{ else if .Values.providers.anthropic.enabled }}anthropic/{{ .Values.providers.anthropic.model }}{{ else }}openai/{{ .Values.harnesses.openCode }}{{ end }}",
+      "model": "{{ if .Values.providers.openai.enabled }}openai/{{ .Values.harnesses.openCode }}{{ else if .Values.providers.deepseek.enabled }}deepseek/{{ .Values.providers.deepseek.model }}{{ else if .Values.providers.zai.enabled }}zhipuai/{{ .Values.providers.zai.model }}{{ else }}anthropic/{{ .Values.providers.anthropic.model }}{{ end }}",
       "permission": {
         "edit": "allow",
         "bash": "allow",
