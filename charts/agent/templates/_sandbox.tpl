@@ -59,7 +59,8 @@ spec:
               set -euo pipefail
               # /opt/data is HOME everywhere: uid 10000's /etc/passwd home, the gateway's own
               # HOME, and (via terminal.home_mode=real) every tool subprocess. Pinned here too so
-              # this container writes ~/.gitconfig and ~/.bazelrc where they are actually read.
+              # this container writes ~/.bazelrc where it is actually read (~/.gitconfig is a
+              # read-only ConfigMap mount, so the agent cannot repoint core.hooksPath).
               export HOME=/opt/data
               # fastembed reads HERMES_HOME/cache; the local LLM reads ~/.hermes; faster-whisper
               # reads the default HF_HUB_CACHE (~/.cache/huggingface/hub) — three different dirs.
@@ -68,10 +69,6 @@ spec:
               whisper_dest="/opt/data/.cache/huggingface/hub"
               marker_dir="/opt/data/.hermes"
               mkdir -p "${fastembed_dest}" "${llm_dest}" "${whisper_dest}" "${marker_dir}" /opt/data/plugins /opt/data/.ssh
-{{- if and .Values.git.userName .Values.git.userEmail }}
-              git config --global user.name {{ .Values.git.userName | quote }}
-              git config --global user.email {{ .Values.git.userEmail | quote }}
-{{- end }}
               # Seed egress proxy CA cert so curl, pip, git, and Python requests trust it.
               mkdir -p /opt/data/certs
               # Build combined CA bundle: system CAs + proxy CA.
@@ -127,6 +124,10 @@ spec:
                 done
                 find "${old_home}" -depth -type d -empty -delete 2>/dev/null || true
               fi
+              # Drop the PVC copy left by the old imperative `git config --global` seeding.
+              # The agent container mounts ~/.gitconfig read-only from a ConfigMap; this
+              # init container has no such mount, so the path it sees is the stale PVC file.
+              rm -f /opt/data/.gitconfig
               # Bazel ignores JAVA_TOOL_OPTIONS; give it a ~/.bazelrc instead.
               printf '%s\n' \
                 'startup --host_jvm_args=-Djavax.net.ssl.trustStore=/opt/data/certs/java-cacerts.p12' \
@@ -497,6 +498,10 @@ spec:
               readOnly: true
             - name: config
               mountPath: /reload/hermes-config
+            - name: gitconfig
+              mountPath: /opt/data/.gitconfig
+              subPath: .gitconfig
+              readOnly: true
             - name: soul
               mountPath: /opt/data/SOUL.md
               subPath: SOUL.md
@@ -521,6 +526,10 @@ spec:
         - name: config
           configMap:
             name: {{ include "vicegerent-agent.name" . }}-config
+        - name: gitconfig
+          configMap:
+            name: {{ include "vicegerent-agent.name" . }}-gitconfig
+            optional: true
         - name: soul
           configMap:
             name: {{ include "vicegerent-agent.name" . }}-soul

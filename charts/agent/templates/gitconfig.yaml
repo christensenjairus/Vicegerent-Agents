@@ -1,0 +1,19 @@
+{{/*
+Read-only ~/.gitconfig. Global scope outranks $XDG_CONFIG_HOME/git/config, so owning
+this file denies the agent both global rungs of core.hooksPath; /etc/gitconfig (baked
+into the image) remains the system-scope fallback.
+*/}}
+{{- if and .Values.git.userName .Values.git.userEmail }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vicegerent-agent.name" . }}-gitconfig
+  namespace: agent-sandbox
+data:
+  .gitconfig: |-
+    [user]
+    	name = {{ .Values.git.userName }}
+    	email = {{ .Values.git.userEmail }}
+    [core]
+    	hooksPath = /opt/vicegerent/git-hooks
+{{- end }}
