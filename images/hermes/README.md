@@ -11,6 +11,7 @@ The stock image ships the Hermes runtime but **not** the pieces this platform re
 | mnemosyne plugin + MiniCPM embedding gguf | no |
 | hermes-lcm context engine | no |
 | LSP servers (pyright, yaml-language-server, terraform-ls, bash-language-server) | no |
+| Terraform CLI | no |
 | `terragrunt` for HCL/Terraform formatting hooks | no |
 | repository linters and formatters (`ruff`, `pyrefly`, `shfmt`, `hadolint`, `golangci-lint`, `ansible-lint`) | no |
 | repository inspection utilities (`fd`, `rsync`, `sqlite3`, `tree`) | no |
@@ -25,7 +26,7 @@ Built on a machine with internet (your laptop), then pushed to Harbor. The egres
 docker login harbor.hahomelabs.com
 make image PLATFORM=linux/arm64      # Kind on Apple Silicon
 make push
-# or: make release PLATFORM=linux/arm64 TAG=v2026.7.20-rev17
+# or: make release PLATFORM=linux/arm64 TAG=v2026.7.20-rev18
 ```
 
 `make help` lists targets. `TAG` is `<upstream-version>-rev<N>` (e.g. `v2026.7.20-rev1`): keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
@@ -40,7 +41,8 @@ make push
 - hermes-lcm context engine — extracted from its pinned GitHub release into Hermes' bundled `plugins/context_engine/lcm/` (resolved from the installed package, not a hardcoded path). Loaded by the dedicated context-engine discovery, not the general `~/.hermes/plugins` system, so `hermes plugins install` does not place it; selected via `context.engine: lcm` in the agent config. Pure stdlib, no PyPI deps.
 - LSP servers via `npm -g` (node + npm are in the base).
 - `terragrunt` via pinned GitHub release asset, for repos whose pre-commit or CI uses `terragrunt hcl format` against `.tf`/`.hcl` files.
-- Repository-native linting and formatting tools: pinned `shfmt`, `hadolint`, and `golangci-lint` release binaries; pinned `ruff`, `pyrefly`, and `ansible-lint` Python packages; and `fd`, `rsync`, `sqlite3`, and `tree` for efficient inspection and safe working-copy operations. The Terraform CLI remains deliberately absent because infrastructure execution belongs behind vMCP; `terraform-ls` and Terragrunt cover local language and formatting workflows.
+- Terraform CLI via its pinned HashiCorp release, for local repository operations such as `fmt`, `validate`, and `test`; cloud API access remains subject to the sandbox's credentials and egress controls.
+- Repository-native linting and formatting tools: pinned `shfmt`, `hadolint`, and `golangci-lint` release binaries; pinned `ruff`, `pyrefly`, and `ansible-lint` Python packages; and `fd`, `rsync`, `sqlite3`, and `tree` for efficient inspection and safe working-copy operations.
 - `buf` via GitHub release tarball -- `buf lint`/`buf format` for repos whose pre-commit runs those as actual hooks.
 - `clang-format` via `pip install` (PyPI's `clang-format` package ships a prebuilt binary wheel with a console-script entry point) -- lands in `/opt/hermes/.venv/bin` alongside the other `requirements.txt` tools, no separate bake step needed.
 - netdebug tools (`iproute2`/`ss`, `dnsutils`/`dig`, `netcat-openbsd`/`nc`) via apt, for diagnosing egress / CiliumNetworkPolicy hangs from inside the sandbox. A default-deny policy DROPS a blocked outbound connect, so it sits in SYN-SENT until timeout — `ss -tanp state syn-sent` names the stuck dest + PID with no added capabilities. Deliberately excludes `strace`/`tcpdump`: those need `CAP_SYS_PTRACE`/`CAP_NET_RAW`, which the locked-down securityContext strips, so they would bake fine but fail to attach at runtime.
