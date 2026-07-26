@@ -422,6 +422,17 @@ RUN --mount=type=bind,source=package.json,target=/tmp/npm/package.json \
         $(node -p "Object.entries(require('./package.json').dependencies).map(([k,v])=>k+'@'+v).join(' ')") \
     && opencode --version
 
+# Publish Hermes' skills to the other harnesses, and snapshot the tree so content
+# deleted through a published symlink stays recoverable. Baked in rather than
+# mounted as a ConfigMap: this is agent-image behaviour, not cluster config, and a
+# ConfigMap costs four wiring points per script in the agent chart. Placed here
+# with patches for the same reason -- edited often, adds almost no bytes.
+COPY skills-scripts/sync-shared-skills.sh skills-scripts/snapshot-skills.sh \
+     /usr/local/bin/
+RUN chmod +x /usr/local/bin/sync-shared-skills.sh /usr/local/bin/snapshot-skills.sh \
+    && bash -n /usr/local/bin/sync-shared-skills.sh \
+    && bash -n /usr/local/bin/snapshot-skills.sh
+
 # Every Vicegerent patch to upstream Hermes, applied in patches/order.txt order
 # by patches/apply-patches.sh. Each patch's own module docstring carries its
 # rationale, its upstream-removal condition, and its ordering dependencies;
