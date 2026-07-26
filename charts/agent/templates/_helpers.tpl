@@ -324,7 +324,6 @@ agent:
   api_max_retries: {{ .Values.tuning.apiMaxRetries }}
   reasoning_effort: {{ .Values.tuning.reasoningEffort }}
   reasoning_overrides:
-    {{ .Values.providers.openai.model }}: none
 {{- if .Values.providers.deepseek.enabled }}
     {{ .Values.providers.deepseek.model }}: high
 {{- end }}
