@@ -21,6 +21,10 @@ Layer 2 (network egress) is two things stacked, not one: Cilium enforces *which 
 
 Layers 3 and 4 share one path: host vMCP → ghostunnel (mTLS) → agentgateway's `vmcp` backend → the agent. Selecting which tools exist is a config-only change in ToolHive with no cluster round-trip; authorizing a selected tool's arguments happens after that, in `mcp-cerbos-shim` + Cerbos. On allow, a mapped tool can also carry a mutation (a `force` block) — an unconditional argument rewrite applied only after Cerbos allows, e.g. a GitHub PR is rewritten to stay a draft, or a Notion page is rewritten to a fixed parent folder. It never overrides a deny. See the [mcp-cerbos-shim documentation](images/mcp-cerbos-shim/README.md) for the current authorization rules and mutations.
 
+## Choose the execution mode by supervision level
+
+The sandbox is for autonomous or near-autonomous agents: auto mode, cron jobs, automation, and any run where a human will not inspect every command and MCP call. Its vMCP uses `aggregation.tools` to filter the available backend tools and sends calls through agentgateway and Cerbos. The optional operator vMCP is the complementary manual mode for native laptop harnesses. It still aggregates the backends and enables the `find_tool`/`call_tool` optimizer to control token usage, but deliberately omits `aggregation.tools` and bypasses agentgateway/Cerbos. This repo does not scope the operator endpoint. **If you are not willing to supervise every command, put the work in the sandbox.**
+
 ## Repo layout
 
 ```text

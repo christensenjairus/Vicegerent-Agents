@@ -232,8 +232,8 @@ case "${1:-}" in
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
       echo "vicegerent start — start the Kind cluster, then bring up the host ToolHive stack"
       echo "  1. docker start vicegerent-control-plane   (start the Kind node container)"
-      echo "  2. ./vicegerent mcp start                   (ToolHive workloads + vMCP + ghostunnel + rclone-s3 + health-watch; add --caffeinate to keep macOS awake)"
-      echo "  Extra args pass through to 'vicegerent mcp start' (e.g. --caffeinate)."
+      echo "  2. ./vicegerent mcp start                   (ToolHive workloads + vMCP + ghostunnel + rclone-s3 + health-watch)"
+      echo "  Extra args pass through to 'vicegerent mcp start' (e.g. --operator-vmcp or --caffeinate)."
       exit 0
     fi
     require_kind_context
@@ -441,7 +441,8 @@ ${B}vicegerent mcp${N} — host-side ToolHive/vMCP stack controller
   ${C}configure${N}             interactively enable/skip each server + set its secrets
   ${C}enable${N} KEY            enable a server (persists; started on next start)
   ${C}disable${N} KEY           disable a server (stops it; ToolHive won't run it)
-  ${C}start${N} [--caffeinate]  bring up enabled workloads + vMCP + ghostunnel + rclone-s3 + health-watch
+  ${C}start${N} [OPTIONS]       bring up enabled workloads + vMCP + ghostunnel + rclone-s3 + health-watch
+                              --operator-vmcp also exposes the unscoped host endpoint on :4484
   ${C}stop${N}                  stop the supervised stack + ToolHive workloads
   ${C}status${N}                workload + supervised-process state
   ${C}logs${N} PROC             tail a supervised process log

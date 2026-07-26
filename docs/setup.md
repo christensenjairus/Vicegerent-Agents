@@ -196,7 +196,7 @@ $EDITOR values.yaml                    # this machine's cluster vars + agents
 
 ## Host-side MCP control plane
 
-Every MCP server runs on the laptop under ToolHive (`thv`) and is aggregated behind a single Virtual MCP Server (vMCP) that ghostunnel exposes to the cluster over mTLS. The control plane lives in [`host/mcp`](../host/mcp): `vicegerent mcp` brings up the 17 ToolHive workloads declared in `toolhive-servers.json` (kubernetes, github, gitlab, tavily, firecrawl, notion, linear, jira, grafana, alertmanager, pagerduty, elastic, aws — plus the `aws_profiles` companion and three regional `_gov` variants — all off by default) and supervises four long-lived host processes — `thv vmcp serve` (aggregates the group on `127.0.0.1:4483`), `ghostunnel` (terminates cluster mTLS, listens `127.0.0.1:8453`, forwards to the vMCP), `rclone serve s3` (the Velero backup bucket on `127.0.0.1:9899`), and `mcp-health-watch` (polls workload health + AWS credential expiry and notifies) — plus an opt-in `caffeinate` that keeps macOS awake while the stack runs.
+Every MCP server runs on the laptop under ToolHive (`thv`). The control plane lives in [`host/mcp`](../host/mcp): `vicegerent mcp` brings up the 17 ToolHive workloads declared in `toolhive-servers.json` (kubernetes, github, gitlab, tavily, firecrawl, notion, linear, jira, grafana, alertmanager, pagerduty, elastic, aws — plus the `aws_profiles` companion and three regional `_gov` variants — all off by default) and supervises four long-lived host processes — the scoped `thv vmcp serve` on `127.0.0.1:4483`, `ghostunnel` (terminates cluster mTLS, listens `127.0.0.1:8453`, forwards to that vMCP), `rclone serve s3` (the Velero backup bucket on `127.0.0.1:9899`), and `mcp-health-watch` (polls workload health + AWS credential expiry and notifies) — plus opt-in `operator-vmcp` and `caffeinate` processes.
 
 The cluster reaches the vMCP at `host.docker.internal:8453`. agentgateway fronts it with one `AgentgatewayBackend` + HTTPRoute + `AgentgatewayPolicy` trio per Gateway listener: `vmcp` on `/mcp/vmcp` for agent traffic (guardrail phase `Full`), and `vmcp-internal` on the internal `:81` listener for the shim's own re-entrant ownership lookups (phase `Request` only, so a lookup can't recurse into response inspection). Through the vMCP, tools are named `{workload}_<tool>` (e.g. `kubernetes_resources_get`).
 
@@ -215,10 +215,12 @@ Start and stop the whole local platform — the Kind cluster and the host MCP st
 ./vicegerent stop    # stop the host MCP stack (including ToolHive workloads), then stop the cluster
 ```
 
-For finer control of just the host stack, drive it with `./vicegerent mcp` (`configure`, `enable`/`disable`, `start [--caffeinate]`, `stop`, `status`, `logs`, `doctor`); the interactive TUI is the top-level `./vicegerent tui`. There is one more subcommand, `mcp-health-watch` — supervisord runs it as the fourth supervised process, and you should not invoke it by hand. See [`host/mcp/README.md`](../host/mcp/README.md) for the full reference.
+For finer control of just the host stack, drive it with `./vicegerent mcp` (`configure`, `enable`/`disable`, `start [--caffeinate] [--operator-vmcp]`, `stop`, `status`, `logs`, `doctor`); the interactive TUI is the top-level `./vicegerent tui`. `--operator-vmcp` adds an unscoped, optimized endpoint at `http://127.0.0.1:4484/mcp` for native harnesses in manual mode. Both vMCPs aggregate the same ToolHive backends and enable the `find_tool`/`call_tool` optimizer, but only the sandbox vMCP uses the `aggregation.tools` filter. The operator endpoint deliberately bypasses that filter and agentgateway/Cerbos; this repo attempts no operator-side tool selection or argument authorization. Use it only while actively supervising every action. If you are not willing to supervise every command, run the work in the sandbox. A later `start` without the flag removes the operator process. There is one more subcommand, `mcp-health-watch` — supervisord runs it as the fourth always-on supervised process, and you should not invoke it by hand. See [`host/mcp/README.md`](../host/mcp/README.md) for the full reference and host-trust warning.
 
 ```bash
 ./vicegerent mcp start
+# Or, while using a trusted native harness under manual supervision:
+./vicegerent mcp start --operator-vmcp
 ./vicegerent mcp status
 ```
 

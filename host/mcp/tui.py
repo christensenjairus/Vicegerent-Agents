@@ -12,7 +12,8 @@ Keybindings (k9s-flavoured):
   ctrl+s        start the stack
   ctrl+k        stop (kill) the supervised stack
   ctrl+r        restart the supervised stack
-  1-6           switch log tabs (vmcp, ghostunnel, rclone-s3, mcp-health-watch, supervisord, caffeinate)
+  1-7           switch log tabs (vmcp, operator-vmcp, ghostunnel, rclone-s3,
+                mcp-health-watch, supervisord, caffeinate)
   r             refresh now
   ?             help
   q / esc       quit
@@ -52,7 +53,10 @@ from vicegerent_mcp import (
     workload_log_process,
 )
 
-LOG_TABS = ("vmcp", "ghostunnel", "rclone-s3", "mcp-health-watch", "supervisord", "caffeinate")
+LOG_TABS = (
+    "vmcp", "operator-vmcp", "ghostunnel", "rclone-s3",
+    "mcp-health-watch", "supervisord", "caffeinate",
+)
 LOG_TAB_LABELS = {
     name: f"{index} {name}" for index, name in enumerate(LOG_TABS, start=1)
 }
@@ -255,11 +259,12 @@ class HostMCPApp(App):
         Binding("ctrl+k", "stop_stack", "Kill", show=True),
         Binding("ctrl+r", "restart_stack", "Restart", show=True),
         Binding("1", "tab_vmcp", "vmcp", show=False),
-        Binding("2", "tab_ghostunnel", "ghostunnel", show=False),
-        Binding("3", "tab_rclone_s3", "rclone-s3", show=False),
-        Binding("4", "tab_mcp_health_watch", "mcp-health-watch", show=False),
-        Binding("5", "tab_supervisord", "supervisord", show=False),
-        Binding("6", "tab_caffeinate", "caffeinate", show=False),
+        Binding("2", "tab_operator_vmcp", "operator-vmcp", show=False),
+        Binding("3", "tab_ghostunnel", "ghostunnel", show=False),
+        Binding("4", "tab_rclone_s3", "rclone-s3", show=False),
+        Binding("5", "tab_mcp_health_watch", "mcp-health-watch", show=False),
+        Binding("6", "tab_supervisord", "supervisord", show=False),
+        Binding("7", "tab_caffeinate", "caffeinate", show=False),
         Binding("question_mark", "help", "Help", show=True),
         Binding("q", "quit", "Quit", show=True),
         Binding("escape", "quit", "Quit", show=False),
@@ -438,6 +443,9 @@ class HostMCPApp(App):
 
     def action_tab_vmcp(self) -> None:
         self._activate_tab("vmcp")
+
+    def action_tab_operator_vmcp(self) -> None:
+        self._activate_tab("operator-vmcp")
 
     def action_tab_ghostunnel(self) -> None:
         self._activate_tab("ghostunnel")

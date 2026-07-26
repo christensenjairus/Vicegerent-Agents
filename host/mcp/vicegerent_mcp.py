@@ -27,11 +27,14 @@ Owns the full local ToolHive stack that backs the cluster's MCP access:
                        backend's AWS credentials, warning BEFORE they expire (and
                        again once expired). Detection only -- never restarts or
                        refreshes anything itself.
+  operator-vMCP       optional unscoped loopback vMCP for manually supervised
+                      native host harnesses (127.0.0.1:4484); started with
+                      --operator-vmcp and reuses the same ToolHive workloads.
   caffeinate           opt-in: holds a macOS "stay awake" assertion while the
                        stack is up (enable per-start with --caffeinate).
 
-vMCP, ghostunnel, rclone-s3, and mcp-health-watch (plus caffeinate when enabled)
-run under supervisord with autorestart. The workloads are brought up by `start`
+vMCP, ghostunnel, rclone-s3, and mcp-health-watch (plus operator-vMCP and
+caffeinate when enabled) run under supervisord with autorestart. The workloads are brought up by `start`
 (idempotent) before it starts.
 
 Two authorization concerns split across the host and the cluster. Tool SELECTION
@@ -78,6 +81,7 @@ DEFAULT_SERVERS_CONFIG = Path(__file__).resolve().parent / "toolhive-servers.jso
 DEFAULT_GROUP = "vicegerent"
 DEFAULT_VMCP_HOST = "127.0.0.1"
 DEFAULT_VMCP_PORT = 4483
+DEFAULT_OPERATOR_VMCP_PORT = 4484
 # Loopback only — Kind reaches it via host.docker.internal (Docker Desktop proxies
 # to the host's localhost). Binding 0.0.0.0 would expose the tunnel to the LAN.
 DEFAULT_LISTEN = "127.0.0.1:8453"
@@ -126,8 +130,8 @@ _TIMEOUT_RC = 124
 # mcp-health-watch (watches every enabled workload's own thv status, plus the
 # `aws` backend's credential expiry when that server is enabled).
 SUPERVISED_PROGRAMS = ("vmcp", "ghostunnel", "rclone-s3", "mcp-health-watch")
-# caffeinate (macOS stay-awake) is opt-in per `start`; shown in status/logs regardless.
-ALL_PROGRAMS = ("caffeinate", *SUPERVISED_PROGRAMS)
+# operator-vmcp and caffeinate are opt-in per `start`; shown in status/logs regardless.
+ALL_PROGRAMS = ("operator-vmcp", "caffeinate", *SUPERVISED_PROGRAMS)
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +147,7 @@ def runtime_paths(runtime_dir: Path) -> dict[str, Path]:
         "supervisord_sock": runtime_dir / "supervisor.sock",
         "supervisord_pid": runtime_dir / "supervisord.pid",
         "vmcp_config": runtime_dir / "vmcp-config.json",
+        "operator_vmcp_config": runtime_dir / "operator-vmcp-config.json",
         "vmcp_init": runtime_dir / "vmcp-init.yaml",
         "servers_state": runtime_dir / "servers-state.json",
     }
@@ -163,6 +168,35 @@ def group_name(config: dict[str, Any]) -> str:
 
 def vmcp_port(config: dict[str, Any]) -> int:
     return int(os.environ.get("VMCP_PORT") or config.get("vmcp_port") or DEFAULT_VMCP_PORT)
+
+
+def operator_vmcp_port() -> int:
+    raw = os.environ.get("OPERATOR_VMCP_PORT") or str(DEFAULT_OPERATOR_VMCP_PORT)
+    try:
+        port = int(raw)
+    except ValueError:
+        raise SystemExit(f"OPERATOR_VMCP_PORT must be an integer, got {raw!r}") from None
+    if not 1 <= port <= 65535:
+        raise SystemExit(f"OPERATOR_VMCP_PORT must be between 1 and 65535, got {port}")
+    return port
+
+
+def validate_operator_vmcp_port(port: int, reserved_ports: dict[str, int]) -> None:
+    conflicts = sorted(name for name, reserved in reserved_ports.items() if port == reserved)
+    if conflicts:
+        raise SystemExit(
+            f"OPERATOR_VMCP_PORT {port} conflicts with {', '.join(conflicts)}; choose a distinct port"
+        )
+
+
+def _addr_port(addr: str) -> int:
+    _, separator, raw = addr.rpartition(":")
+    if not separator:
+        raise SystemExit(f"expected host:port address, got {addr!r}")
+    try:
+        return int(raw)
+    except ValueError:
+        raise SystemExit(f"expected numeric port in address {addr!r}") from None
 
 
 def load_server_state(runtime_dir: Path) -> dict[str, bool]:
@@ -351,7 +385,7 @@ def _kill_addr_listeners(addr: str, timeout: float = 5.0) -> list[int]:
     """Kill whatever is listening on host:port (SIGTERM, then SIGKILL); returns
     the pids killed.
 
-    `stop` uses this to clear vmcp/ghostunnel/rclone-s3 processes supervisord
+    `stop` uses this to clear vmcp/operator-vmcp/ghostunnel/rclone-s3 processes supervisord
     wasn't tracking (orphaned by e.g. a killed supervisord) so the next `start`
     always gets a fresh, fully supervisord-managed instance rather than one it
     has to leave alone because the port's already taken.
@@ -367,8 +401,22 @@ def _kill_addr_listeners(addr: str, timeout: float = 5.0) -> list[int]:
     return pids
 
 
-def _kill_stray_supervisord(paths: dict[str, Path], timeout: float = 10.0) -> list[int]:
-    """Kill any supervisord process still pointing at our conf file.
+def _stop_disabled_operator_vmcp(operator_vmcp: bool, port: int) -> list[int]:
+    """Enforce opt-out even when a prior supervisord left the endpoint orphaned."""
+    if operator_vmcp:
+        return []
+    addr = f"{DEFAULT_VMCP_HOST}:{port}"
+    if not _addr_reachable(addr):
+        return []
+    return _kill_addr_listeners(addr)
+
+
+def _kill_stray_supervisord(
+    paths: dict[str, Path],
+    timeout: float = 10.0,
+    preserve_pids: frozenset[int] = frozenset(),
+) -> list[int]:
+    """Kill supervisord processes using our config, except explicitly preserved PIDs.
 
     `supervisorctl shutdown` only ever reaches whichever supervisord currently
     owns the socket *path* -- but `start` unconditionally unlinks and recreates
@@ -382,7 +430,7 @@ def _kill_stray_supervisord(paths: dict[str, Path], timeout: float = 10.0) -> li
         ["pgrep", "-f", f"supervisord -c {conf}"],
         capture_output=True, text=True,
     )
-    pids = sorted({int(p) for p in result.stdout.split() if p.strip()})
+    pids = sorted({int(p) for p in result.stdout.split() if p.strip()} - preserve_pids)
     if pids:
         _terminate_pids(pids, timeout)
     return pids
@@ -1478,6 +1526,25 @@ def generate_vmcp_config(
     return out_path
 
 
+def generate_operator_vmcp_config(
+    scoped_config: Path,
+    runtime_dir: Path,
+    validate: bool = True,
+) -> Path:
+    """Clone the scoped vMCP config while removing only its tool filters."""
+    cfg = json.loads(scoped_config.read_text(encoding="utf-8"))
+    cfg["name"] = f"{cfg['name']}-operator"
+    cfg["aggregation"].pop("tools", None)
+    out_path = runtime_paths(runtime_dir)["operator_vmcp_config"]
+    out_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+    if validate:
+        vr = thv("vmcp", "validate", "--config", str(out_path))
+        if vr.returncode != 0:
+            raise SystemExit(f"operator vMCP config failed validation:\n{vr.stdout}\n{vr.stderr}")
+    return out_path
+
+
 # ---------------------------------------------------------------------------
 # supervisord config
 # ---------------------------------------------------------------------------
@@ -1513,10 +1580,13 @@ def build_supervisord_conf(
     tunnel_env: dict[str, str],
     vmcp_command: str,
     vmcp_env: dict[str, str],
+    operator_vmcp_command: str,
+    operator_vmcp_env: dict[str, str],
     rcloneshell: Path,
     rclone_env: dict[str, str],
     health_watch_command: str,
     health_watch_env: dict[str, str],
+    operator_vmcp: bool = False,
     caffeinate: bool = False,
     preexisting: frozenset[str] = frozenset(),
 ) -> str:
@@ -1530,6 +1600,21 @@ def build_supervisord_conf(
     def autostart(name: str) -> str:
         return "false" if name in preexisting else "true"
 
+    operator_vmcp_block = f"""\
+[program:operator-vmcp]
+command={operator_vmcp_command}
+directory={REPO_ROOT}
+environment={_supervisord_env_str(operator_vmcp_env)}
+autostart={autostart("operator-vmcp")}
+autorestart=true
+startsecs=3
+stopwaitsecs=10
+redirect_stderr=true
+stdout_logfile={logs}/operator-vmcp.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=2
+
+""" if operator_vmcp else ""
     caffeinate_block = f"""\
 [program:caffeinate]
 command=caffeinate -i
@@ -1562,7 +1647,7 @@ supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
 [supervisorctl]
 serverurl=unix://{sock}
 
-{caffeinate_block}[program:vmcp]
+{operator_vmcp_block}{caffeinate_block}[program:vmcp]
 command={vmcp_command}
 directory={REPO_ROOT}
 environment={_supervisord_env_str(vmcp_env)}
@@ -1627,6 +1712,14 @@ def supervisorctl(*args: str, runtime_dir: Path) -> subprocess.CompletedProcess[
         ["supervisorctl", "-c", str(conf), *args],
         capture_output=True, text=True, check=False,
     )
+
+
+def supervisor_pid(runtime_dir: Path) -> int | None:
+    result = supervisorctl("pid", runtime_dir=runtime_dir)
+    try:
+        return int(result.stdout.strip()) if result.returncode == 0 else None
+    except ValueError:
+        return None
 
 
 def get_supervisor_states(runtime_dir: Path) -> dict[str, str]:
@@ -1776,6 +1869,7 @@ def status(
     # probe its port so an inherited, actually-up process doesn't read as down.
     probe_addrs = {
         "vmcp": vmcp_target(config),
+        "operator-vmcp": f"{DEFAULT_VMCP_HOST}:{operator_vmcp_port()}",
         "ghostunnel": default_listen(),
         "rclone-s3": os.environ.get("RCLONE_ADDR", DEFAULT_RCLONE_ADDR),
     }
@@ -1930,8 +2024,9 @@ def start_stack(
     allow_cn: str | None = None,
     skip_workloads: bool = False,
     caffeinate: bool = False,
+    operator_vmcp: bool = False,
 ) -> int:
-    """Full bring-up: thv workloads -> vMCP config -> supervisord (vMCP/ghostunnel, opt-in caffeinate).
+    """Bring up workloads, the scoped stack, and optional operator vMCP/caffeinate.
 
     Idempotent even while already running: re-running `start` re-checks every
     ToolHive workload's drift fingerprint (so e.g. a refreshed ~/.aws recreates
@@ -1942,8 +2037,49 @@ def start_stack(
     """
     paths = runtime_paths(runtime_dir)
     config = load_servers_config(servers_config)
+    port = vmcp_port(config)
+    operator_port = operator_vmcp_port()
+    effective_listen = listen or default_listen()
+    rclone_addr = os.environ.get("RCLONE_ADDR", DEFAULT_RCLONE_ADDR)
+
+    if operator_vmcp:
+        validate_operator_vmcp_port(
+            operator_port,
+            {
+                "scoped vMCP": port,
+                "ghostunnel": _addr_port(effective_listen),
+                "rclone-s3": _addr_port(rclone_addr),
+            },
+        )
 
     already_running = is_supervisor_running(runtime_dir)
+    preserve_pids: frozenset[int] = frozenset()
+    if already_running:
+        current_supervisor_pid = supervisor_pid(runtime_dir)
+        if current_supervisor_pid is None:
+            raise SystemExit("supervisord is reachable but its PID could not be determined")
+        preserve_pids = frozenset({current_supervisor_pid})
+    stray = _kill_stray_supervisord(paths, preserve_pids=preserve_pids)
+    if stray:
+        _ui_warn(
+            "Stopped stale supervisord process(es) before reconciliation: "
+            + ", ".join(str(pid) for pid in stray)
+        )
+    initial_states = get_supervisor_states(runtime_dir) if already_running else {}
+    if not operator_vmcp:
+        operator_state = initial_states.get("operator-vmcp")
+        if operator_state and operator_state != "STOPPED":
+            stopped = supervisorctl("stop", "operator-vmcp", runtime_dir=runtime_dir)
+            if stopped.returncode != 0:
+                raise SystemExit(
+                    f"supervisorctl stop operator-vmcp failed: {stopped.stderr.strip()}"
+                )
+        killed = _stop_disabled_operator_vmcp(False, operator_port)
+        if killed:
+            _ui_warn(
+                "Stopped orphaned operator-vmcp listener after opt-out: "
+                + ", ".join(str(pid) for pid in killed)
+            )
 
     # caffeinate is opt-in per start via --caffeinate; nothing is persisted.
     use_caffeinate = caffeinate
@@ -1965,7 +2101,6 @@ def start_stack(
     _ui("Generating vMCP configuration …", "dim")
     vmcp_cfg = generate_vmcp_config(config, runtime_dir)
 
-    port = vmcp_port(config)
     thv_bin = _thv_path()
     # Tier 1 FTS5 keyword optimizer: collapses every backend's tools down to
     # find_tool/call_tool, cutting the tokens spent on tool definitions as more
@@ -1983,8 +2118,18 @@ def start_stack(
     )
     vmcp_env = {"PATH": path_env, "HOME": str(Path.home())}
 
+    operator_vmcp_command = ""
+    operator_vmcp_env: dict[str, str] = {}
+    if operator_vmcp:
+        _ui("Generating unscoped operator vMCP configuration …", "dim")
+        operator_vmcp_cfg = generate_operator_vmcp_config(vmcp_cfg, runtime_dir)
+        operator_vmcp_command = (
+            f"{_supervisord_arg(thv_bin)} vmcp serve "
+            f"--config {_supervisord_arg(operator_vmcp_cfg)} --port {operator_port}{optimizer_flag}"
+        )
+        operator_vmcp_env = vmcp_env
+
     effective_ghostshell = ghostshell or DEFAULT_GHOSTSHELL
-    effective_listen = listen or default_listen()
     target = vmcp_target(config)
     tunnel_env: dict[str, str] = {
         "TARGET": target,
@@ -1993,7 +2138,6 @@ def start_stack(
     }
 
     ensure_rclone_material()
-    rclone_addr = os.environ.get("RCLONE_ADDR", DEFAULT_RCLONE_ADDR)
     rclone_serve_dir = os.environ.get("RCLONE_SERVE_DIR", str(DEFAULT_RCLONE_SERVE_DIR))
     rclone_env: dict[str, str] = {
         "RCLONE_S3_HOST_DIR": os.environ.get("RCLONE_S3_HOST_DIR", str(DEFAULT_RCLONE_S3_DIR)),
@@ -2017,6 +2161,8 @@ def start_stack(
         # fresh instance for one of those would just lose the port race and go FATAL, so
         # leave any already-reachable one alone instead (autostart=false in the conf).
         probe_addrs = {"vmcp": target, "ghostunnel": effective_listen, "rclone-s3": rclone_addr}
+        if operator_vmcp:
+            probe_addrs["operator-vmcp"] = f"{DEFAULT_VMCP_HOST}:{operator_port}"
         preexisting = frozenset(name for name, addr in probe_addrs.items() if _addr_reachable(addr))
         if preexisting:
             _ui_warn(f"Already running outside supervisord; leaving in place: {', '.join(sorted(preexisting))}")
@@ -2037,12 +2183,17 @@ def start_stack(
 
     conf_text = build_supervisord_conf(
         paths, effective_ghostshell, tunnel_env, vmcp_command, vmcp_env,
+        operator_vmcp_command, operator_vmcp_env,
         DEFAULT_RCLONESHELL, rclone_env, health_watch_command, health_watch_env,
-        use_caffeinate, preexisting,
+        operator_vmcp, use_caffeinate, preexisting,
     )
     paths["supervisord_conf"].write_text(conf_text, encoding="utf-8")
 
-    opt_in = {"caffeinate"} if use_caffeinate else set()
+    opt_in = set()
+    if use_caffeinate:
+        opt_in.add("caffeinate")
+    if operator_vmcp:
+        opt_in.add("operator-vmcp")
     expected = tuple(p for p in ALL_PROGRAMS if p in SUPERVISED_PROGRAMS or p in opt_in)
 
     if already_running:
@@ -2059,6 +2210,12 @@ def start_stack(
             raise SystemExit(f"supervisorctl update failed: {update.stderr.strip()}")
         if update.stdout.strip():
             print(update.stdout.strip())
+        killed = _stop_disabled_operator_vmcp(operator_vmcp, operator_port)
+        if killed:
+            _ui_warn(
+                "Stopped operator-vmcp listener after opt-out: "
+                + ", ".join(str(pid) for pid in killed)
+            )
         # Every supervised program's command points at a FILE this repo edits
         # (a .py or .sh path) or, for vmcp, a config file it reads once at its
         # own startup -- none of that is part of the command/env string
@@ -2107,6 +2264,8 @@ def start_stack(
         state = "RUNNING (external, inherited)" if prog in preexisting else sup_states.get(prog, "unknown")
         (_ui_ok if state.startswith("RUNNING") else _ui_warn)(f"{prog:<18} {state}")
     _ui(f"  {'vMCP':<16} 127.0.0.1:{port}  (ToolHive group: {group_name(config)})")
+    if operator_vmcp:
+        _ui(f"  {'operator vMCP':<16} 127.0.0.1:{operator_port}/mcp  (unscoped, host only)")
     _ui(f"  {'ghostunnel':<16} {effective_listen} → {target}")
     _ui(f"  {'rclone-s3':<16} {rclone_addr} → {rclone_serve_dir}  (bucket: {RCLONE_BUCKET})")
     _ui(f"  {'caffeinate':<16} {'on' if use_caffeinate else 'off'}", "green" if use_caffeinate else "dim")
@@ -2122,8 +2281,7 @@ def stop_stack(
     servers_config: Path = DEFAULT_SERVERS_CONFIG,
     stop_workloads: bool = True,
 ) -> int:
-    """Shut down the supervised stack (vMCP/ghostunnel + caffeinate if enabled) and,
-    by default, the ToolHive workloads too.
+    """Shut down the supervised stack and, by default, ToolHive workloads too.
 
     Workloads are `thv stop`'d (stopped, not removed), so their persisted OAuth
     sessions survive and the next `start` won't re-prompt. Pass stop_workloads=False
@@ -2175,6 +2333,7 @@ def stop_stack(
     # fresh, fully supervisord-managed instance instead of inheriting one again.
     port_addrs = {
         "vmcp": vmcp_target(config),
+        "operator-vmcp": f"{DEFAULT_VMCP_HOST}:{operator_vmcp_port()}",
         "ghostunnel": default_listen(),
         "rclone-s3": os.environ.get("RCLONE_ADDR", DEFAULT_RCLONE_ADDR),
     }
@@ -2189,7 +2348,10 @@ def stop_stack(
     return rc
 
 
-_LOG_NAMES = ("ghostunnel", "vmcp", "rclone-s3", "mcp-health-watch", "supervisord", "caffeinate")
+_LOG_NAMES = (
+    "ghostunnel", "vmcp", "operator-vmcp", "rclone-s3",
+    "mcp-health-watch", "supervisord", "caffeinate",
+)
 
 
 def tail_log(
@@ -2564,7 +2726,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     return start_stack(
         args.runtime_dir, args.servers_config, args.ghostshell,
         args.listen, args.allow_cn, args.skip_workloads,
-        args.caffeinate,
+        args.caffeinate, args.operator_vmcp,
     )
 
 
@@ -2599,6 +2761,8 @@ vicegerent mcp — host-side ToolHive stack controller
 Owns the local ToolHive stack behind the cluster's MCP access:
   ToolHive workloads (group 'vicegerent') -> vMCP aggregator on :4483
   -> ghostunnel (mTLS from the cluster), optionally kept awake by caffeinate.
+With --operator-vmcp, also exposes those workloads without aggregation.tools
+filtering at http://127.0.0.1:4484/mcp for manually supervised host harnesses.
 Also runs rclone-s3 on :9899 (the S3 backend for the cluster's Velero backups)
 and mcp-health-watch, which notifies (macOS) the moment any enabled workload
 drops out of "running" -- e.g. an OAuth-backed remote (Notion, Linear, ...)
@@ -2611,15 +2775,16 @@ Commands:
   configure              interactively enable/skip each server + set its secrets
   enable KEY             enable a server (persists; brought up on next start)
   disable KEY            disable a server (stops it; ToolHive won't run it)
-  start [--caffeinate]   bring up enabled workloads + vMCP + ghostunnel (idempotent);
+  start [OPTIONS]        bring up enabled workloads + vMCP + ghostunnel (idempotent);
+                         --operator-vmcp adds the unscoped host endpoint;
                          --caffeinate keeps macOS awake while the stack runs.
                          mcp-health-watch always runs (no flag): macOS notification
                          when an enabled workload drops, plus an AWS credential-expiry
                          warning whenever the `aws` server is enabled
   stop                   stop the supervised stack + ToolHive workloads (--keep-workloads to leave them)
   status                 workload + supervised-process state (rich table)
-  logs PROC              tail logs  (ghostunnel | vmcp | rclone-s3 | mcp-health-watch |
-                         supervisord | caffeinate)
+  logs PROC              tail logs  (ghostunnel | vmcp | operator-vmcp | rclone-s3 |
+                         mcp-health-watch | supervisord | caffeinate)
   mcp-health-watch       (internal, run under supervisord) poll enabled workloads' thv
                          status + aws creds, notify on drop/expiry
   doctor                 check binaries, thv secrets provider + the enabled servers'
@@ -2637,6 +2802,7 @@ Global options:
 Environment:
   THV_GROUP              ToolHive group name (default: vicegerent)
   VMCP_HOST / VMCP_PORT  vMCP loopback target (default 127.0.0.1:4483)
+  OPERATOR_VMCP_PORT     unscoped host vMCP port (default: 4484)
   LISTEN                 ghostunnel listen address (default 127.0.0.1:8453)
   RCLONE_ADDR            rclone serve s3 listen address (default 127.0.0.1:9899)
 
@@ -2694,6 +2860,10 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument(
         "--caffeinate", dest="caffeinate", action="store_true",
         help="keep macOS awake while the stack runs (opt-in; default off)",
+    )
+    start.add_argument(
+        "--operator-vmcp", action="store_true",
+        help="also expose an unscoped loopback vMCP for supervised host harnesses",
     )
     start.set_defaults(func=cmd_start)
 
