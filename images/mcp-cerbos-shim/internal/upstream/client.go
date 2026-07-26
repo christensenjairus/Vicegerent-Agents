@@ -236,15 +236,15 @@ const callToolMetaName = "call_tool"
 // JSON-RPC error response all return a non-nil error; there is no
 // partial/best-effort result.
 func (c *Client) CallTool(ctx context.Context, tool string, arguments map[string]any) (*CallToolResult, error) {
-	result, err := c.callToolOnce(ctx, tool, arguments)
+	result, sessionID, err := c.callToolOnce(ctx, tool, arguments)
 	if err == nil || !errors.Is(err, errSessionRejected) {
 		return result, err
 	}
 	// Stale cached session: drop it and try once more with a fresh handshake.
 	// Guarded so a concurrent caller that already replaced the session isn't
 	// clobbered.
-	c.invalidateSession()
-	result, err = c.callToolOnce(ctx, tool, arguments)
+	c.invalidateSession(sessionID)
+	result, _, err = c.callToolOnce(ctx, tool, arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -254,10 +254,10 @@ func (c *Client) CallTool(ctx context.Context, tool string, arguments map[string
 // callToolOnce runs one attempt: reuse-or-establish a session, then issue the
 // wrapped tools/call. A rejected session is reported as errSessionRejected so
 // CallTool can distinguish "retry with a new session" from a genuine failure.
-func (c *Client) callToolOnce(ctx context.Context, tool string, arguments map[string]any) (*CallToolResult, error) {
+func (c *Client) callToolOnce(ctx context.Context, tool string, arguments map[string]any) (*CallToolResult, string, error) {
 	sessionID, err := c.session(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("upstream initialize: %w", err)
+		return nil, "", fmt.Errorf("upstream initialize: %w", err)
 	}
 
 	resp, err := c.doRPC(ctx, sessionID, jsonrpcRequest{
@@ -273,20 +273,20 @@ func (c *Client) callToolOnce(ctx context.Context, tool string, arguments map[st
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("upstream tools/call %s: %w", tool, err)
+		return nil, sessionID, fmt.Errorf("upstream tools/call %s: %w", tool, err)
 	}
 	if resp.Error != nil {
-		return nil, fmt.Errorf("upstream tools/call %s: %w", tool, resp.Error)
+		return nil, sessionID, fmt.Errorf("upstream tools/call %s: %w", tool, resp.Error)
 	}
 
 	var result CallToolResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("upstream tools/call %s: malformed result: %w", tool, err)
+		return nil, sessionID, fmt.Errorf("upstream tools/call %s: malformed result: %w", tool, err)
 	}
 	if result.IsError {
-		return nil, fmt.Errorf("upstream tools/call %s: tool reported an error: %s", tool, result.Text())
+		return nil, sessionID, fmt.Errorf("upstream tools/call %s: tool reported an error: %s", tool, result.Text())
 	}
-	return &result, nil
+	return &result, sessionID, nil
 }
 
 // session returns the cached MCP session id, performing the handshake only if
@@ -309,10 +309,13 @@ func (c *Client) session(ctx context.Context) (string, error) {
 	return sessionID, nil
 }
 
-// invalidateSession clears the cached session so the next call re-handshakes.
-func (c *Client) invalidateSession() {
+// invalidateSession clears the rejected session without clobbering a session
+// that another caller has already established.
+func (c *Client) invalidateSession(rejectedID string) {
 	c.mu.Lock()
-	c.sessionID = ""
+	if c.sessionID == rejectedID {
+		c.sessionID = ""
+	}
 	c.mu.Unlock()
 }
 

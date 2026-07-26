@@ -4,11 +4,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: external-provisioner-runner
 rules:
-  # The following rule should be uncommented for plugins that require secrets
-  # for provisioning.
-  # - apiGroups: [""]
-  #   resources: ["secrets"]
-  #   verbs: ["get", "list"]
   - apiGroups: ['']
     resources: [persistentvolumes]
     verbs: [get, list, watch, create, patch, delete]
@@ -40,13 +35,6 @@ rules:
   - apiGroups: [storage.k8s.io]
     resources: [volumeattachments]
     verbs: [get, list, watch]
-# (Alpha) Access to referencegrants is only needed when the CSI driver
-# has the CrossNamespaceVolumeDataSource controller capability.
-# In that case, external-provisioner requires "get", "list", "watch"
-# permissions  for "referencegrants" on "gateway.networking.k8s.io".
-#- apiGroups: ["gateway.networking.k8s.io"]
-#  resources: ["referencegrants"]
-#  verbs: ["get", "list", "watch"]
 ---
 # Provisioner must be able to work with endpoints in current namespace
 # if (and only if) leadership election is enabled
@@ -94,13 +82,6 @@ rules:
   - apiGroups: [storage.k8s.io]
     resources: [volumeattachments/status]
     verbs: [patch]
-# Secret permission is optional.
-# Enable it if you need value from secret.
-# For example, you have key `csi.storage.k8s.io/controller-publish-secret-name` in StorageClass.parameters
-# see https://kubernetes-csi.github.io/docs/secrets-and-credentials.html
-#  - apiGroups: [""]
-#    resources: ["secrets"]
-#    verbs: ["get", "list"]
 ---
 # Attacher must be able to work with configmaps or leases in the current namespace
 # if (and only if) leadership election is enabled
@@ -119,11 +100,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: external-resizer-runner
 rules:
-  # The following rule should be uncommented for plugins that require secrets
-  # for provisioning.
-  # - apiGroups: [""]
-  #   resources: ["secrets"]
-  #   verbs: ["get", "list", "watch"]
   - apiGroups: ['']
     resources: [persistentvolumes]
     verbs: [get, list, watch, patch]
