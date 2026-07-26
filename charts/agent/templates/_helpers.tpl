@@ -127,6 +127,84 @@ Pick the model that fits the task: heavier reasoning for complex/design work, li
 - When MCP servers misbehave, stop execution and tell the user.
 {{- end -}}
 
+{{- define "vicegerent-agent.providerOrder" -}}
+["anthropic", "openai", "deepseek", "zai"]
+{{- end -}}
+
+{{- /* Single source of truth for every Hermes provider connection. Values use
+      upstream names (notably openai); id is the canonical Hermes runtime slug. */ -}}
+{{- define "vicegerent-agent.providerCatalog" -}}
+anthropic:
+  enabled: {{ .Values.providers.anthropic.enabled }}
+  id: anthropic
+  name: Agentgateway-Anthropic
+  api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/anthropic
+  mnemosyneApi: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mnemosyne-anthropic/v1
+  keyEnv: ANTHROPIC_API_KEY
+  baseEnv: ANTHROPIC_BASE_URL
+  transport: anthropic_messages
+  model: {{ .Values.providers.anthropic.model }}
+  auxiliaryModel: {{ .Values.providers.anthropic.auxiliaryModel }}
+  mnemosyneModel: {{ .Values.providers.anthropic.mnemosyneModel }}
+  moaModels: {{ .Values.providers.anthropic.moaModels | toJson }}
+  models: {{ list .Values.providers.anthropic.model .Values.providers.anthropic.auxiliaryModel .Values.providers.anthropic.mnemosyneModel .Values.providers.anthropic.moaModels.balanced .Values.providers.anthropic.moaModels.frontier .Values.harnesses.claudeCode | uniq | toJson }}
+  aliases:
+    haiku: {{ .Values.providers.anthropic.auxiliaryModel }}
+    sonnet: {{ .Values.providers.anthropic.model }}
+    opus: {{ .Values.harnesses.claudeCode }}
+openai:
+  enabled: {{ .Values.providers.openai.enabled }}
+  id: openai-api
+  name: Agentgateway-OpenAI
+  api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
+  mnemosyneApi: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
+  keyEnv: OPENAI_API_KEY
+  baseEnv: OPENAI_BASE_URL
+  transport: codex_responses
+  model: {{ .Values.providers.openai.model }}
+  auxiliaryModel: {{ .Values.providers.openai.auxiliaryModel }}
+  mnemosyneModel: {{ .Values.providers.openai.mnemosyneModel }}
+  moaModels: {{ .Values.providers.openai.moaModels | toJson }}
+  models: {{ list .Values.providers.openai.model .Values.providers.openai.auxiliaryModel .Values.providers.openai.mnemosyneModel .Values.providers.openai.moaModels.balanced .Values.providers.openai.moaModels.frontier .Values.harnesses.codex .Values.harnesses.openCode "gpt-5.6-sol" "gpt-5.6-terra" "gpt-5.6-luna" | uniq | toJson }}
+  aliases:
+    gpt-5: {{ .Values.providers.openai.model }}
+    sol: gpt-5.6-sol
+    terra: gpt-5.6-terra
+    luna: gpt-5.6-luna
+deepseek:
+  enabled: {{ .Values.providers.deepseek.enabled }}
+  id: deepseek
+  name: Agentgateway-DeepSeek
+  api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/deepseek/v1
+  mnemosyneApi: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/deepseek/v1
+  keyEnv: DEEPSEEK_API_KEY
+  baseEnv: DEEPSEEK_BASE_URL
+  transport: chat_completions
+  model: {{ .Values.providers.deepseek.model }}
+  auxiliaryModel: {{ .Values.providers.deepseek.auxiliaryModel }}
+  mnemosyneModel: {{ .Values.providers.deepseek.mnemosyneModel }}
+  moaModels: {{ .Values.providers.deepseek.moaModels | toJson }}
+  models: {{ list .Values.providers.deepseek.model .Values.providers.deepseek.auxiliaryModel .Values.providers.deepseek.mnemosyneModel .Values.providers.deepseek.moaModels.balanced .Values.providers.deepseek.moaModels.frontier | uniq | toJson }}
+  aliases:
+    deepseek: {{ .Values.providers.deepseek.model }}
+zai:
+  enabled: {{ .Values.providers.zai.enabled }}
+  id: zai
+  name: Agentgateway-Zai
+  api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/zai/api/paas/v4
+  mnemosyneApi: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/zai/api/paas/v4
+  keyEnv: ZAI_API_KEY
+  baseEnv: ZAI_BASE_URL
+  transport: chat_completions
+  model: {{ .Values.providers.zai.model }}
+  auxiliaryModel: {{ .Values.providers.zai.auxiliaryModel }}
+  mnemosyneModel: {{ .Values.providers.zai.mnemosyneModel }}
+  moaModels: {{ .Values.providers.zai.moaModels | toJson }}
+  models: {{ list .Values.providers.zai.model .Values.providers.zai.auxiliaryModel .Values.providers.zai.mnemosyneModel .Values.providers.zai.moaModels.balanced .Values.providers.zai.moaModels.frontier | uniq | toJson }}
+  aliases:
+    zai: {{ .Values.providers.zai.model }}
+{{- end -}}
+
 {{- /* Locked provider connectivity every agent must have; wins on merge conflicts.
       Gated on values.providers.<name>.enabled so an agent can opt a provider out
       entirely -- disabling one drops it from renderedConfig's providers map, so
@@ -138,57 +216,25 @@ Pick the model that fits the task: heavier reasoning for complex/design work, li
       canonical names (openai-api, zai) or the shared config key (anthropic,
       deepseek) -- see MR !612. */ -}}
 {{- define "vicegerent-agent.mandatoryConfig" -}}
+{{- $catalog := include "vicegerent-agent.providerCatalog" . | fromYaml -}}
+{{- $providerOrder := include "vicegerent-agent.providerOrder" . | fromJsonArray -}}
 providers:
-{{- if .Values.providers.anthropic.enabled }}
-  anthropic:
-    name: Agentgateway-Anthropic
-    api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/anthropic
-    key_env: ANTHROPIC_API_KEY
-    transport: anthropic_messages
-    models:
-{{- range (list .Values.providers.anthropic.model .Values.providers.anthropic.auxiliaryModel .Values.harnesses.claudeCode | uniq) }}
-      - {{ . }}
-{{- end }}
-{{- end }}
-{{- if .Values.providers.openai.enabled }}
-  openai-api:
-    name: Agentgateway-OpenAI
-    api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
-    key_env: OPENAI_API_KEY
-    transport: codex_responses
-    models:
-{{- range (list .Values.providers.openai.model .Values.providers.openai.auxiliaryModel .Values.harnesses.codex .Values.harnesses.openCode "gpt-5.6-sol" "gpt-5.6-terra" "gpt-5.6-luna" | uniq) }}
-      - {{ . }}
-{{- end }}
-{{- end }}
-{{- if .Values.providers.deepseek.enabled }}
-  deepseek:
-    name: Agentgateway-DeepSeek
-    api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/deepseek/v1
-    key_env: DEEPSEEK_API_KEY
-    transport: chat_completions
-    models:
-{{- range (list .Values.providers.deepseek.model .Values.providers.deepseek.moaModels.balanced .Values.providers.deepseek.moaModels.frontier | uniq) }}
-      - {{ . }}
-{{- end }}
-{{- end }}
-{{- if .Values.providers.zai.enabled }}
-  zai:
-    name: Agentgateway-Zai
-    api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/zai/api/paas/v4
-    key_env: ZAI_API_KEY
-    transport: chat_completions
-    models:
-{{- range (list .Values.providers.zai.model .Values.providers.zai.moaModels.balanced .Values.providers.zai.moaModels.frontier | uniq) }}
-      - {{ . }}
+{{- range $name := $providerOrder }}
+{{- $provider := index $catalog $name -}}
+{{- if $provider.enabled }}
+  {{ $provider.id }}:
+    name: {{ $provider.name }}
+    api: {{ $provider.api }}
+    key_env: {{ $provider.keyEnv }}
+    transport: {{ $provider.transport }}
+    models: {{ $provider.models | toJson }}
 {{- end }}
 {{- end }}
 model_catalog:
   excluded_providers:
-    - anthropic
-    - openai-api
-    - deepseek
-    - zai
+{{- range $name := $providerOrder }}
+    - {{ index $catalog $name "id" }}
+{{- end }}
 {{- end -}}
 
 {{- /* Platform-wide operational defaults; overridable per-agent via values.config.
@@ -197,125 +243,69 @@ model_catalog:
       anthropic/openai/deepseek/zai, in that order. Fails loudly if every provider is
       disabled -- an agent needs at least one. */ -}}
 {{- define "vicegerent-agent.defaultConfig" -}}
+{{- $catalog := include "vicegerent-agent.providerCatalog" . | fromYaml -}}
+{{- $providerOrder := include "vicegerent-agent.providerOrder" . | fromJsonArray -}}
 {{- $primaryProvider := "" -}}
 {{- $primaryModel := "" -}}
 {{- $primaryAuxiliaryModel := "" -}}
-{{- if .Values.providers.anthropic.enabled }}{{- $primaryProvider = "anthropic" -}}{{- $primaryModel = .Values.providers.anthropic.model -}}{{- $primaryAuxiliaryModel = .Values.providers.anthropic.auxiliaryModel -}}
-{{- else if .Values.providers.openai.enabled }}{{- $primaryProvider = "openai-api" -}}{{- $primaryModel = .Values.providers.openai.model -}}{{- $primaryAuxiliaryModel = .Values.providers.openai.auxiliaryModel -}}
-{{- else if .Values.providers.deepseek.enabled }}{{- $primaryProvider = "deepseek" -}}{{- $primaryModel = .Values.providers.deepseek.model -}}{{- $primaryAuxiliaryModel = .Values.providers.deepseek.auxiliaryModel -}}
-{{- else if .Values.providers.zai.enabled }}{{- $primaryProvider = "zai" -}}{{- $primaryModel = .Values.providers.zai.model -}}{{- $primaryAuxiliaryModel = .Values.providers.zai.auxiliaryModel -}}
-{{- else }}{{- fail "vicegerent-agent: every provider (anthropic/openai/deepseek/zai) is disabled in values.providers -- at least one must be enabled" -}}
+{{- $primary := dict -}}
+{{- range $name := $providerOrder -}}
+{{- $provider := index $catalog $name -}}
+{{- if and (not $primaryProvider) $provider.enabled -}}
+{{- $primaryProvider = $provider.id -}}
+{{- $primaryModel = $provider.model -}}
+{{- $primaryAuxiliaryModel = $provider.auxiliaryModel -}}
+{{- $primary = $provider -}}
+{{- end -}}
+{{- end -}}
+{{- if not $primaryProvider }}{{- fail "vicegerent-agent: every provider (anthropic/openai/deepseek/zai) is disabled in values.providers -- at least one must be enabled" -}}
 {{- end }}
 model:
   default: {{ $primaryModel }}
   provider: {{ $primaryProvider }}
   context_length: {{ .Values.tuning.contextLength }}
   persist_switch_by_default: false
+{{- $aliases := dict -}}
+{{- range $name := $providerOrder }}
+{{- $provider := index $catalog $name -}}
+{{- if $provider.enabled }}
+{{- range $alias, $model := $provider.aliases }}
+{{- $_ := set $aliases $alias (dict "model" $model "provider" $provider.id "base_url" $provider.api) -}}
+{{- end }}
+{{- end }}
+{{- end }}
 model_aliases:
-{{- if .Values.providers.anthropic.enabled }}
-  haiku:
-    model: {{ .Values.providers.anthropic.auxiliaryModel }}
-    provider: anthropic
-    base_url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/anthropic
-  sonnet:
-    model: {{ .Values.providers.anthropic.model }}
-    provider: anthropic
-    base_url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/anthropic
-  opus:
-    model: {{ .Values.harnesses.claudeCode }}
-    provider: anthropic
-    base_url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/anthropic
+{{ $aliases | toYaml | nindent 2 }}
+{{- $presets := dict -}}
+{{- range $preset := list "default" "frontier" }}
+{{- $tier := $preset -}}
+{{- if eq $preset "default" }}{{- $tier = "balanced" -}}{{- end -}}
+{{- $references := list -}}
+{{- range $name := $providerOrder }}
+{{- $provider := index $catalog $name -}}
+{{- if $provider.enabled }}
+{{- $references = append $references (dict "provider" $provider.id "model" (index $provider.moaModels $tier)) -}}
 {{- end }}
-{{- if .Values.providers.openai.enabled }}
-  gpt-5:
-    model: {{ .Values.providers.openai.model }}
-    provider: openai-api
-    base_url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
-  sol:
-    model: gpt-5.6-sol
-    provider: openai-api
-    base_url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
-  terra:
-    model: gpt-5.6-terra
-    provider: openai-api
-    base_url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
-  luna:
-    model: gpt-5.6-luna
-    provider: openai-api
-    base_url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
 {{- end }}
-{{- if .Values.providers.deepseek.enabled }}
-  deepseek:
-    model: {{ .Values.providers.deepseek.model }}
-    provider: deepseek
-{{- end }}
-{{- if .Values.providers.zai.enabled }}
-  zai:
-    model: {{ .Values.providers.zai.model }}
-    provider: zai
+{{- $_ := set $presets $preset (dict "reference_models" $references "aggregator" (dict "provider" $primaryProvider "model" (index $primary.moaModels $tier)) "enabled" true) -}}
 {{- end }}
 moa:
-  default_preset: balanced
+  default_preset: default
   presets:
-    balanced:
-      reference_models:
-{{- range $provider := list "anthropic" "openai" "deepseek" "zai" }}
-{{- if (index $.Values.providers $provider "enabled") }}
-{{- $renderedProvider := $provider -}}
-{{- if eq $provider "openai" }}{{- $renderedProvider = "openai-api" -}}{{- end }}
-        - provider: {{ $renderedProvider }}
-          model: {{ index $.Values.providers $provider "moaModels" "balanced" }}
-{{- end }}
-{{- end }}
-      aggregator:
-        provider: {{ $primaryProvider }}
-        model: {{ index .Values.providers $primaryProvider "moaModels" "balanced" }}
-      enabled: true
-    frontier:
-      reference_models:
-{{- range $provider := list "anthropic" "openai" "deepseek" "zai" }}
-{{- if (index $.Values.providers $provider "enabled") }}
-{{- $renderedProvider := $provider -}}
-{{- if eq $provider "openai" }}{{- $renderedProvider = "openai-api" -}}{{- end }}
-        - provider: {{ $renderedProvider }}
-          model: {{ index $.Values.providers $provider "moaModels" "frontier" }}
-{{- end }}
-{{- end }}
-      aggregator:
-        provider: {{ $primaryProvider }}
-        model: {{ index .Values.providers $primaryProvider "moaModels" "frontier" }}
-      enabled: true
-{{- $fp := .Values.failover.provider -}}
+{{ $presets | toYaml | nindent 4 }}
+{{ $fp := .Values.failover.provider -}}
 {{- if $fp }}
-{{- if not (has $fp (list "anthropic" "openai" "deepseek" "zai")) }}{{- fail (printf "failover.provider %q must be one of anthropic/openai/deepseek/zai" $fp) -}}{{- end -}}
-{{- if index .Values.providers $fp "enabled" }}
+{{- if not (hasKey $catalog $fp) }}{{- fail (printf "vicegerent-agent: failover.provider %q must be one of anthropic/openai/deepseek/zai" $fp) -}}{{- end -}}
+{{- $fallback := index $catalog $fp -}}
+{{- if not $fallback.enabled }}{{- fail (printf "vicegerent-agent: failover.provider %q is disabled in values.providers" $fp) -}}{{- end -}}
 {{- $fpModel := .Values.failover.model -}}
-{{- if not $fpModel }}{{- $fpModel = index .Values.providers $fp "model" -}}{{- end -}}
-{{- $gw := "http://agentgateway-proxy.agentgateway-system.svc.cluster.local" -}}
-{{- $fpBase := "" -}}
-{{- $fpKey := "" -}}
-{{- $fpMode := "chat_completions" -}}
-{{- $fpRendered := $fp -}}
-{{- if eq $fp "anthropic" }}{{- $fpBase = printf "%s/anthropic" $gw -}}{{- $fpKey = "ANTHROPIC_API_KEY" -}}{{- $fpMode = "anthropic_messages" -}}
-{{- else if eq $fp "openai" }}{{- $fpBase = printf "%s/openai/v1" $gw -}}{{- $fpKey = "OPENAI_API_KEY" -}}{{- $fpMode = "codex_responses" -}}{{- $fpRendered = "openai-api" -}}
-{{- else if eq $fp "deepseek" }}{{- $fpBase = printf "%s/deepseek/v1" $gw -}}{{- $fpKey = "DEEPSEEK_API_KEY" -}}
-{{- else if eq $fp "zai" }}{{- $fpBase = printf "%s/zai/api/paas/v4" $gw -}}{{- $fpKey = "ZAI_API_KEY" -}}
-{{- end }}
+{{- if not $fpModel }}{{- $fpModel = $fallback.model -}}{{- end -}}
 fallback_providers:
-  # provider is the REAL provider name, not "custom". Both honor explicit
-  # base_url identically (verified: resolve_provider_client passes
-  # explicit_base_url through for every provider name, so the gateway route
-  # below is preserved either way), but "custom" makes the entry unbillable:
-  # usage_pricing.resolve_billing_route() maps custom/local to
-  # billing_mode="unknown" unconditionally, so EVERY failover session recorded
-  # cost_status="unknown" and showed no cost in the Slack footer regardless of
-  # what the price table contained. Naming the provider restores attribution.
-  - provider: {{ $fpRendered }}
+  - provider: {{ $fallback.id }}
     model: {{ $fpModel }}
-    base_url: {{ $fpBase }}
-    key_env: {{ $fpKey }}
-    api_mode: {{ $fpMode }}
-{{- end }}
+    base_url: {{ $fallback.api }}
+    key_env: {{ $fallback.keyEnv }}
+    api_mode: {{ $fallback.transport }}
 {{- end }}
 compression:
   threshold: {{ .Values.tuning.compressionThreshold }}
@@ -497,10 +487,24 @@ plugins:
 {{- fail (printf "vicegerent-agent: .Values.config must be a YAML map (got %s)" (kindOf $agentConfig)) -}}
 {{- end -}}
 {{- $default := include "vicegerent-agent.defaultConfig" . | fromYaml -}}
+{{- $lockedDefaults := $default | deepCopy -}}
 {{- $agentConfig = mergeOverwrite $default $agentConfig -}}
 {{- $mandatory := include "vicegerent-agent.mandatoryConfig" . | fromYaml -}}
-{{- $merged := mergeOverwrite $agentConfig $mandatory -}}
-{{- /* model.* is a connection independent of providers.*; re-derive it too so it can't diverge. */ -}}
+{{- $merged := $agentConfig -}}
+{{- $_ := set $merged "providers" $mandatory.providers -}}
+{{- $_ := set $merged "model_catalog" $mandatory.model_catalog -}}
+{{- $_ := set $merged "model_aliases" $lockedDefaults.model_aliases -}}
+{{- $_ := set $merged "moa" $lockedDefaults.moa -}}
+{{- if hasKey $lockedDefaults "fallback_providers" -}}
+{{- $_ := set $merged "fallback_providers" $lockedDefaults.fallback_providers -}}
+{{- else -}}
+{{- $_ := unset $merged "fallback_providers" -}}
+{{- end -}}
+{{- if and (hasKey $merged "custom_providers") $merged.custom_providers -}}
+{{- fail "vicegerent-agent: config.custom_providers is forbidden because model traffic must use Agentgateway" -}}
+{{- end -}}
+{{- $_ := unset $merged "custom_providers" -}}
+{{- /* Lock every route's connection fields after applying agent model choices. */ -}}
 {{- $activeProviderName := "anthropic" -}}
 {{- if (kindIs "map" $merged.model) -}}
 {{- if $merged.model.provider -}}
@@ -508,10 +512,26 @@ plugins:
 {{- end -}}
 {{- end -}}
 {{- if not (hasKey $merged.providers $activeProviderName) -}}
-{{- fail (printf "vicegerent-agent: model.provider %q has no matching entry in providers — must be one of anthropic, openai-api, deepseek, zai, or an agent-defined entry under providers.*" $activeProviderName) -}}
+{{- fail (printf "vicegerent-agent: model.provider %q is not an enabled Agentgateway provider" $activeProviderName) -}}
 {{- end -}}
 {{- $activeProvider := index $merged.providers $activeProviderName -}}
 {{- $lockedModel := dict "provider" $activeProviderName "base_url" $activeProvider.api "key_env" $activeProvider.key_env "api_mode" $activeProvider.transport -}}
 {{- $merged = mergeOverwrite $merged (dict "model" $lockedModel) -}}
+{{- if not (kindIs "map" $merged.delegation) }}{{- fail "vicegerent-agent: config.delegation must be a YAML map" -}}{{- end -}}
+{{- if not (kindIs "map" $merged.auxiliary) }}{{- fail "vicegerent-agent: config.auxiliary must be a YAML map" -}}{{- end -}}
+{{- $routes := dict "delegation" $merged.delegation -}}
+{{- range $name, $route := $merged.auxiliary -}}
+{{- if not (kindIs "map" $route) }}{{- fail (printf "vicegerent-agent: config.auxiliary.%s must be a YAML map" $name) -}}{{- end -}}
+{{- $_ := set $routes (printf "auxiliary.%s" $name) $route -}}
+{{- end -}}
+{{- range $label, $route := $routes -}}
+{{- $providerName := default $activeProviderName $route.provider -}}
+{{- if not (hasKey $merged.providers $providerName) }}{{- fail (printf "vicegerent-agent: config.%s.provider %q is not an enabled Agentgateway provider" $label $providerName) -}}{{- end -}}
+{{- $provider := index $merged.providers $providerName -}}
+{{- $_ := set $route "provider" $providerName -}}
+{{- $_ := set $route "base_url" $provider.api -}}
+{{- $_ := set $route "key_env" $provider.key_env -}}
+{{- $_ := set $route "api_mode" $provider.transport -}}
+{{- end -}}
 {{- $merged | toYaml -}}
 {{- end -}}

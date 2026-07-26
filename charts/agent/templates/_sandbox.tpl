@@ -422,45 +422,27 @@ spec:
             # "unused" — else canonical anthropic/openai-api falsely register as
             # user-configured and leak into the desktop model picker. Gated per-provider
             # so a disabled provider gets no env var at all.
-{{- if .Values.providers.anthropic.enabled }}
-            - name: ANTHROPIC_API_KEY
+{{- $providerCatalog := include "vicegerent-agent.providerCatalog" . | fromYaml -}}
+{{- $providerOrder := include "vicegerent-agent.providerOrder" . | fromJsonArray -}}
+{{- range $name := $providerOrder }}
+{{- $provider := index $providerCatalog $name -}}
+{{- if $provider.enabled }}
+            - name: {{ $provider.keyEnv }}
               value: none
-            - name: ANTHROPIC_BASE_URL
-              value: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/anthropic
+            - name: {{ $provider.baseEnv }}
+              value: {{ $provider.api }}
 {{- end }}
-{{- if .Values.providers.openai.enabled }}
-            - name: OPENAI_API_KEY
-              value: none
-            - name: OPENAI_BASE_URL
-              value: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
 {{- end }}
-{{- if .Values.providers.deepseek.enabled }}
-            - name: DEEPSEEK_API_KEY
-              value: none
-            - name: DEEPSEEK_BASE_URL
-              value: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/deepseek/v1
-{{- end }}
-{{- if .Values.providers.zai.enabled }}
-            - name: ZAI_API_KEY
-              value: none
-            - name: ZAI_BASE_URL
-              value: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/zai/api/paas/v4
-{{- end }}
-{{- $mnemProvider := .Values.mnemosyne.provider -}}
-{{- if not (has $mnemProvider (list "anthropic" "openai" "deepseek" "zai")) }}{{- fail (printf "mnemosyne.provider %q must be one of anthropic/openai/deepseek/zai" $mnemProvider) -}}{{- end -}}
-{{- $gw := "http://agentgateway-proxy.agentgateway-system.svc.cluster.local" -}}
-{{- $mnemUrl := "" -}}
-{{- if eq $mnemProvider "anthropic" }}{{- $mnemUrl = printf "%s/mnemosyne-anthropic/v1" $gw -}}
-{{- else if eq $mnemProvider "openai" }}{{- $mnemUrl = printf "%s/openai/v1" $gw -}}
-{{- else if eq $mnemProvider "deepseek" }}{{- $mnemUrl = printf "%s/deepseek/v1" $gw -}}
-{{- else if eq $mnemProvider "zai" }}{{- $mnemUrl = printf "%s/zai/api/paas/v4" $gw -}}
-{{- end }}
+{{ $mnemProvider := .Values.mnemosyne.provider -}}
+{{- if not (hasKey $providerCatalog $mnemProvider) }}{{- fail (printf "mnemosyne.provider %q must be one of anthropic/openai/deepseek/zai" $mnemProvider) -}}{{- end -}}
+{{- $mnem := index $providerCatalog $mnemProvider -}}
+{{- if not $mnem.enabled }}{{- fail (printf "mnemosyne.provider %q is disabled in values.providers" $mnemProvider) -}}{{- end }}
             - name: MNEMOSYNE_LLM_ENABLED
               value: 'true'
             - name: MNEMOSYNE_LLM_BASE_URL
-              value: {{ $mnemUrl }}
+              value: {{ $mnem.mnemosyneApi }}
             - name: MNEMOSYNE_LLM_MODEL
-              value: {{ index .Values.providers $mnemProvider "mnemosyneModel" }}
+              value: {{ $mnem.mnemosyneModel }}
             - name: MNEMOSYNE_LLM_API_KEY
               value: unused
             - name: HF_HUB_OFFLINE
