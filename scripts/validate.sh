@@ -245,6 +245,9 @@ python3 scripts/validate-gitconfig-immutable.py
 echo "INFO - Asserting agent runtime ownership"
 python3 scripts/validate-agent-runtime.py
 
+echo "INFO - Asserting shared skill-maintenance guidance reaches every harness"
+python3 scripts/validate-shared-skill-guidance.py
+
 platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
 
 echo "INFO - Asserting the vMCP Cerbos guardrail is well-formed"
