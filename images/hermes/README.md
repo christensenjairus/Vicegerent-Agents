@@ -23,7 +23,7 @@ Built on a machine with internet (your laptop), then pushed to Harbor. The egres
 docker login harbor.hahomelabs.com
 make image PLATFORM=linux/arm64      # Kind on Apple Silicon
 make push
-# or: make release PLATFORM=linux/arm64 TAG=v2026.7.20-rev15
+# or: make release PLATFORM=linux/arm64 TAG=v2026.7.20-rev16
 ```
 
 `make help` lists targets. `TAG` is `<upstream-version>-rev<N>` (e.g. `v2026.7.20-rev1`): keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.

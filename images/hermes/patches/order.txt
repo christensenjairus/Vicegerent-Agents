@@ -52,3 +52,4 @@
 0043-model-pricing.py
 0044-shell-hooks-for-dashboard-serve.py
 0045-hooks-doctor-entrypoint-coverage.py
+0046-rootless-config-migration.py
