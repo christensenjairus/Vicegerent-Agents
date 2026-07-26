@@ -248,6 +248,9 @@ python3 scripts/validate-gitconfig-immutable.py
 echo "INFO - Asserting agent runtime ownership"
 python3 scripts/validate-agent-runtime.py
 
+echo "INFO - Asserting Slack access is single-operator and DM-only"
+python3 scripts/validate-slack-access.py
+
 echo "INFO - Asserting shared skill-maintenance guidance reaches every harness"
 python3 scripts/validate-shared-skill-guidance.py
 

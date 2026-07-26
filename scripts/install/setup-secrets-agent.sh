@@ -135,6 +135,10 @@ args=(--from-literal="password=$password" --from-literal="signing-secret=$signin
 # Slack fields (optional). env override > existing value > interactive prompt.
 echo
 ui_info "Slack is optional. Create the app from slack-app-manifest.yaml, enable Socket Mode, then install it to the workspace."
+slack_bot_token=""
+slack_app_token=""
+slack_allowed_users=""
+slack_home_channel=""
 for field in SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS SLACK_HOME_CHANNEL; do
   val="${!field:-}"
   [[ -z "$val" ]] && val="$(secret_val "$ITEM" "$field" || true)"
@@ -150,7 +154,26 @@ for field in SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS SLACK_HOME_CHAN
     args+=(--from-literal="$field=$val")
     info "$field set."
   fi
+  case "$field" in
+    SLACK_BOT_TOKEN) slack_bot_token="$val" ;;
+    SLACK_APP_TOKEN) slack_app_token="$val" ;;
+    SLACK_ALLOWED_USERS) slack_allowed_users="$val" ;;
+    SLACK_HOME_CHANNEL) slack_home_channel="$val" ;;
+  esac
 done
+
+slack_configured=0
+for value in "$slack_bot_token" "$slack_app_token" "$slack_allowed_users" "$slack_home_channel"; do
+  [[ -n "$value" ]] && { slack_configured=1; break; }
+done
+if [[ "$slack_configured" == "1" ]]; then
+  [[ -n "$slack_bot_token" ]] || die "Slack is configured but SLACK_BOT_TOKEN is missing."
+  [[ -n "$slack_app_token" ]] || die "Slack is configured but SLACK_APP_TOKEN is missing."
+  [[ -n "$slack_allowed_users" ]] || die "Slack is configured but SLACK_ALLOWED_USERS is missing."
+  [[ -n "$slack_home_channel" ]] || die "Slack is configured but SLACK_HOME_CHANNEL is missing."
+  [[ "$slack_allowed_users" =~ ^[UW][A-Z0-9]+$ ]] || die "SLACK_ALLOWED_USERS must be exactly one Slack user ID."
+  [[ "$slack_home_channel" =~ ^D[A-Z0-9]+$ ]] || die "SLACK_HOME_CHANNEL must be a direct-message channel ID."
+fi
 
 kc -n "$NS" create secret generic "$ITEM" "${args[@]}" --dry-run=client -o yaml | kc apply -f - >/dev/null
 info "Applied $ITEM."

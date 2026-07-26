@@ -238,6 +238,55 @@ spec:
             - name: egress-proxy-ca-cert
               mountPath: /reload/egress-proxy-ca
               readOnly: true
+        # Slack is optional; once configured it is deliberately single-operator and DM-only.
+        - name: validate-slack-access
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: [bash, -c]
+          args:
+            - |-
+              set -euo pipefail
+              configured=0
+              for name in SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS SLACK_HOME_CHANNEL; do
+                if [ -n "${!name:-}" ]; then
+                  configured=1
+                  break
+                fi
+              done
+              [ "${configured}" -eq 1 ] || exit 0
+
+              for name in SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS SLACK_HOME_CHANNEL; do
+                [ -n "${!name:-}" ] || { echo "Slack is configured but ${name} is missing" >&2; exit 1; }
+              done
+              [[ "${SLACK_ALLOWED_USERS}" =~ ^[UW][A-Z0-9]+$ ]] || {
+                echo "SLACK_ALLOWED_USERS must be exactly one Slack user ID" >&2
+                exit 1
+              }
+              [[ "${SLACK_HOME_CHANNEL}" =~ ^D[A-Z0-9]+$ ]] || {
+                echo "SLACK_HOME_CHANNEL must be a direct-message channel ID" >&2
+                exit 1
+              }
+              [[ "${SLACK_ALLOW_ALL_USERS:-}" =~ ^([Ff][Aa][Ll][Ss][Ee]|0|[Nn][Oo])?$ ]] || {
+                echo "SLACK_ALLOW_ALL_USERS must not broaden Slack access" >&2
+                exit 1
+              }
+              [ -z "${GATEWAY_ALLOWED_USERS:-}" ] || {
+                echo "GATEWAY_ALLOWED_USERS must be unset; use the single Slack allowlist" >&2
+                exit 1
+              }
+              [[ "${GATEWAY_ALLOW_ALL_USERS:-}" =~ ^([Ff][Aa][Ll][Ss][Ee]|0|[Nn][Oo])?$ ]] || {
+                echo "GATEWAY_ALLOW_ALL_USERS must not broaden Slack access" >&2
+                exit 1
+              }
+          envFrom:
+            - secretRef:
+                name: {{ include "vicegerent-agent.name" . }}-secrets
+                optional: false
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: [ALL]
         # Win the startup race: block until egress-proxy, agentgateway (via proxy),
         # and the vMCP route are all reachable before hermes starts, so a cold cluster
         # doesn't require a pod restart to recover.
