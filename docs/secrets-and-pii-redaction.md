@@ -26,7 +26,7 @@ The two agentgateway legs are provably disjoint from the sandbox's egress path: 
 
 ### 2. mcp-cerbos-shim (Go, agentgateway ExtProc guardrail)
 
-- **Covers:** every MCP `tools/call` argument (`CheckRequest`, before the call reaches the host vMCP) and every tool result (`CheckResponse`, before the result reaches the model), regardless of which backend the tool lives on. This is the one place that sees every tool call in both directions. `resources/read` and `prompts/get` results are also covered on the response leg only (HAH-101) -- neither method has a Cerbos mapping to build an authorizable resource from, so only their response bodies pass through redaction; there is no request-side check for either.
+- **Covers:** every MCP `tools/call` argument (`CheckRequest`, before the call reaches the host vMCP) and every tool result (`CheckResponse`, before the result reaches the model), regardless of which backend the tool lives on. This is the one place that sees every tool call in both directions. `resources/read` and `prompts/get` results are also covered on the response leg only — neither method has a Cerbos mapping from which to build an authorizable resource, so only their response bodies pass through redaction.
 - **Catches:** the regex registry `secretPatternRegistry` (`images/mcp-cerbos-shim/internal/server/secrets_redact.go`), embedded from the canonical `secret-patterns.json` via `//go:embed` — the same file the egress-proxy renders from, so the two legs never drift. Walks JSON recursively, including secrets one level of JSON-string-encoding deep (e.g. Jira's raw `additional_fields`).
 - **Where the patterns live:** the canonical `secret-patterns.json`, embedded into `secretPatternRegistry` (`secrets_redact.go`) at build time.
 - **Action:** redact-and-forward (mutate, never deny). Redaction is just another argument rewrite, applied after Cerbos allows — the same `mutate()` path used for GitHub's forced-draft override. A matched pattern never turns into a Cerbos denial; the deny-by-resource guardrail (project/team/repo scoping) is a separate control.
@@ -58,7 +58,7 @@ flowchart LR
     AGW[agentgateway]
     SHIM[mcp-cerbos-shim]
     VMCP["host vMCP (ToolHive)"]
-    LLM["Anthropic / OpenAI"]
+    LLM["model providers"]
     NET["internet (FQDN allowlist)"]
     SX[searxng]
     DIRECT["git-over-SSH :22 / Slack"]
@@ -80,7 +80,7 @@ flowchart LR
     VECTOR --> VLOGS
 ```
 
-Every arrow that carries agent content is labelled with its enforcement point. The two agentgateway-originated arrows (② and ③) are explicitly marked "NOT via egress-proxy" — they are the disjoint legs egress-proxy cannot see. The dotted arrow (git-over-SSH, Slack) bypasses all HTTP scrubbing by design; note this bypass is scoped to the HTTP legs only — a secret in a git-over-SSH or Slack-bound command's arguments is still exec'd inside the sandbox and so still passes through Tetragon → ④, even though the network call itself never touches egress-proxy.
+Each HTTP, MCP, model, and logging arrow is labelled with its enforcement point. The two agentgateway-originated arrows (② and ③) are explicitly marked "NOT via egress-proxy" because the egress-proxy cannot see those disjoint legs. The dotted arrow (git-over-SSH, Slack) bypasses all HTTP scrubbing by design; this bypass is scoped to the network traffic. A secret in a git-over-SSH or Slack-bound command's arguments is still executed inside the sandbox and therefore passes through Tetragon → ④, even though the network call itself never touches the egress-proxy.
 
 ## Pattern parity
 

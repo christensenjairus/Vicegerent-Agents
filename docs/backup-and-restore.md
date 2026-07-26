@@ -41,7 +41,7 @@ includedNamespaces: ['*']
 includeClusterResources: true
 ```
 
-This captures namespaced objects, CRDs, ClusterRoles, StorageClasses, PVs, and Helm release Secrets. After restoration, `helm list -A` therefore reports releases as `deployed`. A botched `./vicegerent install` is recoverable from the backup; the last verified full backup contained 1182 items.
+This captures namespaced objects, CRDs, ClusterRoles, StorageClasses, PVs, and Helm release Secrets. After restoration, `helm list -A` therefore reports releases as `deployed`. A botched `./vicegerent install` is recoverable from the backup.
 
 ## What is and isn't backed up
 
@@ -120,7 +120,7 @@ du -sh ~/.vicegerent/rclone-s3/vicegerent
 velero backup logs "$BACKUP" | grep -i 'level=warning'
 ```
 
-Expect one completed `DataUpload` per included volume and a Data Movement entry for each. About 26 warnings per backup, mostly for unbackupable API endpoints, is the current baseline; investigate a jump.
+Expect one completed `DataUpload` per included volume and a Data Movement entry for each. Review every warning: discovery warnings for API endpoints that do not support backup may be harmless, but failed item operations or data movement are not.
 
 ## Restore one agent's volumes
 

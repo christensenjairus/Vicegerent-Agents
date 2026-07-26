@@ -156,7 +156,7 @@ The shim delegates the verdict to Cerbos for almost everything; it standardizes 
 
 ## Config
 
-A YAML mapping mounted at `MAPPING_PATH`. `mapping.example.yaml` is a two-tool schema sketch — the real reference is the deployed mapping, `charts/mcp-cerbos-shim/files/mapping.yaml`, which carries every mapped tool with the reasoning for each. Every `id`/`attr`/`attrFrom` value is a CEL expression compiled and type-checked at startup; an invalid mapping aborts startup (k8s restarts the pod; the gateway's `FailClosed` denies meanwhile).
+A YAML mapping mounted at `MAPPING_PATH`. `mapping.example.yaml` is a two-tool schema sketch; the real reference is the deployed mapping, `charts/mcp-cerbos-shim/files/mapping.yaml`, which carries every mapped tool with the reasoning for each. Every `id`/`attr`/`attrFrom` value is a CEL expression compiled and type-checked at startup; an invalid mapping aborts startup (Kubernetes restarts the pod; the gateway's `FailClosed` denies meanwhile).
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
@@ -208,9 +208,9 @@ A `Makefile` wraps the common tasks (`make help` lists them). The image name is 
 
 ```bash
 make check                 # gofmt-check + go vet + go test ./... (CI parity)
-make image TAG=v0.33.4      # docker build
-make push  TAG=v0.33.4      # docker push to Harbor
-make release TAG=v0.33.4    # check + image + push
+make image TAG=v0.33.11      # docker build
+make push  TAG=v0.33.11      # docker push to Harbor
+make release TAG=v0.33.11    # check + image + push
 make proto                 # regenerate stubs (only when proto/ext_mcp.proto changes)
 ```
 
