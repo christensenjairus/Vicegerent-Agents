@@ -73,8 +73,8 @@ validate:pre-commit:
         curl -sLo /tmp/cerbos.tar.gz "https://github.com/cerbos/cerbos/releases/download/${CERBOS_VERSION}/cerbos_${CERBOS_VERSION#v}_Linux_x86_64.tar.gz"
         tar -xzf /tmp/cerbos.tar.gz -C "$TOOLS_CACHE_DIR" cerbos
       fi
-    - cp "$TOOLS_CACHE_DIR"/{yq,kubeconform,cerbos} /usr/local/bin/
-    - chmod +x /usr/local/bin/{yq,kubeconform,cerbos}
+    - chmod +x "$TOOLS_CACHE_DIR"/{yq,kubeconform,cerbos}
+    - export PATH="$TOOLS_CACHE_DIR:$PATH"
     - pip install "pre-commit==$PRE_COMMIT_VERSION" "detect-secrets==$DETECT_SECRETS_VERSION" --break-system-packages --quiet
   script:
     - pre-commit run --all-files --show-diff-on-failure
