@@ -9,6 +9,8 @@ IfNotPresent on a static tag, so a rebuild that reuses a tag is never redeployed
                     build is referenced somewhere.
   --since <ref>     additionally, any change to an image's build context since
                     <ref> came with a change to that image's TAG line.
+  --bump-since <ref> bump missing TAG changes and their deployed references,
+                     then run both checks.
 
 The --since half needs a git base, so scripts/validate.sh runs the static half
 and .gitlab-ci.yml's validate:image-tag-bump job adds the diff half against the
@@ -29,6 +31,9 @@ CONTENT_EXEMPT = {"README.md"}
 
 MAKE_ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[:?]?=\s*(.*?)\s*$", re.MULTILINE)
 MAKE_VAR_REF = re.compile(r"\$\((\w+)\)")
+TAG_ASSIGN = re.compile(r"^(TAG\s*[:?]?=\s*)(.*?)(\s*)$", re.MULTILINE)
+REV_TAG = re.compile(r"^(.*-rev)(\d+)$")
+VERSION_TAG = re.compile(r"^(v?\d+\.\d+\.)(\d+)$")
 
 
 def make_vars(text: str) -> dict[str, str]:
@@ -164,17 +169,117 @@ def check_bumped(images: dict[str, tuple[str, str]], since: str) -> list[str]:
     return errors
 
 
+def changed_image_names(images: dict[str, tuple[str, str]], since: str) -> list[str]:
+    """Image build contexts changed since the branch's merge base."""
+    base = subprocess.run(
+        ["git", "-C", str(ROOT), "merge-base", since, "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    changed = subprocess.run(
+        ["git", "-C", str(ROOT), "diff", "--name-only", base],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    return [
+        name for name in images
+        if any(
+            p.startswith(f"images/{name}/") and Path(p).name not in CONTENT_EXEMPT
+            for p in changed
+        )
+    ]
+
+
+def next_tag(tag: str) -> str:
+    """Increment the repository's supported immutable tag forms."""
+    for pattern in (REV_TAG, VERSION_TAG):
+        if match := pattern.fullmatch(tag):
+            return f"{match.group(1)}{int(match.group(2)) + 1}"
+    sys.exit(
+        f"cannot automatically bump unsupported tag {tag!r}; "
+        "expected vN.N.N or a tag ending in -revN"
+    )
+
+
+def bump_missing(images: dict[str, tuple[str, str]], since: str) -> list[tuple[str, str, str]]:
+    """Bump changed images whose current tag still matches the base revision."""
+    bumped = []
+    tracked = tracked_files()
+    for name in changed_image_names(images, since):
+        prefix = f"images/{name}/"
+        before = subprocess.run(
+            ["git", "-C", str(ROOT), "show", f"{since}:{prefix}Makefile"],
+            capture_output=True, text=True,
+        )
+        if before.returncode != 0:
+            continue
+        old = make_vars(before.stdout).get("TAG", "")
+        image, current = images[name]
+        if current != old:
+            continue
+        new = next_tag(old)
+
+        makefile = ROOT / prefix / "Makefile"
+        makefile_text = makefile.read_text()
+        match = TAG_ASSIGN.search(makefile_text)
+        if not match:
+            sys.exit(f"{makefile.relative_to(ROOT)}: cannot find TAG assignment")
+        expression = match.group(2)
+        if expression.endswith(old):
+            replacement = expression[: -len(old)] + new
+        elif (rev := REV_TAG.fullmatch(old)) and expression.endswith(f"-rev{rev.group(2)}"):
+            replacement = expression[: -len(rev.group(2))] + str(int(rev.group(2)) + 1)
+        else:
+            sys.exit(
+                f"{makefile.relative_to(ROOT)}: cannot safely rewrite TAG expression {expression!r}"
+            )
+        makefile.write_text(
+            makefile_text[: match.start(2)] + replacement + makefile_text[match.end(2) :]
+        )
+
+        refs = 0
+        for path in tracked:
+            if path == makefile or "/images/" in f"/{path.relative_to(ROOT)}":
+                continue
+            try:
+                text = path.read_text()
+            except (UnicodeDecodeError, OSError):
+                continue
+            updated = text.replace(f"{image}:{old}", f"{image}:{new}")
+            updated = re.sub(
+                rf"(repository:\s*{re.escape(image)}\s*\n\s*tag:\s*){re.escape(old)}(?=\s|$)",
+                rf"\g<1>{new}", updated,
+            )
+            registry, _, repository = image.rpartition("/")
+            updated = re.sub(
+                rf"(registry:\s*{re.escape(registry)}\s*\n\s*repository:\s*"
+                rf"{re.escape(repository)}\s*\n\s*tag:\s*){re.escape(old)}(?=\s|$)",
+                rf"\g<1>{new}", updated,
+            )
+            if updated != text:
+                refs += 1
+                path.write_text(updated)
+        if not refs:
+            sys.exit(f"{image}:{old}: no deployed reference found to update")
+        bumped.append((name, old, new))
+    return bumped
+
+
 def main() -> int:
     since = None
+    bump = False
     args = sys.argv[1:]
-    if args[:1] == ["--since"]:
+    if args[:1] in (["--since"], ["--bump-since"]):
         if len(args) != 2:
-            sys.exit("usage: validate-image-tags.py [--since <git-ref>]")
+            sys.exit("usage: validate-image-tags.py [--since|--bump-since <git-ref>]")
+        bump = args[0] == "--bump-since"
         since = args[1]
     elif args:
-        sys.exit("usage: validate-image-tags.py [--since <git-ref>]")
+        sys.exit("usage: validate-image-tags.py [--since|--bump-since <git-ref>]")
 
     images = built_images()
+    if bump:
+        for name, old, new in bump_missing(images, since):
+            print(f"BUMP - images/{name}: {old} -> {new}")
+        images = built_images()
     errors = check_static(images)
     if since:
         errors += check_bumped(images, since)

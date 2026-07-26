@@ -149,7 +149,21 @@ validate:image-tag-bump:
     - apk add --no-cache git python3 2>/dev/null || true
   script:
     - git fetch --no-tags origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
-    - python3 scripts/validate-image-tags.py --since "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+    - python3 scripts/validate-image-tags.py --bump-since "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+    - |
+      if ! git diff --quiet; then
+        if [ "$CI_MERGE_REQUEST_SOURCE_PROJECT_ID" != "$CI_PROJECT_ID" ]; then
+          echo "Image tags were bumped, but CI cannot push to a forked merge request." >&2
+          git diff --stat >&2
+          exit 1
+        fi
+        git config user.name "Vicegerent CI"
+        git config user.email "vicegerent-ci@hahomelabs.com"
+        git add -u
+        git commit -m "chore(images): bump tags [skip ci]"
+        git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+          "HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}"
+      fi
 
 validate:renovate-config:
   stage: validate
