@@ -31,7 +31,7 @@
 0012-execute-code-pattern-silence.py
 0014-auxiliary-anthropic-gateway-host.py
 0016-credential-pool-anthropic-base-url.py
-0020-anthropic-gateway-placeholder-credential.py
+0020-gateway-placeholder-credential.py
 0018-check-fn-exception-traceback.py
 0022-mcp-parked-retry-interval-60s.py
 0023-mcp-circuit-breaker-threshold-15.py

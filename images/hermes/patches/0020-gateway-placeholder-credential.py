@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Vicegerent patch: don't fail setup.runtime_check (and any other
-has_usable_secret() consumer) for a real, working Anthropic session just
-because the resolved token happens to be our sandbox's placeholder value.
+"""Vicegerent patch: accept sandbox placeholder credentials only when the
+resolved Anthropic or OpenAI runtime uses the trusted Agentgateway route.
+
+The original patch covered Anthropic's native and credential-pool branches.
+OpenAI API uses the same placeholder design but reaches the generic API-key
+and pool branches, so both provider paths are kept together here. OpenAI's
+normalization is deliberately narrower: it requires the exact in-cluster
+Agentgateway OpenAI URL, leaving direct and arbitrary external endpoints
+fail-closed.
 
 Context
 -------
@@ -105,6 +111,8 @@ import importlib.util
 import sys
 
 APPLIED_MARKER = "Vicegerent patch 0020"
+OPENAI_MARKER = "Vicegerent patch 0020 OpenAI"
+OPENAI_GATEWAY_URL = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1"
 
 FALLBACK_ANCHOR = (
     "        else:\n"
@@ -172,6 +180,57 @@ POOL_REPLACEMENT = (
     "            api_key = \"no-key-required\"\n"
 )
 
+OPENAI_HELPER_ANCHOR = (
+    'def _loopback_hostname(host: str) -> bool:\n'
+    '    h = (host or "").lower().rstrip(".")\n'
+    '    return h in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}\n'
+)
+
+OPENAI_HELPER_REPLACEMENT = OPENAI_HELPER_ANCHOR + f'''
+
+def _vicegerent_openai_gateway_placeholder_ok(provider: str, base_url: str, api_key: str) -> bool:
+    """Trust a placeholder only when Agentgateway supplies the real key."""
+    return (
+        provider == "openai-api"
+        and (base_url or "").rstrip("/") == "{OPENAI_GATEWAY_URL}"
+        and not has_usable_secret(api_key)
+    )
+'''
+
+OPENAI_POOL_ANCHOR = (
+    "    # OpenCode base URLs end with /v1 for OpenAI-compatible models, but the\n"
+    "    # Anthropic SDK prepends its own /v1/messages to the base_url.  Normalize\n"
+)
+
+OPENAI_POOL_REPLACEMENT = (
+    '    # Vicegerent patch 0020 OpenAI: the pool seeds OPENAI_API_KEY="none"  # pragma: allowlist secret\n'
+    "    # because it checks only truthiness. Agentgateway injects the real key, so\n"
+    "    # normalize that placeholder only on this platform's exact trusted route.\n"
+    "    if _vicegerent_openai_gateway_placeholder_ok(provider, base_url, api_key):\n"
+    '        api_key = "no-key-required"  # pragma: allowlist secret\n'
+    "\n"
+) + OPENAI_POOL_ANCHOR
+
+OPENAI_API_KEY_ANCHOR = (
+    '    if pconfig and pconfig.auth_type == "api_key":\n'
+    "        creds = resolve_api_key_provider_credentials(provider)\n"
+    "        # An explicitly selected API-key provider is authoritative. Returning\n"
+)
+
+OPENAI_API_KEY_REPLACEMENT = (
+    '    if pconfig and pconfig.auth_type == "api_key":\n'
+    "        creds = resolve_api_key_provider_credentials(provider)\n"
+    "        # Vicegerent patch 0020 OpenAI: the non-pool path rejects placeholder-shaped\n"
+    "        # keys before constructing the runtime. Normalize only when the same\n"
+    "        # credential resolver also selected the exact trusted gateway route.\n"
+    "        if _vicegerent_openai_gateway_placeholder_ok(\n"
+    '            provider, creds.get("base_url", ""), creds.get("api_key", "")\n'
+    "        ):\n"
+    "            creds = dict(creds)\n"
+    '            creds["api_key"] = "no-key-required"  # pragma: allowlist secret\n'
+    "        # An explicitly selected API-key provider is authoritative. Returning\n"
+)
+
 
 def _patch_runtime_provider() -> None:
     spec = importlib.util.find_spec("hermes_cli.runtime_provider")
@@ -182,14 +241,26 @@ def _patch_runtime_provider() -> None:
     with open(path, "r", encoding="utf-8") as f:
         src = f.read()
 
-    if APPLIED_MARKER in src:
+    apply_anthropic = APPLIED_MARKER not in src
+    apply_openai = OPENAI_MARKER not in src
+    if not apply_anthropic and not apply_openai:
         print(f"patch: already applied to {path} — no-op")
         return
 
-    for name, anchor, replacement in (
-        ("fallback native-Anthropic", FALLBACK_ANCHOR, FALLBACK_REPLACEMENT),
-        ("pool-entry anthropic", POOL_ANCHOR, POOL_REPLACEMENT),
-    ):
+    edits = []
+    if apply_anthropic:
+        edits.extend((
+            ("fallback native-Anthropic", FALLBACK_ANCHOR, FALLBACK_REPLACEMENT),
+            ("pool-entry anthropic", POOL_ANCHOR, POOL_REPLACEMENT),
+        ))
+    if apply_openai:
+        edits.extend((
+            ("OpenAI helper", OPENAI_HELPER_ANCHOR, OPENAI_HELPER_REPLACEMENT),
+            ("pool-entry OpenAI", OPENAI_POOL_ANCHOR, OPENAI_POOL_REPLACEMENT),
+            ("fallback OpenAI", OPENAI_API_KEY_ANCHOR, OPENAI_API_KEY_REPLACEMENT),
+        ))
+
+    for name, anchor, replacement in edits:
         count = src.count(anchor)
         if count != 1:
             raise SystemExit(
@@ -198,13 +269,16 @@ def _patch_runtime_provider() -> None:
             )
         src = src.replace(anchor, replacement, 1)
 
+    if apply_openai:
+        src += f"\n# {OPENAI_MARKER}: gateway-routed placeholders are no-key-required.\n"
+
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
 
     compile(src, path, "exec")
     print(
-        f"patch: gateway-routed Anthropic placeholder tokens now normalize to "
-        f"no-key-required (fallback + pool-entry branches) in {path}"
+        f"patch: gateway-routed placeholder tokens now normalize to "
+        f"no-key-required ({', '.join(name for name, _, _ in edits)}) in {path}"
     )
 
 
