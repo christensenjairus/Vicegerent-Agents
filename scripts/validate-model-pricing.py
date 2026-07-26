@@ -46,6 +46,10 @@ PROVIDERS = ("anthropic", "openai", "deepseek", "zai")
 
 VERBOSE = "--verbose" in sys.argv
 
+# Scratch tree that _load_pricing_module() patches; _load_agentburn_prices()
+# reads the second sink out of the same tree.
+_SCRATCH: Path | None = None
+
 
 def _log(msg: str) -> None:
     print(msg, flush=True)
@@ -147,6 +151,26 @@ def _harvest(cfg: dict, rendered: str, scenario: str) -> list[tuple]:
     return refs
 
 
+def _strip_prior_0043(text: str) -> str:
+    """Remove an already-applied 0043 block so the patch re-applies cleanly.
+
+    The ambient /opt/hermes tree is usually ALREADY patched (the running image
+    baked it in). Copying that as-is makes 0043's idempotency marker short it to
+    a no-op, so the check would then assert against whatever the *deployed*
+    image happened to contain rather than what this commit produces -- which
+    silently hid a regression during development. Strip the appended block (and
+    the route branches) to recover a pristine module.
+    """
+    text = re.split(r"\n\n# Vicegerent patch 0043", text)[0]
+    text = re.sub(
+        r"[ \t]*# Vicegerent patch 0043[^\n]*\n"
+        r"(?:[ \t]*if provider_name[^\n]*\n[ \t]*return BillingRoute[^\n]*\n)?",
+        "",
+        text,
+    )
+    return text
+
+
 def _load_pricing_module():
     """Import Hermes' usage_pricing with THIS REPO's 0043 patch applied.
 
@@ -164,7 +188,6 @@ def _load_pricing_module():
     Returns (module, note) or (None, reason-to-skip).
     """
     import importlib.util
-    import shutil
 
     try:
         spec = importlib.util.find_spec("agent.usage_pricing")
@@ -180,14 +203,34 @@ def _load_pricing_module():
     scratch = Path(tempfile.mkdtemp(prefix="model-pricing-check-"))
     pkg = scratch / "agent"
     pkg.mkdir()
-    shutil.copy(spec.origin, pkg / "usage_pricing.py")
+    pkg.joinpath("usage_pricing.py").write_text(
+        _strip_prior_0043(Path(spec.origin).read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
     (pkg / "__init__.py").write_text("")
-    # 0043 also patches agentburn/prices.py; stub the package so that half is a
-    # no-op here instead of mutating the real site-packages copy.
-    burn = scratch / "agentburn"
-    burn.mkdir()
-    (burn / "__init__.py").write_text("")
-    (burn / "prices.py").write_text("PRICES = {}\n")
+    # 0043 patches agentburn/prices.py as its second sink. Copy the REAL module
+    # (not a stub) so the mirrored table it writes can be asserted afterwards --
+    # a stub would make the burn_report sink check vacuously pass.
+    burn_dst = scratch / "agentburn"
+    burn_dst.mkdir()
+    (burn_dst / "__init__.py").write_text("")
+    try:
+        burn_spec = importlib.util.find_spec("agentburn.prices")
+    except Exception:
+        burn_spec = None
+    if burn_spec is not None and burn_spec.origin:
+        burn_dst.joinpath("prices.py").write_text(
+            _strip_prior_0043(Path(burn_spec.origin).read_text(encoding="utf-8")),
+            encoding="utf-8",
+        )
+        _real_agentburn = True
+    else:
+        # No agentburn available: give 0043 something importable to write into,
+        # and _load_agentburn_prices() will decline to assert against it.
+        (burn_dst / "prices.py").write_text(
+            "PRICES = {}\n\n\ndef lookup(model):\n    return PRICES.get(model)\n"
+        )
+        _real_agentburn = False
 
     proc = subprocess.run(
         [sys.executable, str(patch)],
@@ -210,7 +253,31 @@ def _load_pricing_module():
     origin = getattr(patched, "__file__", None)
     if not origin or str(Path(origin).parent.parent) != str(scratch):
         return None, f"sandbox import shadowed by {origin!r}"
+    global _SCRATCH
+    _SCRATCH = scratch if _real_agentburn else None
     return patched, "with this repo's 0043 patch applied"
+
+
+def _load_agentburn_prices():
+    """Import agentburn.prices from the same patched scratch tree, if present.
+
+    _load_pricing_module() already ran this repo's 0043 against the scratch
+    copy, and 0043 patches BOTH sinks, so the agentburn copy in that tree is
+    the post-patch one. Returns the module or None to skip.
+    """
+    if _SCRATCH is None:
+        return None
+    try:
+        for mod in ("agentburn", "agentburn.prices"):
+            sys.modules.pop(mod, None)
+        import agentburn.prices as burn  # noqa: E402
+
+        origin = getattr(burn, "__file__", None)
+        if not origin or str(Path(origin).parent.parent) != str(_SCRATCH):
+            return None
+        return burn
+    except Exception:
+        return None
 
 
 def main() -> int:
@@ -294,6 +361,33 @@ def main() -> int:
     scenario_count = len({r[4] for r in refs})
     _log(f"OK - {len(pairs)} configured (provider, model) routes across "
          f"{scenario_count} scenarios all have live pricing")
+
+    # Second sink: agentburn/prices.py drives burn_report/burn_why. It is a
+    # SEPARATE table from usage_pricing, so a model can bill correctly live and
+    # still be invisible to burn_report -- which is exactly what happened when
+    # an earlier cut of 0043 hand-listed this sink and silently dropped 13
+    # models (claude-haiku-4-5, gpt-5.6-sol, ...) that the retired 0004 used to
+    # cover. Live billing stayed green, so only checking usage_pricing above
+    # would have missed it entirely.
+    burn = _load_agentburn_prices()
+    if burn is None:
+        _log("INFO - agentburn.prices not importable; skipping burn_report sink check")
+        return 0
+    missing = []
+    for provider, model, _base in pairs:
+        if burn.lookup(f"{provider}/{model}") is None:
+            missing.append(f"{provider}/{model}")
+    if missing:
+        _log("\nFAIL - these configured models have live pricing but are INVISIBLE to "
+             "agentburn burn_report (cost_known=false):\n")
+        for slug in sorted(set(missing)):
+            _log(f"  {slug}")
+        _log("\nThe agentburn sink in images/hermes/patches/0043-model-pricing.py is "
+             "derived from the post-patch usage_pricing table; if a model is missing "
+             "here but present above, that mirroring broke.")
+        return 1
+    _log(f"OK - all {len(pairs)} routes are also priced in the agentburn "
+         "burn_report sink")
     return 0
 
 
