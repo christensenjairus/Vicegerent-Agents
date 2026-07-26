@@ -388,9 +388,13 @@ def main() -> int:
         _log("INFO - agentburn.prices not importable; skipping burn_report sink check")
         return 0
     missing = []
-    for provider, model, _base in pairs:
-        if burn.lookup(f"{provider}/{model}") is None:
-            missing.append(f"{provider}/{model}")
+    for provider, model, base_url in pairs:
+        route = usage_pricing.resolve_billing_route(
+            model, provider=provider, base_url=base_url or None
+        )
+        slug = f"{route.provider}/{route.model}"
+        if burn.lookup(slug) is None:
+            missing.append(slug)
     if missing:
         _log("\nFAIL - these configured models have live pricing but are INVISIBLE to "
              "agentburn burn_report (cost_known=false):\n")

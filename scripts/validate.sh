@@ -233,7 +233,7 @@ python3 scripts/validate-image-tags.py
 echo "INFO - Asserting every configured model has live pricing"
 python3 scripts/validate-model-pricing.py
 
-echo "INFO - Asserting /model keeps configured GPT aliases on Agentgateway-OpenAI"
+echo "INFO - Asserting /model keeps configured GPT aliases on openai-api through Agentgateway"
 python3 scripts/validate-model-switch-routing.py
 
 echo "INFO - Asserting the agent owns ~/.gitconfig instead of seeding it imperatively"
