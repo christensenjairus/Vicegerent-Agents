@@ -21,7 +21,7 @@ variables:
   LOG_LEVEL: info
   DOCKER_CONFIG: $CI_PROJECT_DIR/.docker
 
-stages: [validate, build, publish, scan]
+stages: [validate, publish, scan]
 
 validate:pre-commit:
   stage: validate
@@ -180,11 +180,6 @@ validate:renovate-config:
   script:
     - renovate-config-validator renovate.json
 
-.image-build:
-  stage: build
-  tags: [laptop-image-build]
-  interruptible: true
-
 .image-publish:
   stage: publish
   tags: [laptop-image-build]
@@ -196,54 +191,6 @@ validate:renovate-config:
     - chmod 0600 "$DOCKER_CONFIG/config.json"
   after_script:
     - rm -rf "$DOCKER_CONFIG"
-
-image:build:agentgateway:
-  extends: .image-build
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
-      changes: [images/agentgateway-proxy/**/*]
-  script:
-    - make -C images/agentgateway-proxy image
-
-image:build:aws-api-mcp-server:
-  extends: .image-build
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
-      changes: [images/aws-api-mcp-server/**/*]
-  script:
-    - make -C images/aws-api-mcp-server image
-
-image:build:aws-profiles-mcp:
-  extends: .image-build
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
-      changes: [images/aws-profiles-mcp/**/*]
-  script:
-    - make -C images/aws-profiles-mcp image
-
-image:build:hermes:
-  extends: .image-build
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
-      changes: [images/hermes/**/*]
-  script:
-    - make -C images/hermes image
-
-image:build:kubernetes-mcp-server:
-  extends: .image-build
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
-      changes: [images/kubernetes-mcp-server/**/*]
-  script:
-    - make -C images/kubernetes-mcp-server image
-
-image:build:mcp-cerbos-shim:
-  extends: .image-build
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
-      changes: [images/mcp-cerbos-shim/**/*]
-  script:
-    - make -C images/mcp-cerbos-shim image
 
 image:publish:agentgateway:
   extends: .image-publish
