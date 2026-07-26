@@ -41,3 +41,4 @@
 0039-runtime-footer-cost-field.py
 0040-custom-provider-drop-unconditional-think-field.py
 0041-interim-assistant-messages-session-toggle.py
+0042-slack-socket-mode-recovery.py
