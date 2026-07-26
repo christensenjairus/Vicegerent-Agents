@@ -154,16 +154,30 @@ backends:
       # source_branch is deliberately NOT carried: it names the MR's own feature
       # branch (and doubles as get_merge_request's selector), nothing is written
       # to it, and an MR whose source happens to be named main is not the risk
-      # this guards. GitHub's create_pull_request/base is unchecked for the same
-      # reason -- opening a PR against main is normal.
+      # this guards.
+      #
+      # isMrCreate is the GitLab analog of github_repo's isPrCreate: a literal
+      # constant (not derived from args) distinguishing create from update, so
+      # deny-protected-branch can fire on a RETARGET while leaving MR creation
+      # alone. It is load-bearing here in a way it is not on GitHub: GitHub's
+      # branch attr reads a `branch` arg that create_pull_request does not have
+      # (it takes base/head), so that attr is always "" on create and the rule
+      # cannot misfire. GitLab's target_branch IS present on create, so without
+      # this flag the rule denied every `create_merge_request` into main/master/
+      # production -- i.e. essentially every merge request an agent opens. See
+      # resource_gitlab.yaml's deny-protected-branch comment.
       gitlab_create_merge_request:
         <<: *gitlab_project
         force: {draft: true}
         attrFrom: gitlabMergeRequestAttr(args)
+        attr:
+          isMrCreate: "'true'"
       gitlab_update_merge_request:
         <<: *gitlab_project
         force: {draft: true}
         attrFrom: gitlabMergeRequestAttr(args)
+        attr:
+          isMrCreate: "'false'"
       gitlab_get_merge_request: *gitlab_project
       gitlab_get_merge_request_diffs: *gitlab_project
       gitlab_list_merge_request_diffs: *gitlab_project

@@ -77,6 +77,17 @@
 # GitHub's rule never checked create_pull_request's base/head: opening an MR
 # against main is normal and is not blocked here.
 #
+# That last clause is enforced by the isMrCreate guard rather than implied.
+# GitHub gets it for free — its branch attr reads a `branch` arg that
+# create_pull_request doesn't have (base/head instead), so the attr is always
+# "" on create and the rule can't misfire. GitLab's target_branch IS present on
+# create, so the rule as first written denied EVERY create_merge_request
+# targeting main/master/production, which is the normal shape of nearly every
+# merge request an agent opens (Flux-Kubernetes, project 7, uses `production`
+# as its default branch, so its MRs were blocked outright). The rule now fires
+# only when isMrCreate != "true", i.e. on update_merge_request — the retarget
+# case that is actually the risk. Mirrors github_repo's isPrCreate.
+#
 # deny-reviewers: create_merge_request/update_merge_request's reviewer_ids and
 # assignee_ids both pull a real human into the agent's own MR — the same
 # capability resource_github.yaml denies via its reviewers arg, whose comment
@@ -135,12 +146,14 @@ resourcePolicy:
           expr: >-
             has(request.resource.attr.branch) && request.resource.attr.branch != ""
             && request.resource.attr.branch in ["main", "master", "production"]
+            && has(request.resource.attr.isMrCreate)
+            && request.resource.attr.isMrCreate != "true"
       output:
         when:
           ruleActivated: >-
-            "Pointing a merge request at protected branch '"
+            "Retargeting an existing merge request at protected branch '"
             + request.resource.attr.branch + "' is not allowed for this agent."
-            + " Target a non-protected branch, or have a human retarget it."
+            + " Open a new merge request instead, or have a human retarget it."
     - name: deny-reviewers
       actions: ['*']
       effect: EFFECT_DENY
