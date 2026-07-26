@@ -46,6 +46,7 @@ backends:
       - githubReviewersAttr
       - gitlabProjectAttr
       - gitlabMergeRequestAttr
+      - gitlabDraftTitleForce
       - elasticTargetsAttr
       - awsSecretReadAttr
       - webCrawlAttr
@@ -166,15 +167,26 @@ backends:
       # this flag the rule denied every `create_merge_request` into main/master/
       # production -- i.e. essentially every merge request an agent opens. See
       # resource_gitlab.yaml's deny-protected-branch comment.
+      #
+      # forceFrom (not force) carries the draft override. GitLab has no draft
+      # boolean: draft status is derived from the TITLE ("Draft: ..."), verified
+      # live -- passing draft:true is silently ignored, so the `force: {draft:
+      # true}` copied from github_create_pull_request was a NO-OP and every
+      # agent-opened MR shipped ready-for-review. gitlabDraftTitleForce reads
+      # the incoming title and prefixes it, which a literal cannot do. It
+      # deliberately yields "" (dropped, not forwarded) when the title is
+      # absent -- update_merge_request's title is optional, and forcing one
+      # would overwrite the MR's real title -- or already carries a Draft:/WIP:
+      # marker, which would otherwise double-prefix.
       gitlab_create_merge_request:
         <<: *gitlab_project
-        force: {draft: true}
+        forceFrom: gitlabDraftTitleForce(args)
         attrFrom: gitlabMergeRequestAttr(args)
         attr:
           isMrCreate: "'true'"
       gitlab_update_merge_request:
         <<: *gitlab_project
-        force: {draft: true}
+        forceFrom: gitlabDraftTitleForce(args)
         attrFrom: gitlabMergeRequestAttr(args)
         attr:
           isMrCreate: "'false'"

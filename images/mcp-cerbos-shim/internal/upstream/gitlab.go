@@ -13,13 +13,21 @@ import (
 // This tool IS mapped in mapping.yaml (to gitlab_project/access, like every
 // other project-bearing read): an AGENT calling get_project directly must obey
 // ${gitlabAllowedProjects} like any other read, and leaving it unmapped would
-// be an unscoped project read. That does not make the gate recursive, because
-// the shim's OWN lookup goes out on the reserved vmcp-internal backend, which
-// server.go's isInternalBackend short-circuits to pass() BEFORE any mapping or
-// Cerbos lookup happens -- so this call never re-enters the canonicalization
-// gate that issued it, and cannot be denied by the very allowlist question it
-// exists to answer. Agents cannot reach that backend: it is locked to the shim
-// pod by a CiliumNetworkPolicy and by the secret self-token.
+// be an unscoped project read.
+//
+// That makes the gate STRUCTURALLY recursive -- the canonicalization gate
+// resolves a project by calling this tool, and this tool is gated by that same
+// gate -- so the shim's own lookup must be short-circuited before it reaches the
+// gate. Two independent mechanisms in server.go do that, both keyed on the
+// secret self-token internal/upstream stamps on every re-entrant request:
+// isInternalLookup (skips the whole gating path) and the selfLookupTools
+// recursion backstop (skips it again on the tool name alone).
+//
+// Do not assume the routing alone prevents this. It does not: the reserved
+// vmcp-internal backend was originally trusted to identify these lookups by
+// name, but service_names carries the MCP target name -- `vmcp` for BOTH
+// backends -- so that match never fired and this recursion reached production
+// (40+ re-entries per agent call). See internalBackendName.
 const gitlabGetProjectTool = "gitlab_get_project"
 
 // gitlabProjectResult is the subset of get_project's JSON result this package

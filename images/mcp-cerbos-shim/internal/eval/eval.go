@@ -39,6 +39,14 @@ type compiledTool struct {
 	idProg       cel.Program
 	attrProgs    map[string]cel.Program
 	attrFromProg cel.Program // optional; yields map<string,string>
+	// forceFromProg is optional; yields map<string,string> of argument
+	// overrides that must be DERIVED from the call's args rather than being
+	// literals (see config.Tool.ForceFrom). Literal Force values still live
+	// on the raw config and override these.
+	forceFromProg cel.Program
+	// force carries the literal overrides so ForceOverrides can merge both
+	// sources in one place rather than making the server do it.
+	force map[string]any
 }
 
 // Engine holds compiled programs for every (backend, tool) in the mapping.
@@ -112,6 +120,12 @@ func compileTool(env *cel.Env, name string, t config.Tool) (*compiledTool, error
 			return nil, fmt.Errorf("attrFrom: %w", err)
 		}
 	}
+	if t.ForceFrom != "" {
+		if ct.forceFromProg, err = compileMap(env, t.ForceFrom); err != nil {
+			return nil, fmt.Errorf("forceFrom: %w", err)
+		}
+	}
+	ct.force = t.Force
 	return ct, nil
 }
 
@@ -196,6 +210,64 @@ func (e *Engine) Eval(in CallInput) (*Resource, error) {
 	res.ID = id
 
 	return res, nil
+}
+
+// ForceOverrides returns the argument overrides to apply to an ALLOWED call:
+// the tool's forceFrom expression (evaluated against the call's own args)
+// merged under its literal force values, which win on any shared key. Same
+// precedence as attrFrom/attr.
+//
+// Returns nil when the tool has neither, so the server can keep its
+// "no overrides and nothing redacted -> pass() untouched" fast path.
+// An unmapped backend/tool is not an error here: the caller has already
+// resolved the mapping, and a tool with no entry simply has no overrides.
+func (e *Engine) ForceOverrides(in CallInput) (map[string]any, error) {
+	bt, ok := e.tools[in.Backend]
+	if !ok {
+		return nil, nil
+	}
+	ct, ok := bt[in.Tool]
+	if !ok {
+		return nil, nil
+	}
+	if ct.forceFromProg == nil && len(ct.force) == 0 {
+		return nil, nil
+	}
+
+	out := map[string]any{}
+	if ct.forceFromProg != nil {
+		vars := map[string]any{
+			"tool":    in.Tool,
+			"backend": in.Backend,
+			"method":  in.Method,
+			"args":    in.Args,
+		}
+		v, _, err := ct.forceFromProg.Eval(vars)
+		if err != nil {
+			return nil, fmt.Errorf("forceFrom eval: %w", err)
+		}
+		m, err := toAnyResultMap(v)
+		if err != nil {
+			return nil, fmt.Errorf("forceFrom result: %w", err)
+		}
+		for k, val := range m {
+			// An empty string means "this override doesn't apply to this
+			// call" — a CEL map can't omit a key conditionally, so the
+			// helper signals inapplicability with "" rather than forcing an
+			// argument to blank.
+			if s, isStr := val.(string); isStr && s == "" {
+				continue
+			}
+			out[k] = val
+		}
+	}
+	for k, v := range ct.force {
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 func evalString(p cel.Program, vars map[string]any) (string, error) {
