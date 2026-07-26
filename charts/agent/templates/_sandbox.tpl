@@ -202,10 +202,10 @@ spec:
               merge_config yaml /opt/data/config.yaml /reload/hermes-config/config.yaml
               touch /opt/data/.restart_pending.json
               find /opt/data/skills -type d -perm 555 -exec chmod u+w {} + 2>/dev/null || true
-              # Publish Hermes' skills to claude/codex/opencode. Runs after the
-              # skills tree is settled; the hermes post_tool_call hook re-runs it
-              # whenever skill_manage writes a new skill mid-session.
-              bash /reload/shared-skills/sync-shared-skills.sh || true
+              /usr/local/bin/sync-shared-skills.sh || true
+              # Baseline snapshot before any harness can reach the tree; the
+              # post_tool_call hook re-runs it after each skill_manage.
+              /usr/local/bin/snapshot-skills.sh || true
           env:
             - name: PYTHONDONTWRITEBYTECODE
               value: '1'
@@ -230,9 +230,6 @@ spec:
               readOnly: true
             - name: opencode-config
               mountPath: /reload/opencode-config
-              readOnly: true
-            - name: shared-skills
-              mountPath: /reload/shared-skills
               readOnly: true
             - name: egress-proxy-ca-cert
               mountPath: /reload/egress-proxy-ca
@@ -408,9 +405,7 @@ spec:
               value: /opt/data/.claude
             - name: OPENCODE_CONFIG
               value: /opt/data/.config/opencode/opencode.json
-            # OpenCode already reads ~/.agents/skills, which is the same tree
-            # the ~/.claude/skills farm links into; without this every shared
-            # skill logs a "duplicate skill name" warning on startup.
+            # Same tree as ~/.agents/skills; without this every shared skill warns.
             - name: OPENCODE_DISABLE_CLAUDE_CODE_SKILLS
               value: '1'
             - name: XDG_CONFIG_HOME
@@ -509,11 +504,6 @@ spec:
               mountPath: /opt/hermes/approval-policy.yaml
               subPath: approval-policy.yaml
               readOnly: true
-            # Also mounted in the agent container: the post_tool_call hook
-            # re-runs the sync when skill_manage creates a skill mid-session.
-            - name: shared-skills
-              mountPath: /reload/shared-skills
-              readOnly: true
       volumes:
         - name: runtime
           emptyDir: {}
@@ -546,10 +536,6 @@ spec:
         - name: opencode-config
           configMap:
             name: {{ include "vicegerent-agent.name" . }}-opencode-config
-        - name: shared-skills
-          configMap:
-            name: {{ include "vicegerent-agent.name" . }}-shared-skills
-            defaultMode: 0555
         - name: ssh-key
           secret:
             secretName: {{ include "vicegerent-agent.name" . }}-ssh-key  # pragma: allowlist secret

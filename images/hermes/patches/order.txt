@@ -50,3 +50,5 @@
 0041-interim-assistant-messages-session-toggle.py
 0042-slack-socket-mode-recovery.py
 0043-model-pricing.py
+0044-shell-hooks-for-dashboard-serve.py
+0045-hooks-doctor-entrypoint-coverage.py
