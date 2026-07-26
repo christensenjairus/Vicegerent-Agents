@@ -8,6 +8,7 @@ supervised stack.
 
 Keybindings (k9s-flavoured):
   j/k, ↑/↓     navigate workload rows
+  enter         open logs for the selected workload
   ctrl+s        start the stack
   ctrl+k        stop (kill) the supervised stack
   ctrl+r        restart the supervised stack
@@ -20,6 +21,7 @@ Keybindings (k9s-flavoured):
 from __future__ import annotations
 
 import sys
+from time import monotonic
 from pathlib import Path
 from threading import Thread
 from typing import ClassVar
@@ -29,8 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
-from textual.screen import ModalScreen
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Log, Markdown, Static, TabbedContent, TabPane
 
 from vicegerent_mcp import (
@@ -47,29 +49,41 @@ from vicegerent_mcp import (
     start_stack,
     stop_stack,
     tail_log_iter,
+    workload_log_process,
 )
 
 LOG_TABS = ("vmcp", "ghostunnel", "rclone-s3", "mcp-health-watch", "supervisord", "caffeinate")
+LOG_TAB_LABELS = {
+    name: f"{index} {name}" for index, name in enumerate(LOG_TABS, start=1)
+}
 
 
 def _proc_markup(state: str) -> str:
     if state == "RUNNING":
-        return f"[green]{state}[/green]"
+        return f"[bold #5fd7a7]●[/bold #5fd7a7] [#5fd7a7]{state.lower()}[/#5fd7a7]"
     if state in ("STARTING", "BACKOFF"):
-        return f"[yellow]{state}[/yellow]"
+        return f"[bold #ffd166]◐[/bold #ffd166] [#ffd166]{state.lower()}[/#ffd166]"
     if state:
-        return f"[red]{state}[/red]"
-    return "[dim]STOPPED[/dim]"
+        return f"[bold #ff6b81]●[/bold #ff6b81] [#ff6b81]{state.lower()}[/#ff6b81]"
+    return "[dim]○ stopped[/dim]"
 
 
 def _workload_markup(state: str) -> str:
     if state == "running":
-        return f"[green]{state}[/green]"
+        return f"[bold #5fd7a7]●[/bold #5fd7a7] [#5fd7a7]{state}[/#5fd7a7]"
     if state in ("starting", "auth_retrying", "authenticating"):
-        return f"[yellow]{state}[/yellow]"
+        return f"[bold #ffd166]◐[/bold #ffd166] [#ffd166]{state.replace('_', ' ')}[/#ffd166]"
     if state:
-        return f"[red]{state}[/red]"
-    return "[dim]not created[/dim]"
+        return f"[bold #ff6b81]●[/bold #ff6b81] [#ff6b81]{state.replace('_', ' ')}[/#ff6b81]"
+    return "[dim]○ not created[/dim]"
+
+
+def _health_summary(states: list[str], healthy: str) -> str:
+    """Return a compact Rich-markup health summary."""
+    total = len(states)
+    ready = sum(state == healthy for state in states)
+    color = "#5fd7a7" if ready == total and total else "#ffd166" if ready else "#ff6b81"
+    return f"[bold {color}]{ready}/{total} healthy[/bold {color}]"
 
 
 class HelpScreen(ModalScreen):
@@ -85,6 +99,7 @@ class HelpScreen(ModalScreen):
 |-----|--------|
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
+| `Enter` | Open selected workload logs |
 | `r` | Refresh now |
 
 ## Stack control
@@ -124,21 +139,117 @@ class HelpScreen(ModalScreen):
     """
 
 
-class HostMCPApp(App):
+class WorkloadLogScreen(Screen):
+    """Live ToolHive logs for a selected MCP workload."""
+
+    BINDINGS = [
+        Binding("r", "refresh_logs", "Reload", show=True),
+        Binding("escape", "dismiss", "Back", show=True),
+        Binding("q", "dismiss", "Back", show=True),
+    ]
+
     CSS = """
-    Screen { layout: vertical; }
-    #header {
-        height: 1; background: $primary; color: $text; text-align: center; padding: 0 1;
+    WorkloadLogScreen { background: #0d1117; }
+    #workload-log-header {
+        height: 3; padding: 0 2; background: #171c28; border-bottom: tall #8b7cf6;
+        content-align: left middle;
     }
-    #workload-table { height: auto; max-height: 12; border: solid $primary; }
-    #infra-status { height: 1; padding: 0 1; }
-    #log-tabs { height: 1fr; border: solid $primary-lighten-2; }
-    Footer { height: 1; }
+    #workload-log { height: 1fr; padding: 1 2; background: #0b0f15; color: #b8c1d1; }
+    """
+
+    def __init__(self, workload: str) -> None:
+        super().__init__()
+        self.workload = workload
+        self._process = None
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            f"[bold #b9adff]◈ {self.workload}[/bold #b9adff]\n[dim]ToolHive workload logs · Esc/q to return[/dim]",
+            id="workload-log-header",
+        )
+        yield Log(id="workload-log", max_lines=500)
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._stream_logs()
+
+    def on_unmount(self) -> None:
+        if self._process is not None and self._process.poll() is None:
+            self._process.terminate()
+
+    def action_refresh_logs(self) -> None:
+        if self._process is not None and self._process.poll() is None:
+            self._process.terminate()
+        self.query_one("#workload-log", Log).clear()
+        self.app.notify(f"Reloading {self.workload} logs…")
+        self._stream_logs()
+
+    @work(thread=True, exclusive=True)
+    def _stream_logs(self) -> None:
+        widget = self.query_one("#workload-log", Log)
+        try:
+            self._process = workload_log_process(self.workload)
+            if self._process.stdout is None:
+                raise RuntimeError("ToolHive log stream has no output")
+            pending = []
+            last_flush = monotonic()
+            for line in self._process.stdout:
+                pending.append(line.rstrip("\n"))
+                now = monotonic()
+                if len(pending) >= 200 or now - last_flush >= 0.1:
+                    self.app.call_from_thread(widget.write_lines, pending)
+                    pending = []
+                    last_flush = now
+            if pending:
+                self.app.call_from_thread(widget.write_lines, pending)
+        except Exception as exc:
+            self.app.call_from_thread(widget.write_line, f"Unable to read logs: {exc}")
+        finally:
+            if self._process is not None and self._process.poll() is None:
+                self._process.terminate()
+
+
+class HostMCPApp(App):
+    TITLE = "vicegerent"
+    SUB_TITLE = "host control plane"
+
+    CSS = """
+    $accent: #8b7cf6;
+    $success: #5fd7a7;
+    $warning: #ffd166;
+    $danger: #ff6b81;
+
+    Screen { layout: vertical; background: #0d1117; color: #d8dee9; }
+    #header {
+        height: 3; padding: 0 2; background: #171c28; border-bottom: tall $accent;
+    }
+    #brand { width: 1fr; content-align: left middle; color: #f4f0ff; }
+    #stack-health { width: auto; content-align: right middle; padding-left: 2; }
+    .section-title {
+        height: 2; padding: 1 1 0 1; color: #9aa7bd; text-style: bold;
+    }
+    #workload-summary { width: 1fr; text-align: right; }
+    #workload-table {
+        height: auto; max-height: 12; margin: 0 1; background: #111722;
+        border: round #303a52;
+    }
+    #workload-table > .datatable--header { background: #20283a; color: #c8d0e0; text-style: bold; }
+    #workload-table > .datatable--cursor { background: #393268; color: #ffffff; text-style: bold; }
+    #infra-status {
+        height: auto; min-height: 1; margin: 0 1; padding: 0 1; color: #aeb8ca;
+    }
+    #log-tabs { height: 1fr; margin: 0 1 1 1; background: #0b0f15; }
+    TabbedContent { border: round #303a52; }
+    Tabs { background: #171c28; color: #9aa7bd; }
+    Tab.-active { color: #ffffff; background: #393268; text-style: bold; }
+    Log { padding: 0 1; background: #0b0f15; color: #b8c1d1; }
+    Footer { height: 1; background: #171c28; color: #aeb8ca; }
     """
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
+        Binding("enter", "workload_logs", "Logs", show=True, priority=True),
         Binding("r", "refresh_now", "Refresh", show=True),
         Binding("ctrl+s", "start_stack", "Start", show=True),
         Binding("ctrl+k", "stop_stack", "Kill", show=True),
@@ -166,14 +277,22 @@ class HostMCPApp(App):
         self.group = group_name(self.config)
         self._log_threads: list[Thread] = []
         self._tailing = False
+        self._workload_names: list[str | None] = []
 
     def compose(self) -> ComposeResult:
-        yield Static("vicegerent host stack", id="header")
+        with Horizontal(id="header"):
+            yield Static("[bold #b9adff]◈ VICEGERENT[/bold #b9adff]\n[dim]host control plane[/dim]", id="brand")
+            yield Static("", id="stack-health")
+        with Horizontal(classes="section-title"):
+            yield Static("TOOLHIVE WORKLOADS")
+            yield Static("", id="workload-summary")
         yield DataTable(id="workload-table")
+        yield Static("SUPERVISED SERVICES", classes="section-title")
         yield Static("", id="infra-status")
+        yield Static("LIVE LOGS", classes="section-title")
         with TabbedContent(id="log-tabs"):
             for name in LOG_TABS:
-                with TabPane(name, id=f"tab-{name}"):
+                with TabPane(LOG_TAB_LABELS[name], id=f"tab-{name}"):
                     yield Log(id=f"log-{name}")
         yield Footer()
 
@@ -181,6 +300,7 @@ class HostMCPApp(App):
         table = self.query_one("#workload-table", DataTable)
         table.add_columns("Workload", "Status")
         table.cursor_type = "row"
+        table.zebra_stripes = True
         self.refresh_data()
         self.set_interval(2, self.refresh_data)
         self._start_log_tailers()
@@ -188,20 +308,22 @@ class HostMCPApp(App):
     # ------------------------------------------------------------------ data
 
     def refresh_data(self) -> None:
+        if len(self.screen_stack) > 1:
+            return
         sup_states = get_supervisor_states(self.runtime_dir)
         self._refresh_header(sup_states)
         self._refresh_workloads()
         self._refresh_infra(sup_states)
 
     def _refresh_header(self, sup_states: dict[str, str]) -> None:
-        header = self.query_one("#header", Static)
+        header = self.query_one("#stack-health", Static)
         if not sup_states:
-            label = "[dim][STOPPED][/dim]"
+            label = "[dim]○ STACK STOPPED[/dim]"
         elif all(sup_states.get(p) == "RUNNING" for p in SUPERVISED_PROGRAMS):
-            label = "[green][RUNNING][/green]"
+            label = "[bold #5fd7a7]● STACK HEALTHY[/bold #5fd7a7]"
         else:
-            label = "[yellow][DEGRADED][/yellow]"
-        header.update(f"vicegerent host stack  {label}  [dim]group={self.group}  ? help[/dim]")
+            label = "[bold #ffd166]◐ STACK DEGRADED[/bold #ffd166]"
+        header.update(f"{label}\n[dim]group {self.group}  ·  ? for help[/dim]")
 
     def _refresh_workloads(self) -> None:
         table = self.query_one("#workload-table", DataTable)
@@ -209,12 +331,21 @@ class HostMCPApp(App):
         table.clear()
         workloads = list_workloads(self.group)
         state = load_server_state(self.runtime_dir)
+        enabled_states = []
+        self._workload_names = []
         for server in self.config.get("servers", []):
             name = server["name"]
             if not is_server_enabled(server, state):
-                table.add_row(name, "[dim]disabled[/dim]")
+                self._workload_names.append(None)
+                table.add_row(f"[dim]{name}[/dim]", "[dim]—  disabled[/dim]")
             else:
-                table.add_row(name, _workload_markup(workloads.get(name, "")))
+                self._workload_names.append(name)
+                workload_state = workloads.get(name, "")
+                enabled_states.append(workload_state)
+                table.add_row(f"[bold]{name}[/bold]", _workload_markup(workload_state))
+        self.query_one("#workload-summary", Static).update(
+            f"{_health_summary(enabled_states, 'running')}  [dim]· {len(enabled_states)} enabled[/dim]"
+        )
         if table.row_count and cursor < table.row_count:
             table.move_cursor(row=cursor)
 
@@ -257,6 +388,14 @@ class HostMCPApp(App):
 
     def action_refresh_now(self) -> None:
         self.refresh_data()
+        self.notify("Dashboard refreshed")
+
+    def action_workload_logs(self) -> None:
+        row = self.query_one("#workload-table", DataTable).cursor_row
+        if row >= len(self._workload_names) or self._workload_names[row] is None:
+            self.notify("Select an enabled workload to view its logs", severity="warning")
+            return
+        self.push_screen(WorkloadLogScreen(self._workload_names[row]))
 
     @work(exclusive=True, thread=True)
     def action_start_stack(self) -> None:

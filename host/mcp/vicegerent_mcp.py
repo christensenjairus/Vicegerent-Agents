@@ -428,6 +428,16 @@ def list_workloads(group: str) -> dict[str, str]:
     return {w["name"]: w.get("status", "unknown") for w in data if "name" in w}
 
 
+def workload_log_process(name: str) -> subprocess.Popen[str]:
+    """Start a follow-mode ToolHive log process for one workload."""
+    return subprocess.Popen(
+        [_thv_path(), "logs", name, "--follow"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+
 def list_all_workload_names() -> set[str]:
     """All ToolHive workload names across every group (names are globally unique,
     so `thv run <name>` collides even with a workload in another group)."""
