@@ -152,6 +152,10 @@ providers:
     api: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/openai/v1
     key_env: OPENAI_API_KEY
     transport: responses
+    models:
+{{- range (list .Values.providers.openai.model .Values.providers.openai.auxiliaryModel .Values.harnesses.codex .Values.harnesses.openCode | uniq) }}
+      - {{ . }}
+{{- end }}
 {{- end }}
 {{- if .Values.providers.deepseek.enabled }}
   deepseek:
