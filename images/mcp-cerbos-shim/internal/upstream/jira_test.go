@@ -87,17 +87,9 @@ func TestIssueAssignee_AssigneeObjectWithNoIdentifierFailsClosed(t *testing.T) {
 	}
 }
 
-// TestIssueAssignee_UnassignedSentinelIsEmptyNotARealUser guards against a
-// second, distinct silent-misparse bug found live testing !636/!637's own
-// unassigned-issue gate against a real ticket: mcp-atlassian represents a
-// genuinely unassigned issue as {"display_name":"Unassigned"}, not a JSON
-// null -- so, before this fix, the DisplayName fallback below matched the
-// sentinel and returned "Unassigned" as if it were a real user, which made
-// deny-assignee-outside-allowed fire instead of deny-write-unassigned-issue.
-// Same net deny, wrong rule, wrong reason surfaced -- the mirror image of
-// TestIssueAssignee_RejectsLegacyRESTShape below (that one: a real assignee
-// silently resolved as unassigned; this one: "unassigned" silently resolved
-// as a real assignee).
+// TestIssueAssignee_UnassignedSentinelIsEmptyNotARealUser covers
+// mcp-atlassian's object sentinel for an unassigned issue. It must not be
+// treated as a real display name.
 func TestIssueAssignee_UnassignedSentinelIsEmptyNotARealUser(t *testing.T) {
 	c := &fakeCaller{text: `{"id":"1","key":"CHANGE-1","assignee":{"display_name":"Unassigned"}}`}
 	got, err := IssueAssignee(context.Background(), c, "CHANGE-1")
@@ -109,14 +101,9 @@ func TestIssueAssignee_UnassignedSentinelIsEmptyNotARealUser(t *testing.T) {
 	}
 }
 
-// TestIssueAssignee_RejectsLegacyRESTShape guards against regressing back to
-// the raw REST fields.assignee.{accountId,emailAddress,displayName} shape
-// this package originally (and incorrectly) assumed -- that mismatch
-// silently resolved every assigned issue as unassigned (see jira.go's
-// jiraIssueResult doc comment). A result in that shape resolves as
-// unassigned here too (there's no top-level "assignee" key to read),
-// indistinguishable from a real absent-assignee result -- exactly why the
-// original bug was silent rather than an error.
+// TestIssueAssignee_RejectsLegacyRESTShape documents that the MCP result is
+// not the raw Jira REST fields.assignee shape. With no top-level assignee, the
+// legacy shape is handled as an absent assignee.
 func TestIssueAssignee_RejectsLegacyRESTShape(t *testing.T) {
 	c := &fakeCaller{text: `{"fields":{"assignee":{"accountId":"acc1","emailAddress":"person@example.com","displayName":"J Smith"}}}`}
 	got, err := IssueAssignee(context.Background(), c, "CHANGE-1")

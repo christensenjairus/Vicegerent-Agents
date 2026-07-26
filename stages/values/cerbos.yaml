@@ -1,6 +1,6 @@
 ---
 # Upstream default values:
-# https://github.com/cerbos/cerbos/blob/main/deploy/charts/cerbos/values.yaml
+# https://github.com/cerbos/cerbos/blob/v0.53.0/deploy/charts/cerbos/values.yaml
 image:
   repository: ghcr.io/cerbos/cerbos
   tag: 0.54.0

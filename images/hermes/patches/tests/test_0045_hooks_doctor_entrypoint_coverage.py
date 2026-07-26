@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavioral regression test for patch 0043 (``hermes hooks doctor`` must
+"""Behavioral regression test for patch 0045 (``hermes hooks doctor`` must
 report which entrypoints actually register shell hooks).
 
 Run inside a Hermes image after the patch is applied, or against a scratch
@@ -72,7 +72,7 @@ def main() -> int:
     src = io.open(hooks, encoding="utf-8").read()
     if "_print_entrypoint_coverage" not in src:
         raise SystemExit(
-            f"FAIL: patch 0043 is not applied to {hooks} — `hermes hooks doctor` "
+            f"FAIL: patch 0045 is not applied to {hooks} — `hermes hooks doctor` "
             "will report all-green for hooks that can never fire."
         )
 

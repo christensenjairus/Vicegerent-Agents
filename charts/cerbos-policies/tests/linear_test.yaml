@@ -91,16 +91,13 @@ resources:
     id: LIN-124
     kind: linear_team
     attr: {isCreate: 'false', assignee: '', assigneeVerified: true}
-  # A live-resolved assignee is the get_issue DISPLAY NAME, not an email -- this is the
-  # exact path that regressed when linearAllowedAssignees held only the email form.
+  # A live-resolved assignee is the get_issue display name, not an email.
   update_verified_with_allowed_assignee:
     id: LIN-124
     kind: linear_team
     attr: {isCreate: 'false', assignee: Jairus Christensen, assigneeVerified: true}
-  # A live-resolved CURRENT assignee that's out of scope, on a call that asked
-  # for no assignee change (e.g. a save_comment carrying only body+issueId) --
-  # the exact path that used to surface the "requested assignee" message even
-  # though nothing was requested. Now owned by deny-existing-assignee-outside-allowed.
+  # A live-resolved current assignee that's out of scope on a call that asks
+  # for no assignee change is owned by deny-existing-assignee-outside-allowed.
   update_verified_disallowed_assignee:
     id: LIN-125
     kind: linear_team

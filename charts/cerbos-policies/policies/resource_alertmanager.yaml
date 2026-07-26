@@ -9,24 +9,18 @@
 #
 # getAlerts/getSilences/etc. are unmapped and pass.
 #
-# deny-not-own-silence: deleteSilence used to be denied outright because
-# ownership of a silence couldn't be verified from the call args (it carries
-# only a silenceId, a UUID, and this shim never called back to Alertmanager
-# to look up a silence's actual creator) -- a blanket deny with no
-# discriminating signal, which blocked legitimate self-cleanup exactly as
-# much as it would have blocked deleting someone else's silence. That's no
-# longer true: mapping.yaml's createSilence entry now forces every silence's
-# createdBy to this machine's fixed ${alertmanagerCreatedBy} identity
+# deny-not-own-silence: mapping.yaml forces every created silence's createdBy
+# to this machine's fixed ${alertmanagerCreatedBy} identity
 # (Alertmanager's own createdBy is caller-supplied and optional, unlike
 # GitHub/Notion's externally-authenticated author fields, so establishing a
 # real identity to check requires stamping one at creation time first), and
-# deleteSilence has the shim resolve the target silence's REAL createdBy via
+# deleteSilence has the shim resolve the target silence's createdBy via
 # a live getSilences lookup BEFORE Cerbos is consulted (server.go's
 # checkAlertmanagerSilenceOwner -- a network round trip Cerbos itself can't
 # make), injecting it as this createdBy attr. has()-guarded to match
 # deny-not-own-pr's posture, though in practice the shim's lookup gate fails
 # closed before Cerbos on any unresolvable createdBy, so this rule should
-# never actually see it absent. An unset ${alertmanagerCreatedBy} denies every
+# never see it absent. An unset ${alertmanagerCreatedBy} denies every
 # delete outright -- with no identity there is nothing to verify against, and a
 # bare `createdBy != ""` would only fail closed by accident.
 apiVersion: api.cerbos.dev/v1

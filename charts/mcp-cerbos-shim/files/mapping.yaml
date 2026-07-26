@@ -189,9 +189,7 @@ backends:
       # get_transitions) are allowed against ANY project, since there's nothing
       # dangerous about looking at a ticket outside the allowlist; only writes
       # (create/update/transition/comment/link) are denied when they touch a
-      # project outside ${jiraAllowedProjects} (was a single jiraProjectKey;
-      # widened to a CEL-list-ready allowlist matching the linearAllowedTeams/
-      # githubAllowedRepos pattern). Tool names are double-prefixed
+      # project outside ${jiraAllowedProjects}. Tool names are double-prefixed
       # ({workload}_{tool} = jira_ + jira_*). Same body for every tool: capture
       # whichever project/issue-key args it carries (absent args resolve to "").
       # jira_jira_search is intentionally unmapped — JIRA_PROJECTS_FILTER confines
@@ -347,11 +345,8 @@ backends:
       github_request_copilot_review: *github_repo
       github_update_pull_request_branch: *github_repo
       # Linear save_issue (create+update in one tool) -> linear_team; Cerbos
-      # denies any team other than DEVOPS. IMPORTANT: this key must be the
-      # live vMCP tool name exactly, or the mapping silently never fires and
-      # every call falls through to defaultAction: allow (this happened for
-      # months under the previous key, linear_create_issue, which no longer
-      # exists — the tool was renamed upstream to linear_save_issue).
+      # denies any team other than DEVOPS. Mapping keys must match the live
+      # vMCP tool name exactly or the call falls through to defaultAction.
       # `team` is required when creating (no `id` arg) and optional when
       # updating an existing issue. A plain `attr: {teamId: get(args,'team',
       # '')}` would put an empty-but-present teamId on every ordinary update
@@ -371,13 +366,10 @@ backends:
       # identically to save_issue's. A call with no issueId (project/
       # initiative/document/milestone comment, or a reply via parentId with
       # no entity ref) has nothing to resolve and passes the gate unchecked.
-      # An ordinary save_issue UPDATE with no `team` arg used to get
-      # no teamId key at all and fall through to allow-all regardless of the
-      # issue's REAL team -- e.g. any plain edit to an issue that already
-      # belongs to a non-DEVOPS team went through unchecked. server.go now
-      # runs the SAME live linear_get_issue lookup save_comment uses (keyed
+      # For save_issue updates without a `team` arg, server.go runs the same
+      # live linear_get_issue lookup save_comment uses (keyed
       # off the call's `id` arg) whenever save_issue's own attrFrom omitted
-      # teamId, closing that gap with zero duplication of the allowlist.
+      # teamId.
       # A create call always sets `team` itself (required) and has no `id`,
       # so it never reaches this lookup; only a real update with an omitted
       # `team` does.
@@ -397,13 +389,10 @@ backends:
       # array args a project's team membership is set through), not a single
       # team/id like save_issue. linearProjectAttr unions both arrays into one
       # `teams` list attr so Cerbos can deny if any entry isn't DEVOPS.
-      # Same gap and same fix as save_issue above -- an ordinary
-      # save_project UPDATE that sets neither addTeams nor setTeams used to
-      # get no teams key at all and fall through to allow-all regardless of
-      # the project's REAL team(s) (a project can belong to more than one
-      # team). server.go now runs a live linear_get_project lookup (keyed off
+      # For save_project updates that set neither addTeams nor setTeams,
+      # server.go runs a live linear_get_project lookup (keyed off
       # the call's `id` arg) whenever save_project's own attrFrom omitted
-      # teams, closing that gap. A create call always sets addTeams or
+      # teams. A create call always sets addTeams or
       # setTeams itself (Linear requires at least one team on creation) and
       # has no `id`, so it never reaches this lookup.
       linear_save_project:
@@ -460,10 +449,8 @@ backends:
       # live getSilences lookup, since silenceId itself is an opaque UUID
       # that proves nothing about ownership) as created by anyone other than
       # ${alertmanagerCreatedBy} -- the same inject-then-Cerbos-decides
-      # pattern as GitHub's prAuthor/Jira-Linear's assignee (server.go). This
-      # used to be an unconditional deny with no discriminating signal
-      # (removed -- see resource_alertmanager.yaml); the live lookup plus the
-      # createSilence force above together make the signal real.
+      # pattern as GitHub's prAuthor/Jira-Linear's assignee (server.go). The
+      # createSilence force above establishes the identity checked here.
       # getSilences itself stays unmapped (recursion safety, same reasoning
       # as pagerduty_*_get_incident/notion_notion-fetch/linear_get_issue).
       # attr carries only silenceId -- createdBy isn't derivable from the
@@ -537,15 +524,9 @@ backends:
       # source, or omitted entirely -- which creates a standalone workspace-level
       # private page per the tool's own docs) is denied by
       # charts/cerbos-policies/policies/resource_notion.yaml
-      # with a directional message pointing the agent at the correct page_id,
-      # rather than silently rewriting parent to Scratchpad the way this mapping
-      # used to (a `force` override here previously mutated any parent the agent
-      # sent into the Scratchpad id on every call, no error). That silently
-      # discarded whatever parent the agent actually intended and taught it
-      # nothing about where new pages land, so a caller kept guessing on every
-      # future create call. Denying with a clear reason is slower per call but
-      # self-correcting. create-comment targets an existing page by id and is
-      # unmapped (see toolhive-servers.json's notion entry).
+      # with a directional message pointing the agent at the correct page_id.
+      # create-comment targets an existing page by id and is mapped separately
+      # below for ancestry and ownership checks.
       notion_notion-create-pages:
         resourceType: notion_page
         action: create
@@ -565,8 +546,7 @@ backends:
       # charts/cerbos-policies/policies/resource_notion.yaml.
       # allow_deleting_content is a real JSON boolean on the wire (not a string), so this
       # uses the notionAttr helper rather than a plain get() -- get()/lookupCI only match
-      # string-typed values and would silently treat a bool true as absent (same failure
-      # mode as Linear's teamId key-rename postmortem: the check looks live but never fires).
+      # string-typed values and would silently treat a bool true as absent.
       notion_notion-update-page:
         resourceType: notion_page
         action: update

@@ -37,7 +37,7 @@ spec:
   image:
     registry: harbor.hahomelabs.com/vicegerent
     repository: agentgateway
-    tag: v1.3.1-rev1
+    tag: v1.3.1-rev2
   logging:
     format: json
   deployment:

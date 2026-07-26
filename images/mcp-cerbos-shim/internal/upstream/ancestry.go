@@ -31,27 +31,10 @@ const notionFetchTool = "notion_notion-fetch"
 var ancestorPathRe = regexp.MustCompile(`(?s)<ancestor-path>(.*?)</ancestor-path>`)
 
 // parentPageIDRe pulls each ancestor id out of the ancestor-path block.
-// Notion's tag name is NOT always <parent-page> -- that's only the immediate
-// parent. Ancestors further up the chain are tagged <ancestor-2-page>,
-// <ancestor-3-page>, etc. (verified live: a page 3 levels under "Teamspace
-// Home" showed <parent-page>, <ancestor-2-page>, <ancestor-3-page url=
-// ".../Teamspace Home">, in that order, nearest-first). The tag name element
-// itself varies (parent-page|ancestor-N-page|parent-database|ancestor-N-database);
-// only the "-page"/"-database" suffix and the
-// url="https://app.notion.com/p/<ID>" attribute are stable, so match on
-// those rather than hardcoding "parent-page" -- the original regex silently
-// missed every ancestor beyond the immediate parent, a false-negative deny
-// discovered live testing HAH's multi-parent scoping against a real
-// multi-level nested team folder. The -database variant was added after a
-// second false-negative deny discovered live testing the work-cluster
-// notionAllowedParentPageIds rollout (MR !390): a page whose immediate
-// parent is a wiki DATABASE (not a plain page -- e.g. DevSecOps/DevOps WIP,
-// both wiki databases) is tagged <parent-database>, which the original
-// page-only regex never matched, denying writes to pages under an
-// allowlisted database folder even though the database's own id was
-// correctly configured. Operator confirmed (2026-07-06) that a database
-// parent should be treated the same as a page parent for this ancestry
-// check -- there is no policy reason to distinguish them here.
+// Notion uses <parent-page> for the immediate parent and numbered
+// <ancestor-N-page> tags farther up the chain. Wiki databases use the
+// corresponding parent-database and ancestor-N-database tags. All variants
+// are equivalent for this ancestry check.
 var parentPageIDRe = regexp.MustCompile(`<(?:parent-page|ancestor-\d+-page|parent-database|ancestor-\d+-database)\s+url="https://app\.notion\.com/p/([0-9a-fA-F-]+)"`)
 
 // normalizeID strips dashes and lowercases a Notion id -- Notion accepts and

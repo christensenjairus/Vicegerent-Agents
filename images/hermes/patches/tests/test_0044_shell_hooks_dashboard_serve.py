@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavioral regression test for patch 0042 (shell hooks for the
+"""Behavioral regression test for patch 0044 (shell hooks for the
 ``dashboard``/``serve`` entrypoints).
 
 Run inside a Hermes image after the patch is applied, or against a scratch
@@ -43,7 +43,7 @@ def _gate_sets(path: str) -> dict:
     if missing:
         raise AssertionError(
             f"could not find {sorted(missing)} in {path} — upstream refactored "
-            "the _prepare_agent_startup() gate; re-verify patch 0042"
+            "the _prepare_agent_startup() gate; re-verify patch 0044"
         )
     return found
 
@@ -62,7 +62,7 @@ def check_gate(path: str) -> None:
 
     for cmd in MUST_NOT_PASS:
         assert cmd not in agent_commands, (
-            f"{cmd!r} unexpectedly passes the bare-command gate — patch 0042 "
+            f"{cmd!r} unexpectedly passes the bare-command gate — patch 0044 "
             "must not widen it beyond dashboard/serve (management commands "
             "would pay plugin discovery and trigger hook-consent prompts)"
         )
@@ -191,7 +191,7 @@ def check_sync_script_contract() -> None:
 def main() -> int:
     path = os.environ.get("HERMES_CLI_MAIN", "/opt/hermes/hermes_cli/main.py")
     assert Path(path).exists(), f"no such file: {path}"
-    print(f"testing patch 0042 against {path}")
+    print(f"testing patch 0044 against {path}")
     check_gate(path)
     check_hook_dispatch()
     check_sync_script_contract()

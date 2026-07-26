@@ -8,8 +8,8 @@ policy:
   # GitHub owner/repo pairs agents may write to, and this machine's GitHub login.
       allowedRepos: [your-org/your-repo]
       username: your-github-username
-  # GitLab projects agents may act on (reads included). Prefer the numeric id:
-  # any spelling an agent sends is resolved to it before matching.
+  # GitLab projects agents may act on (reads included). Prefer numeric ids;
+  # plain path forms are resolved before matching, but percent-encoded paths are unsupported.
     gitlab:
       allowedProjects: ['12345']
       username: your-gitlab-username

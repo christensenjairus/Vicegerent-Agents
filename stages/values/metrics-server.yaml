@@ -1,5 +1,5 @@
 ---
-# https://github.com/kubernetes-sigs/metrics-server/blob/master/charts/metrics-server/values.yaml
+# https://github.com/kubernetes-sigs/metrics-server/blob/metrics-server-helm-chart-3.13.1/charts/metrics-server/values.yaml
 image:
   repository: registry.k8s.io/metrics-server/metrics-server
   tag: v0.9.0

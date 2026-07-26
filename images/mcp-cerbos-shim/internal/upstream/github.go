@@ -23,22 +23,9 @@ import (
 // See server.go's checkGithubPRAuthor doc comment.
 const githubPullRequestReadTool = "github_pull_request_read"
 
-// githubPRResult is the subset of pull_request_read (method: "get")'s JSON
-// result this package needs. GitHub's REST API pull request object
-// represents the PR's author as a nested {"login": ...} user reference (the
-// "user" field is GitHub's own name for it, not "author") -- a well-
-// documented, always-public part of the public REST API schema.
-//
-// NOTE: this field shape is inferred from GitHub's documented REST API
-// conventions, NOT verified against a live call to this specific MCP tool
-// (unlike linear.go's IssueTeam, which was confirmed against a real live
-// response) -- this sandbox has no GitHub credentials to test against. If
-// pull_request_read's actual result nests the author differently, PRAuthor
-// fails closed (empty/malformed login resolves to an error, never a silent
-// pass), so a shape mismatch denies every gated call rather than letting one
-// through unchecked. Live verification against a real GitHub account is a
-// mandatory follow-up before relying on this in production -- see the MR's
-// own follow-up section.
+// githubPRResult contains the author reference returned by pull_request_read
+// with method "get". A missing or malformed login causes PRAuthor to return
+// an error so authorization fails closed.
 type githubPRResult struct {
 	User struct {
 		Login string `json:"login"`

@@ -230,10 +230,8 @@ resources:
       assignee: jchristensen@moveworks.ai
       assigneeVerified: true
       issueType: ''
-  # A live-resolved CURRENT assignee that's out of scope, on a call that asked
-  # for no assignee change (e.g. an add_comment carrying only issue_key+comment)
-  # -- the exact path that used to surface the "requested assignee" message even
-  # though nothing was requested. Now owned by deny-existing-assignee-outside-allowed.
+  # A live-resolved current assignee that's out of scope on a call that asks
+  # for no assignee change is owned by deny-existing-assignee-outside-allowed.
   update_verified_disallowed_assignee:
     id: CHANGE-3
     kind: jira_project
@@ -249,9 +247,8 @@ resources:
       assigneeVerified: true
       issueType: ''
   create_with_allowed_issue_type:
-    # Deploy Service Specific/Service Restart/Environment Change are this
-    # operator's actual ops issue types on this cluster's Jira project --
-    # Task/Bug/Story are NOT allowed here (removed per operator direction).
+    # Deploy Service Specific, Service Restart, and Environment Change are the
+    # configured issue types; Task, Bug, and Story are outside the allowlist.
     id: CHANGE
     kind: jira_project
     attr:
@@ -278,9 +275,7 @@ resources:
       assignee: jchristensen@moveworks.ai
       issueType: Environment Change
   create_with_disallowed_task_issue_type:
-    # Task is no longer allowed on this cluster -- it was removed from
-    # jiraAllowedIssueTypes per operator direction (this project only uses
-    # the three ops types above).
+    # Task is outside jiraAllowedIssueTypes.
     id: CHANGE
     kind: jira_project
     attr:

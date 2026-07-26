@@ -10,7 +10,7 @@ executable, allowlisted, unmodified, and returns clean JSON still never fires
 under an excluded entrypoint -- and the doctor prints "All shell hooks look
 healthy."
 
-That false green is what made HAH-133 expensive to diagnose: patch 0042 fixed
+That false green is what made HAH-133 expensive to diagnose: patch 0044 fixed
 ``dashboard``/``serve`` registration, but the diagnostic that should have
 caught it kept reporting success. Fixing the symptom without fixing the
 detector leaves the next excluded entrypoint just as silent.
@@ -89,13 +89,13 @@ def main() -> int:
         src = f.read()
 
     if "_print_entrypoint_coverage" in src:
-        print("0043: already applied")
+        print("0045: already applied")
         return 0
 
     count = src.count(ANCHOR)
     if count != 1:
         raise SystemExit(
-            f"patch 0043: expected exactly 1 occurrence of the doctor summary "
+            f"patch 0045: expected exactly 1 occurrence of the doctor summary "
             f"anchor in {path}, found {count}"
         )
 
@@ -104,7 +104,7 @@ def main() -> int:
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
 
-    print("0043: hooks doctor now reports entrypoint coverage")
+    print("0045: hooks doctor now reports entrypoint coverage")
     return 0
 
 

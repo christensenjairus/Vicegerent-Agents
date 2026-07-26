@@ -200,9 +200,7 @@ func (r *CallToolResult) Text() string {
 // there is no raw notion_notion-fetch tool at that level to call directly.
 // Every real tool invocation, including this package's own outbound ancestry
 // lookup, must go through call_tool{tool_name, parameters} or vMCP returns
-// "tool not found" (confirmed live: an earlier deploy attempt hit exactly
-// this before it was fixed here -- see git history / MR revert). This is the
-// EXACT mirror, on the outbound side, of what server.go's callToolMeta
+// "tool not found". This mirrors, on the outbound side, server.go's callToolMeta
 // unwrapping does on the inbound side for calls arriving at the shim.
 const callToolMetaName = "call_tool"
 
@@ -215,13 +213,9 @@ const callToolMetaName = "call_tool"
 // no-op shape mismatch that would need revisiting, not a silent failure
 // (vMCP would still need to expose call_tool for this to work at all).
 //
-// Session reuse is the fix for a real outage, not an optimization. This
-// client previously re-handshook on EVERY lookup, so each gated call paid two
-// sequential round trips through the gateway to the host vMCP. Measured live:
-// initialize 0.5s-2.7s + tools/call 0.9s-3.3s, totalling 4997ms against a
-// 5000ms deadline -- the GitLab project-canonicalization gate lost that race
-// by 3ms and failed closed on every non-numeric project_id spelling. With the
-// handshake amortized, the steady-state lookup is ONE round trip.
+// Session reuse keeps steady-state lookups to one round trip. Repeating the
+// initialize handshake for every lookup can exhaust the authorization
+// deadline before the tool call completes.
 //
 // A cached session can still be rejected -- the server restarts, evicts idle
 // sessions, or the gateway rolls. That surfaces as a non-200 (typically 404

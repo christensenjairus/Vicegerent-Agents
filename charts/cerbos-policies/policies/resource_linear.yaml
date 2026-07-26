@@ -17,17 +17,10 @@
 # only one form would wrongly deny legitimate DEVOPS calls that use a
 # different form.
 #
-# An earlier fix closed a real enforcement gap: previously, a save_issue UPDATE with
-# no `team` arg (an ordinary field edit — the overwhelming majority of
-# updates) got no teamId attr at all and fell through to allow-all
-# REGARDLESS of the issue's actual current team, since linearIssueAttr only
-# ever populated teamId from the call's own `team` argument. The same gap
-# existed for save_project updates that touched neither addTeams nor
-# setTeams. The shim now runs a live lookup (linear_get_issue /
+# For updates without an explicit team, the shim runs a live lookup (linear_get_issue /
 # linear_get_project, server.go) whenever the call itself didn't supply an
 # explicit, already-verifiable team signal, and injects the resolved
-# current team(s) into this same teamId/teams attr — so this policy's rules
-# below are unchanged; only what populates the attr got stricter. A
+# current team(s) into the teamId/teams attr. A
 # save_issue call that supplies an explicit team at all (create, required;
 # update, a deliberate reassignment) has that value take precedence over any
 # live resolution — see mapping.yaml's linearIssueAttr helper. The only calls
@@ -37,11 +30,11 @@
 # reply via parentId — server.go's team-resolution gate has no id to look up), and a
 # create_issue_label call with no teamId arg (a workspace-scoped label isn't
 # team-owned at all — mapping.yaml's linearLabelAttr helper). Every OTHER
-# Linear write against an existing team-scoped entity now gets either an
+# Linear write against an existing team-scoped entity gets either an
 # explicit, caller-supplied team signal or a live-resolved current one before
 # reaching this policy.
 #
-# force-self-assignee follow-up: also deny (a) a save_issue CREATE call
+# Assignee rules deny (a) a save_issue CREATE call
 # (isCreate="true", i.e. no `id` arg) that doesn't set assignee at all, and
 # (b) any save_issue call (create or update) that sets assignee to someone
 # outside ${linearAllowedAssignees} -- mirrors Jira's identical pair of
@@ -51,18 +44,17 @@
 # match against the raw `assignee` arg value before Cerbos ever sees it
 # (linearIssueAttrOption, helpers_linear.go), so `assignee: "me"` never
 # even reaches the allowlist comparison. isCreate/assignee are surfaced by
-# the same linearIssueAttr helper the pre-existing teamId check already
+# the linearIssueAttr helper the teamId check
 # uses -- has()-guarded the same way, so an ordinary update that never
 # touches assignee gets no assignee key at all and isn't affected by
-# either new rule. The "*" bypass is honored here too, matching
+# either rule. The "*" bypass is honored here too, matching
 # jiraAllowedAssignees's disable-the-whole-check semantics.
 #
-# deny-write-unassigned-issue: closes a real enforcement gap in
-# deny-assignee-outside-allowed above -- that rule only fires when
+# deny-write-unassigned-issue covers the empty-assignee case that
+# deny-assignee-outside-allowed cannot match because it only fires when
 # attr.assignee is non-empty, so a save_comment/save_issue-update against a
 # genuinely UNASSIGNED issue left the assignee attr empty/absent and fell
-# through to allow-all regardless of ${linearAllowedAssignees}. server.go's
-# team/assignee-resolution gates now also set an assigneeVerified=true
+# through to allow-all. server.go's team/assignee-resolution gates set an assigneeVerified=true
 # marker whenever they run the live lookup and get a definitive answer
 # (including "no assignee") but the call itself didn't already supply its
 # own directly-verifiable assignee -- this rule denies specifically when
