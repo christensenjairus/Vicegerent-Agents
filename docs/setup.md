@@ -22,11 +22,11 @@ Every setting carries an inline comment in `values.defaults.yaml`; the example c
 - **`egress`** — `wildcardDomains` / `exactDomains` are YAML lists of external HTTP(S) destinations the egress proxy allows; `internalAllowedCIDRs` carves RFC1918 hosts out of the private-network deny.
 - **`agents[].directEgress`** — `ssh.fqdn` and `ssh.cnameChain` describe your git host and its full CNAME chain; the Slack and edge-TTS lists hold direct WebSocket destinations.
 - **Container registry** (`values.defaults.yaml`'s `agentDefaults.image`, `charts/mcp-cerbos-shim/templates/deployment.yaml`, `charts/platform/templates/gateway.yaml`) — these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave them as-is and install directly against it. Only repoint them if you want to build and host your own copies of `hermes-agent`, `mcp-cerbos-shim`, or the agentgateway proxy image — see each image's README under `images/*/README.md` for the build & push steps.
+- **`.gitlab-ci.yml` / `renovate.json`** — these are wired for this repository's self-hosted GitLab instance. Adapt them if you host the repository elsewhere, or ignore them; they validate and update this repository but are not installed in the cluster.
 
 ### Migrating values from the former schema
 
 The installer rejects the former flat schema instead of silently ignoring it. Move `clusterVars` into the service groups under `policy`, rename `agents[].networkAllowlist` to `agents[].directEgress`, change the SSH fields to `directEgress.ssh.fqdn` and a list-valued `directEgress.ssh.cnameChain`, change `storage.gitrepos` to `storage.gitRepos`, and convert `agents[].config` from a YAML block string to a map. Under `egress`, replace the comma-separated `apexWildcardDomains`, `exactOnlyDomains`, and `internalAllowlistCIDRs` strings with the `wildcardDomains`, `exactDomains`, and `internalAllowedCIDRs` lists. Move `egress.replicaCount` to `replicas.egressProxy`. Compare your file with `values.example.yaml` before rerunning `./vicegerent install`.
-- **`.gitlab-ci.yml` / `renovate.json`** — wired for this repo's own self-hosted GitLab instance. If you host this elsewhere, adapt these to your CI platform or ignore them; nothing in the platform itself depends on them (they're validation/dependency-update tooling, not part of the installed cluster state).
 
 To stand up your own instance:
 
@@ -72,7 +72,7 @@ Cluster secrets are plain Kubernetes Secrets — Kind etcd is the source of trut
 
 MCP-server API keys are the exception: they are `thv` (ToolHive) secrets on the host, not Kubernetes Secrets. Configure them with `./vicegerent setup mcp` (see [`host/mcp`](../host/mcp)), not the scripts below.
 
-> Secrets are treated as disposable/recreatable. There is no external secret store in the loop, so **keep your own copy of any API keys** — re-running a setup script is how you rebuild the cluster's secrets after a `kind delete cluster`. (A Velero backup of the Secrets is a planned follow-up.)
+> There is no external secret store in the loop, so **keep your own copy of every API key**. Velero backs up Kubernetes Secrets, but host-side ToolHive secrets are outside the cluster, and a backup is not a substitute for an independently held copy. Re-running the setup scripts is the supported way to seed a fresh cluster.
 
 ### Platform-wide
 
