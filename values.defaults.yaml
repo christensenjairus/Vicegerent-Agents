@@ -137,6 +137,13 @@ agentDefaults:
   failover:
     provider: openai
     model: ''
+  # Explicit MoA aggregator; provider uses the values key, not the Hermes runtime ID.
+  moa:
+    aggregator:
+      provider: anthropic
+      models:
+        default: claude-sonnet-5
+        frontier: claude-opus-5
   # Every intermediate SSH CNAME must be listed or Cilium strips the answer.
   directEgress:
     ssh:
