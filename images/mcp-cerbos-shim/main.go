@@ -134,6 +134,22 @@ func main() {
 	opts = append(opts, server.WithGithubPRAuthor(newUpstream()))
 	log.Printf("github PR author-resolution gate enabled (update_pull_request, update_pull_request_branch, request_copilot_review)")
 
+	// GitLab existing-MR-write author-resolution gate: same unconditional-
+	// enable posture as the gates above -- no allowlist of its own, hands off
+	// to the ${gitlabUsername} Cerbos rule (resource_gitlab.yaml) via the
+	// mrAuthor attr this gate resolves for every update_merge_request call.
+	opts = append(opts, server.WithGitlabMRAuthor(newUpstream()))
+	log.Printf("gitlab MR author-resolution gate enabled (update_merge_request)")
+
+	// GitLab project-canonicalization gate: resolves any spelling of a
+	// project GitLab accepts to its numeric id before Cerbos matches
+	// ${gitlabAllowedProjects}, so an operator lists one canonical value per
+	// project instead of every form an agent might send. Unconditional like
+	// the gates above; an already-numeric project_id short-circuits without a
+	// network call, so the common path costs nothing.
+	opts = append(opts, server.WithGitlabProjectCanonicalizer(newUpstream()))
+	log.Printf("gitlab project-canonicalization gate enabled (all project-bearing tools)")
+
 	// Jira ticket-assignee resolution gate: same unconditional-enable
 	// posture as the gates above -- no allowlist of its own, hands off to
 	// the ${jiraAllowedAssignees} Cerbos rule (resource_jira.yaml) via the

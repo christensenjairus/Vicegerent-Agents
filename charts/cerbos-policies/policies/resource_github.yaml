@@ -1,6 +1,10 @@
 ---
 # github_repo policy: deny any GitHub call whose owner/repo isn't in the allowed
-# list (${githubAllowedRepos}, from values.yaml (clusterVars)), or
+# list (${githubAllowedRepos}, from values.yaml (clusterVars); compared
+# case-insensitively, since GitHub's own owner/repo lookups ignore case and an
+# allowlist that didn't would false-deny a legitimate call spelled with
+# different capitalization -- both sides are lowercased, so list the value
+# however you like), or
 # whose branch arg names a protected branch (main/master/production), or any
 # create/update_pull_request call that sets reviewers (see below); allow
 # everything else. The shim maps every repo-bearing GitHub tool to this
@@ -71,8 +75,8 @@ resourcePolicy:
       condition:
         match:
           expr: >-
-            !(request.resource.attr.owner + "/" + request.resource.attr.repo in
-            [{{ include "cerbos-policies.celList" .Values.clusterVars.githubAllowedRepos }}])
+            !((request.resource.attr.owner + "/" + request.resource.attr.repo).lowerAscii() in
+            [{{ include "cerbos-policies.celListLower" .Values.clusterVars.githubAllowedRepos }}])
       output:
         when:
           ruleActivated: >-

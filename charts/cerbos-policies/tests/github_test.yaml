@@ -15,6 +15,15 @@ resources:
     id: moveworks-emu/moveworks
     kind: github_repo
     attr: {owner: moveworks-emu, repo: moveworks}
+  mixed_case_allowed_repo:
+    # owner/repo is compared case-insensitively (both sides lowercased):
+    # GitHub's own repo lookups ignore case, so an allowlist that didn't would
+    # false-deny a legitimate call spelled with different capitalization.
+    # Mirrors gitlab_test.yaml's mixed_case_path_project — the two forges'
+    # allowlists behave identically here by design.
+    id: MoveWorks-EMU/MoveWorks
+    kind: github_repo
+    attr: {owner: MoveWorks-EMU, repo: MoveWorks}
   moveworks_emu_k8s_manifests:
     id: moveworks-emu/k8s-manifests
     kind: github_repo
@@ -240,8 +249,12 @@ tests:
         - jchristensen_movester_moveworks
         - jchristensen_movester_k8s_manifests
         - vicegerent_agents
+        - mixed_case_allowed_repo
       actions: [access]
     expected:
+      - principal: hermes
+        resource: mixed_case_allowed_repo
+        actions: {access: EFFECT_ALLOW}
       - principal: hermes
         resource: moveworks_emu_moveworks
         actions: {access: EFFECT_ALLOW}

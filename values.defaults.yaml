@@ -35,12 +35,26 @@
 # ----------------------------------------------------------------------------
 clusterVars:
   # GitHub owner/repo pairs agents may write to (resource_github.yaml). Empty = deny all writes.
+  # Compared case-insensitively; capitalize however you like.
   githubAllowedRepos: []
   # Owners requiring fork-qualified PR heads + the allowed fork owner(s). ['*'] disables.
   githubForkRequiredOwners: ['*']
   githubForkOwners: ['*']
   # This machine's GitHub login (deny-not-own-pr live-author gate).
   githubUsername: ''
+
+  # GitLab projects agents may act on, reads included (resource_gitlab.yaml).
+  # List the NUMERIC project id — the shim resolves whatever form an agent
+  # sends (numeric, group/project path, percent-encoded, any casing) to that id
+  # before matching, so one entry per project is enough. A path works too and
+  # is matched case-insensitively, but the numeric id survives a project being
+  # renamed or moved between groups; a path does not. Empty = deny all GitLab
+  # calls.
+  gitlabAllowedProjects: []
+  # The login this machine's GitLab token authenticates as (deny-not-own-mr
+  # live-author gate) — whichever account the PAT belongs to, since that's the
+  # account the MRs get authored by.
+  gitlabUsername: ''
 
   # Jira projects agents may WRITE to (reads unrestricted). Issue/epic keys must
   # start with one of these + '-'. Empty = deny all writes.
