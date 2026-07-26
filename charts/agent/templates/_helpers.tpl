@@ -350,6 +350,8 @@ timezone: {{ .Values.timezone }}
 terminal:
   cwd: /workspace
   persistent_shell: true
+  # 'auto' would rewrite tool-subprocess HOME to {HERMES_HOME}/home in containers, splitting it from the gateway's.
+  home_mode: real
 web:
   search_backend: searxng
 memory:

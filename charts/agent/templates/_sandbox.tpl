@@ -35,11 +35,11 @@ spec:
               set -eu
               chown 10000:10000 /run
               # chown -R: stale uid-0 dirs from old subPath design cause EPERM on reseed; idempotent on fresh PVCs.
-              mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/home/.config/opencode
-              chown -R 10000:10000 /opt/data/.codex /opt/data/.claude /opt/data/home/.config/opencode
-              # models PVC mount forces kubelet to scaffold /opt/data/home as root:hermes with no group-write; fix it here (non-recursive, skips the mounted models content) before seed-data (uid 10000) reseeds the model weights under it.
-              mkdir -p /opt/data/home/.hermes/mnemosyne
-              chown 10000:10000 /opt/data/home /opt/data/home/.hermes /opt/data/home/.hermes/mnemosyne
+              mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode
+              chown -R 10000:10000 /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode
+              # models PVC mount makes kubelet scaffold its parents as root:hermes with no group-write; fix it (non-recursive, skips the mounted content) before seed-data (uid 10000) reseeds under it.
+              mkdir -p /opt/data/.hermes/mnemosyne
+              chown 10000:10000 /opt/data/.hermes /opt/data/.hermes/mnemosyne
           securityContext:
             runAsUser: 0
             runAsGroup: 0
@@ -50,19 +50,21 @@ spec:
             - name: data
               mountPath: /opt/data
             - name: models
-              mountPath: /opt/data/home/.hermes/mnemosyne/models
+              mountPath: /opt/data/.hermes/mnemosyne/models
         - name: seed-data
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           command: [bash, -c]
           args:
             - |-
               set -euo pipefail
-              # No container sets a HOME env, so the runtime HOME is uid 10000's /etc/passwd home, /opt/data -- pin it so git config --global and ~/.bazelrc below land where git and bazel actually read them. /opt/data/home is reached only by absolute path (XDG_CONFIG_HOME, the models mount), never as $HOME.
+              # /opt/data is HOME everywhere: uid 10000's /etc/passwd home, the gateway's own
+              # HOME, and (via terminal.home_mode=real) every tool subprocess. Pinned here too so
+              # this container writes ~/.gitconfig and ~/.bazelrc where they are actually read.
               export HOME=/opt/data
               # fastembed reads HERMES_HOME/cache; the local LLM reads ~/.hermes; faster-whisper
               # reads the default HF_HUB_CACHE (~/.cache/huggingface/hub) — three different dirs.
               fastembed_dest="/opt/data/cache/fastembed"
-              llm_dest="/opt/data/home/.hermes/mnemosyne/models"
+              llm_dest="/opt/data/.hermes/mnemosyne/models"
               whisper_dest="/opt/data/.cache/huggingface/hub"
               marker_dir="/opt/data/.hermes"
               mkdir -p "${fastembed_dest}" "${llm_dest}" "${whisper_dest}" "${marker_dir}" /opt/data/plugins /opt/data/.ssh
@@ -106,6 +108,25 @@ spec:
                 rm -rf "${splitdir}"
                 printf '%s\n' "${want_truststore}" > "${truststore_marker}"
               fi
+              # One-time fold of the old split HOME into /opt/data. Destination wins: those
+              # are the copies the gateway was already maintaining, and a fossil .gitconfig
+              # under /opt/data/home was shadowing the chart-managed git identity.
+              old_home=/opt/data/home
+              if [ -d "${old_home}" ]; then
+                for entry in "${old_home}"/* "${old_home}"/.[!.]*; do
+                  [ -e "${entry}" ] || continue
+                  name="$(basename "${entry}")"
+                  # .hermes was only the models mountpoint scaffold; the PVC mounts at /opt/data/.hermes now.
+                  if [ "${name}" != ".hermes" ]; then
+                    if [ -e "/opt/data/${name}" ]; then
+                      rm -rf "${entry}"
+                    else
+                      mv "${entry}" "/opt/data/${name}"
+                    fi
+                  fi
+                done
+                find "${old_home}" -depth -type d -empty -delete 2>/dev/null || true
+              fi
               # Bazel ignores JAVA_TOOL_OPTIONS; give it a ~/.bazelrc instead.
               printf '%s\n' \
                 'startup --host_jvm_args=-Djavax.net.ssl.trustStore=/opt/data/certs/java-cacerts.p12' \
@@ -117,7 +138,7 @@ spec:
               # Compared against the seed's own entries, not a hardcoded model dir.
               seed="/opt/hermes/mnemosyne-seed"
               marker="${marker_dir}/.mnemosyne-seed.sha256"
-              want="$(cat "${seed}.sha256"):layout=v3"
+              want="$(cat "${seed}.sha256"):layout=v4"
               seed_complete() {
                 for entry in "$1"/* "$1"/.[!.]*; do
                   [ -e "${entry}" ] || continue
@@ -163,15 +184,15 @@ spec:
                   cp "${cm_file}" "${pvc_file}"
                 fi
               }
-              mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/home/.config/opencode
+              mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode
               merge_config toml /opt/data/.codex/config.toml /reload/codex-config/config.toml
               merge_config json /opt/data/.claude/settings.json /reload/claude-config/settings.json
               merge_config json /opt/data/.claude/.claude.json /reload/claude-config/claude.json
               cp -f /reload/claude-config/CLAUDE.md /opt/data/.claude/CLAUDE.md
-              merge_config json /opt/data/home/.config/opencode/opencode.json /reload/opencode-config/opencode.json
+              merge_config json /opt/data/.config/opencode/opencode.json /reload/opencode-config/opencode.json
               # OpenCode's documented global-rules location (opencode.ai/docs/rules); see
               # opencode-config.yaml's AGENTS.md key for the anomalyco/opencode#22020 caveat.
-              cp -f /reload/opencode-config/AGENTS.md /opt/data/home/.config/opencode/AGENTS.md
+              cp -f /reload/opencode-config/AGENTS.md /opt/data/.config/opencode/AGENTS.md
               # kanban init: pre-create SQLite schema on PVC; || true because self-inits on first call anyway.
               mkdir -p /opt/data/tmp
               HERMES_HOME=/opt/data TMPDIR=/opt/data/tmp \
@@ -193,7 +214,7 @@ spec:
             - name: data
               mountPath: /opt/data
             - name: models
-              mountPath: /opt/data/home/.hermes/mnemosyne/models
+              mountPath: /opt/data/.hermes/mnemosyne/models
             - name: config
               mountPath: /reload/hermes-config
               readOnly: true
@@ -379,9 +400,9 @@ spec:
             - name: CLAUDE_CONFIG_DIR
               value: /opt/data/.claude
             - name: OPENCODE_CONFIG
-              value: /opt/data/home/.config/opencode/opencode.json
+              value: /opt/data/.config/opencode/opencode.json
             - name: XDG_CONFIG_HOME
-              value: /opt/data/home/.config
+              value: /opt/data/.config
             - name: TMPDIR
               value: /tmp
             - name: PYTHONDONTWRITEBYTECODE
@@ -461,7 +482,7 @@ spec:
             - name: data
               mountPath: /opt/data
             - name: models
-              mountPath: /opt/data/home/.hermes/mnemosyne/models
+              mountPath: /opt/data/.hermes/mnemosyne/models
             - name: gitrepos
               mountPath: /workspace
             - name: ssh-key
