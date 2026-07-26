@@ -162,7 +162,7 @@ validate:image-tag-bump:
         git config user.name "Vicegerent CI"
         git config user.email "vicegerent-ci@hahomelabs.com"
         git add -u
-        git commit -m "chore(images): bump tags [skip ci]"
+        git commit -m "chore(images): bump tags"
         git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
           "HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}"
       fi
