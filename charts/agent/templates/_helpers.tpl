@@ -342,6 +342,16 @@ display:
 approvals:
   mode: smart
 command_allowlist: []
+# Republish Hermes' skills into the claude/codex/opencode roots as soon as
+# skill_manage writes one, so a skill created mid-session is visible to the
+# other harnesses without waiting for a pod restart. Auto-accept because the
+# gateway runs headless and cannot answer the first-use consent prompt.
+hooks_auto_accept: true
+hooks:
+  post_tool_call:
+    - matcher: skill_manage
+      command: /reload/shared-skills/sync-shared-skills.sh
+      timeout: 30
 checkpoints:
   enabled: true
 clarify:

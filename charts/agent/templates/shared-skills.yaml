@@ -1,0 +1,76 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vicegerent-agent.name" . }}-shared-skills
+  namespace: agent-sandbox
+data:
+  sync-shared-skills.sh: |-
+    #!/usr/bin/env bash
+    # Publish Hermes' skills tree to the other harnesses.
+    #
+    # Codex and OpenCode both walk **/SKILL.md and both auto-scan
+    # ~/.agents/skills, so a single symlinked root covers them. Claude Code
+    # scans its skills root exactly one level deep (verified against 2.1.220:
+    # <root>/<category>/<name>/SKILL.md is never found) but does follow
+    # symlinks, so it gets a flat farm of links keyed on each skill's leaf
+    # directory name.
+    #
+    # Idempotent: safe at boot and after every skill_manage call.
+    set -uo pipefail
+
+    hermes_skills="${HERMES_SKILLS_DIR:-/opt/data/skills}"
+    agents_root="${AGENTS_SKILLS_ROOT:-/opt/data/.agents/skills}"
+    claude_farm="${CLAUDE_SKILLS_FARM:-/opt/data/.claude/skills}"
+
+    [ -d "${hermes_skills}" ] || exit 0
+
+    mkdir -p "$(dirname "${agents_root}")"
+    if [ ! -e "${agents_root}" ] || [ -L "${agents_root}" ]; then
+      ln -sfn "${hermes_skills}" "${agents_root}"
+    fi
+
+    mkdir -p "${claude_farm}"
+
+    # Drop links whose target vanished: a renamed or deleted skill would
+    # otherwise keep advertising a name that resolves to nothing.
+    for link in "${claude_farm}"/*; do
+      [ -L "${link}" ] || continue
+      target="$(readlink -f "${link}" 2>/dev/null || true)"
+      keep=no
+      case "${target}" in
+        "${hermes_skills}"/*) [ -f "${target}/SKILL.md" ] && keep=yes ;;
+      esac
+      [ "${keep}" = yes ] || rm -f "${link}"
+    done
+
+    # -mindepth 2 skips a stray SKILL.md at the tree root. The -prune arm keeps
+    # the walk out of a skill's own references/templates/assets/scripts
+    # packages, which may hold a preserved SKILL.md that is documentation
+    # rather than a skill (agent/skill_utils.py is_skill_support_path).
+    linked=0
+    skipped=0
+    while IFS= read -r skill_md; do
+      skill_dir="$(dirname "${skill_md}")"
+      name="$(basename "${skill_dir}")"
+      case "${name}" in .*) continue ;; esac
+      link="${claude_farm}/${name}"
+      # A real directory is a skill Claude Code or a human created in its own
+      # root; that owner keeps the name.
+      if [ -e "${link}" ] && [ ! -L "${link}" ]; then
+        skipped=$((skipped + 1))
+        continue
+      fi
+      [ "$(readlink "${link}" 2>/dev/null || true)" = "${skill_dir}" ] && continue
+      ln -sfn "${skill_dir}" "${link}" && linked=$((linked + 1))
+    done < <(find "${hermes_skills}" -mindepth 2 \
+      \( -type d \( -name references -o -name templates -o -name assets \
+                    -o -name scripts \) -prune \) -o \
+      -name SKILL.md -print 2>/dev/null)
+
+    # Empty JSON object, not a log line: this script also runs as a Hermes
+    # post_tool_call shell hook, whose wire protocol parses stdout as JSON and
+    # warns on anything else. The counts go to stderr where they stay visible
+    # in pod logs.
+    echo "sync-shared-skills: ${linked} link(s) written, ${skipped} name(s) left to their owner" >&2
+    echo '{}'

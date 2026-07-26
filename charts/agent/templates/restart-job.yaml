@@ -61,6 +61,9 @@ spec:
             - name: approval-policy
               mountPath: /reload/approval-policy
               readOnly: true
+            - name: shared-skills
+              mountPath: /reload/shared-skills
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -85,6 +88,9 @@ spec:
         - name: approval-policy
           configMap:
             name: {{ include "vicegerent-agent.name" . }}-approval-policy
+        - name: shared-skills
+          configMap:
+            name: {{ include "vicegerent-agent.name" . }}-shared-skills
         - name: tmp
           emptyDir: {}
 {{- end -}}
