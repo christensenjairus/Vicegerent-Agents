@@ -35,7 +35,7 @@ func TestDeployedGitlabMapping_MappedToolsReachCerbos(t *testing.T) {
 		tool string
 		args map[string]any
 	}{
-		{"gitlab_create_issue", map[string]any{"project_id": "999", "title": "t"}},
+		{"gitlab_get_project", map[string]any{"project_id": "999"}},
 		{"gitlab_get_issue", map[string]any{"project_id": "999", "issue_iid": "1"}},
 		{"gitlab_list_labels", map[string]any{"project_id": "999"}},
 		{"gitlab_list_todos", map[string]any{"project_id": "999"}},
@@ -171,16 +171,20 @@ func TestDeployedGitlabMapping_TargetProjectIdIsCanonicalizedToo(t *testing.T) {
 	up := &fakeUpstream{text: `{"id":"7","path_with_namespace":"hahomelabs/other"}`}
 	s := newGitlabServer(t, d, nil, WithGitlabProjectCanonicalizer(up))
 	res, err := s.CheckRequest(context.Background(),
-		mcpReq("vmcp", "tools/call", toolCall("gitlab_create_issue_link",
+		mcpReq("vmcp", "tools/call", toolCall("gitlab_create_merge_request",
 			map[string]any{
-				"project_id": "148", "issue_iid": "1",
-				"target_project_id": "hahomelabs/other", "target_issue_iid": "2",
+				"project_id": "148", "title": "t",
+				"source_branch": "feat", "target_branch": "develop",
+				"target_project_id": "hahomelabs/other",
 			})))
 	if err != nil {
 		t.Fatalf("CheckRequest: %v", err)
 	}
-	if !isPass(res) {
-		t.Fatalf("expected pass")
+	// create_merge_request returns Mutated, not Pass: gitlabDraftTitleForce
+	// rewrites the title to "Draft: t". What this test cares about is the
+	// canonicalized attr Cerbos saw, so accept either allow shape.
+	if isDeny(res) {
+		t.Fatalf("expected an allow (pass or mutated), got deny")
 	}
 	if d.gotAttr["targetProjectId"] != "7" {
 		t.Errorf("targetProjectId = %v, want the canonicalized 7", d.gotAttr["targetProjectId"])
@@ -270,9 +274,15 @@ func TestDeployedGitlabMapping_TargetProjectIdIsSurfaced(t *testing.T) {
 		tool string
 		args map[string]any
 	}{
-		{"gitlab_create_issue_link", map[string]any{
-			"project_id": "148", "issue_iid": "1",
-			"target_project_id": "999", "target_issue_iid": "2",
+		// String and numeric target_project_id both stringify to "999".
+		// create_issue_link used to cover the string case, but the issue WRITE
+		// tools are no longer allowlisted (read-only issue surface on both
+		// forges), so create_merge_request -- the other tool carrying a second
+		// project -- covers both shapes.
+		{"gitlab_create_merge_request", map[string]any{
+			"project_id": "148", "title": "t",
+			"source_branch": "feature-x", "target_branch": "develop",
+			"target_project_id": "999",
 		}},
 		{"gitlab_create_merge_request", map[string]any{
 			"project_id": "148", "title": "t",
@@ -475,47 +485,50 @@ func TestDeployedGitlabMapping_ReviewersAttrWiredOnMergeRequestCreateAndUpdate(t
 	}
 }
 
-// TestDeployedGitlabMapping_IssueAssigneesAreNotDenied proves the deliberate
-// split documented in resource_gitlab.yaml: create_issue/update_issue carry an
-// assignee_ids array too, and it is NOT surfaced as hasReviewers -- assigning a
-// ticket is the Jira/Linear-shaped action this platform allows by default. Only
-// the merge_request tools get gitlabMergeRequestAttr.
-func TestDeployedGitlabMapping_IssueAssigneesAreNotDenied(t *testing.T) {
+// TestDeployedGitlabMapping_IssueWriteToolsAreUnmapped replaces an older test
+// that proved create_issue/update_issue's assignee_ids was deliberately NOT
+// surfaced as hasReviewers. That distinction is moot now: the issue WRITE tools
+// were removed from the vMCP allowlist entirely, so GitLab's issue surface is
+// read-only exactly as GitHub's is. What matters instead is that the removal
+// actually took -- none of them should be a mapping key, and the issue READ
+// tools must still be mapped and project-scoped.
+func TestDeployedGitlabMapping_IssueWriteToolsAreUnmapped(t *testing.T) {
 	m := deployedMapping(t)
-	e, err := eval.Compile(m)
-	if err != nil {
-		t.Fatalf("compile: %v", err)
+	b, ok := m.Backends["vmcp"]
+	if !ok {
+		t.Fatal("rendered mapping has no vmcp backend")
 	}
-	for _, tool := range []string{"gitlab_create_issue", "gitlab_update_issue"} {
-		t.Run(tool, func(t *testing.T) {
-			d := &stubDecider{allow: true}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
-			res, err := s.CheckRequest(context.Background(),
-				mcpReq("vmcp", "tools/call", toolCall(tool, map[string]any{
-					"project_id": "148", "issue_iid": "1", "assignee_ids": []any{7},
-				})))
-			if err != nil {
-				t.Fatalf("CheckRequest: %v", err)
-			}
-			if !isPass(res) {
-				t.Fatalf("expected pass, got deny=%v", isDeny(res))
-			}
-			if _, has := d.gotAttr["hasReviewers"]; has {
-				t.Errorf("%s must not carry a hasReviewers attr, got %#v", tool, d.gotAttr["hasReviewers"])
-			}
-		})
+	for _, tool := range []string{
+		"gitlab_create_issue", "gitlab_update_issue", "gitlab_create_issue_link",
+	} {
+		if _, mapped := b.Tools[tool]; mapped {
+			t.Errorf("%s is still a mapping key; the issue write surface was removed "+
+				"from host/mcp/toolhive-servers.json and should not be mapped here", tool)
+		}
+	}
+	// The reads must survive the removal, still scoped to gitlab_project.
+	for _, tool := range []string{
+		"gitlab_get_issue", "gitlab_list_issues", "gitlab_my_issues",
+		"gitlab_list_issue_discussions", "gitlab_list_issue_links", "gitlab_get_issue_link",
+	} {
+		if _, mapped := b.Tools[tool]; !mapped {
+			t.Errorf("%s must stay mapped -- issue READS remain allowlisted on both forges", tool)
+		}
 	}
 }
 
 // TestDeployedGitlabMapping_RemovedToolsAreUnmapped: push_files,
-// create_or_update_file and create_branch (GitLab's only branch-writing tools,
-// and the only source of a 'branch' arg -- which is why no protected-branch rule
-// exists in resource_gitlab.yaml) plus merge_merge_request and
-// approve_merge_request were removed from the tool allowlist entirely
-// (toolhive-servers.json): the bot has direct SSH access to
+// create_or_update_file and create_branch (GitLab's only branch-writing tools)
+// plus merge_merge_request and approve_merge_request were removed from the tool
+// allowlist entirely (toolhive-servers.json): the bot has direct SSH access to
 // gitlab.hahomelabs.com, so routine git operations go through git itself, and
 // nothing here may merge or approve. None should be a mapping key, confirming
 // the removal actually took rather than being an accidental gap from a typo.
+//
+// resource_gitlab.yaml DOES carry a deny-protected-branch rule: it fires on
+// merge_request target_branch (retargeting an existing MR at main/master/
+// production), not on a repository branch write, since the branch-writing tools
+// are gone. An earlier version of this comment claimed no such rule existed.
 func TestDeployedGitlabMapping_RemovedToolsAreUnmapped(t *testing.T) {
 	m := deployedMapping(t)
 	e, err := eval.Compile(m)

@@ -116,9 +116,11 @@ func TestDeployedGithubMapping_RemovedToolsAreUnmapped(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	removed := []string{
-		// Issue tools -- this operator only uses GitHub for PRs, not issues.
-		"github_issue_read", "github_issue_write", "github_add_issue_comment",
-		"github_list_issues", "github_list_issue_types", "github_search_issues",
+		// Issue WRITE tools -- the issue surface is read-only on both forges
+		// (issue_read/list_issues/search_issues ARE now allowlisted and mapped,
+		// mirroring GitLab's read-only issue tools; see mapping.yaml).
+		"github_issue_write", "github_add_issue_comment",
+		"github_list_issue_types",
 		"github_sub_issue_write", "github_assign_copilot_to_issue", "github_get_label",
 		// Generic git file/branch-write tools -- superseded by SSH-key git access.
 		"github_create_branch", "github_create_or_update_file", "github_push_files",

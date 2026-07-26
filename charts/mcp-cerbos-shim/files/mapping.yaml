@@ -64,8 +64,8 @@ backends:
         id: "''"
         attrFrom: canonicalK8s(args)
       # GitLab project-bearing tools -> gitlab_project; Cerbos denies any call
-      # whose project_id (or create_issue_link/create_merge_request's second,
-      # target_project_id) isn't in ${gitlabAllowedProjects}, any MR create/
+      # whose project_id (or create_merge_request's second, target_project_id)
+      # isn't in ${gitlabAllowedProjects}, any MR create/
       # update naming a protected branch as its target, any MR create/update
       # that sets reviewer_ids/assignee_ids, and any update_merge_request
       # against an MR this agent didn't author. This block is a deliberate
@@ -108,28 +108,35 @@ backends:
       #     READ side (mr_discussions/get_merge_request_note(s)/get_draft_note/
       #     list_draft_notes) stays -- reading review threads is why GitLab
       #     keeps a note surface GitHub doesn't.
-      gitlab_create_issue: &gitlab_project
+      # get_project carries the anchor every other project-scoped GitLab tool
+      # references. It is the tool the canonicalization gate itself calls, and
+      # it is mapped anyway: an AGENT calling it directly is an ordinary
+      # project-scoped read that must obey the allowlist like every other read,
+      # and leaving it unmapped would be an unscoped project read. That makes
+      # the gate structurally recursive, so the shim short-circuits its OWN
+      # lookup before it reaches the gate, keyed on the secret self-token it
+      # stamps on every re-entrant call (server.go's selfLookupTools). Do NOT
+      # assume the reserved vmcp-internal backend prevents this on its own: it
+      # does not, because service_names carries the MCP target name (`vmcp` for
+      # both backends), which is exactly how this recursed in production.
+      gitlab_get_project: &gitlab_project
         resourceType: gitlab_project
         action: access
         id: get(args,'project_id','')
         attrFrom: gitlabProjectAttr(args)
-      # get_project is the tool the canonicalization gate itself calls, and it
-      # is mapped anyway: an AGENT calling it directly is an ordinary
-      # project-scoped read that must obey the allowlist like every other read,
-      # and leaving it unmapped would be an unscoped project read. This does
-      # NOT recurse -- the shim makes its own lookup on the reserved
-      # vmcp-internal backend, which returns pass() before any mapping or
-      # Cerbos lookup happens (server.go's isInternalBackend), so the gate's
-      # own call never re-enters the gate.
-      gitlab_get_project: *gitlab_project
+      # Issue READS only. create_issue/update_issue/create_issue_link were
+      # removed from the tool allowlist entirely (toolhive-servers.json) rather
+      # than gated here, so GitLab's issue surface is read-only exactly as
+      # GitHub's is -- removing the capability is stronger than policing it, the
+      # same call made for the note/comment write tools. This also closes the
+      # one place where GitLab could mutate a resource with no author-ownership
+      # gate: an agent hallucinating an issue_iid can no longer write anything.
       gitlab_get_issue: *gitlab_project
-      gitlab_update_issue: *gitlab_project
       gitlab_list_issues: *gitlab_project
       gitlab_my_issues: *gitlab_project
       gitlab_list_issue_discussions: *gitlab_project
       gitlab_list_issue_links: *gitlab_project
       gitlab_get_issue_link: *gitlab_project
-      gitlab_create_issue_link: *gitlab_project
       gitlab_list_todos: *gitlab_project
       gitlab_list_labels: *gitlab_project
       gitlab_get_label: *gitlab_project
@@ -141,9 +148,7 @@ backends:
       # These two are also the only tools carrying reviewer_ids/assignee_ids and
       # the only ones that SET an MR's target_branch, so they get
       # gitlabMergeRequestAttr (projectId + targetProjectId + hasReviewers +
-      # branch) instead of the plain projectId body -- create_issue/update_issue
-      # carry assignee_ids too and deliberately do NOT get it (issue assignment
-      # stays unrestricted; see resource_gitlab.yaml's deny-reviewers comment).
+      # branch) instead of the plain projectId body.
       #
       # `branch` carries target_branch ONLY, and is the GitLab analog of the
       # branch attr feeding github_repo's deny-protected-branch. GitHub's rule
@@ -367,13 +372,17 @@ backends:
       # '') names a protected branch. github_get_me is intentionally unmapped
       # — it identifies the caller, not a repo.
       #
-      # This tool set is deliberately PR-only, with no issue tools and no
+      # This tool set carries PR tools plus READ-ONLY issue tools, and no
       # generic git file/branch-write tools at all (removed entirely from
       # toolhive-servers.json's allowlist, not just unmapped here):
-      #   - No issue tools (issue_read/issue_write/add_issue_comment/
-      #     list_issues/list_issue_types/search_issues/sub_issue_write/
-      #     assign_copilot_to_issue/get_label): this operator doesn't use
-      #     GitHub issues at work, only PRs.
+      #   - Issue READS are allowed (issue_read/list_issues/search_issues),
+      #     matching GitLab's read-only issue surface so the two forges expose
+      #     the same capability. Issue WRITES are not: issue_write,
+      #     add_issue_comment, sub_issue_write and assign_copilot_to_issue are
+      #     absent from the allowlist, the same call made on GitLab (whose
+      #     create_issue/update_issue/create_issue_link were removed for this).
+      #     add_issue_comment falls under the same no-comment-text rule as the
+      #     PR review tools below.
       #   - No create_branch/create_or_update_file/push_files: the bot has
       #     direct SSH access to github.com (charts/agent/templates/
       #     networkpolicy.yaml allows port 22 to github.com unconditionally),
@@ -452,6 +461,17 @@ backends:
           isPrCreate: "'false'"
       github_list_pull_requests: *github_repo
       github_search_pull_requests: *github_repo
+      # Issue READS, mirroring GitLab's read-only issue surface. Scoped by the
+      # same owner/repo allowlist as every PR tool -- issue_read and list_issues
+      # both take owner+repo. search_issues is cross-repo by nature: owner/repo
+      # are OPTIONAL there, so an omitted pair resolves to '/' and is denied by
+      # deny-non-allowed-repo, exactly as search_pull_requests already behaves.
+      # No issue WRITE tools are allowlisted on either forge (issue_write,
+      # add_issue_comment, sub_issue_write on GitHub; create_issue,
+      # update_issue, create_issue_link on GitLab).
+      github_issue_read: *github_repo
+      github_list_issues: *github_repo
+      github_search_issues: *github_repo
       github_request_copilot_review: *github_repo
       github_update_pull_request_branch: *github_repo
       # Linear save_issue (create+update in one tool) -> linear_team; Cerbos

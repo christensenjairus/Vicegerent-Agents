@@ -208,12 +208,18 @@ var githubExistingPRTools = map[string]bool{
 // mapped tool that mutates an EXISTING merge request's own fields (title/
 // description/labels/target_branch/state_event). create_merge_request has no
 // prior MR to check, the reads carry no ownership risk, and the MR note/thread/
-// discussion/draft-note tools are deliberately left OUT -- commenting on merge
-// requests the agent doesn't own is the intended use of those tools here (the
-// operator kept them in the allowlist for exactly that, unlike GitHub where
-// every PR-comment tool was removed outright). As with GitHub, no argument on
-// this tool could ever supply "author" directly -- an MR's author isn't
-// reassignable -- so this gate always resolves live state.
+// discussion/draft-note WRITE tools are not in the allowlist at all -- the
+// operator does not want the bot leaving any comment text on an MR under their
+// identity, the same call made on the GitHub side, so there is nothing for this
+// gate to cover there (only the READ note/discussion tools remain). As with
+// GitHub, no argument on this tool could ever supply "author" directly -- an
+// MR's author isn't reassignable -- so this gate always resolves live state.
+//
+// NOT covered, and deliberately so: gitlab_update_issue and gitlab_create_issue
+// mutate ISSUES, which have no author-ownership gate on either forge. GitLab's
+// tool surface simply has issue tools where GitHub's allowlist has none, so
+// there is no GitHub rule to mirror; both are still project-scoped by
+// deny-non-allowed-project. See resource_gitlab.yaml's header.
 const gitlabProjectResource = "gitlab_project"
 
 var gitlabExistingMRTools = map[string]bool{

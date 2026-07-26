@@ -26,6 +26,12 @@
 #     them would enforce a rule that doesn't exist rather than close a gap.
 #     This is a difference in the surrounding process, not a difference in how
 #     strictly the two forges are policed.
+#
+# Every other difference is a tool-count difference, not an enforcement one:
+# GitLab allowlists more tools because the operator drives it day to day, but
+# the two forges expose the same capability classes (issues read-only on both,
+# no file/branch writes, no merge, no comment writes). forge_parity_deployed_
+# test.go asserts that tool-by-tool against host/mcp/toolhive-servers.json.
 # Two GitHub capability removals are mirrored in the TOOL ALLOWLIST
 # (host/mcp/toolhive-servers.json) instead of as rules here, which is strictly
 # stronger than a policy rule: the git file/branch-write tools plus
@@ -59,10 +65,10 @@
 # resolves to '' and is denied, mirroring how github_search_pull_requests with
 # no owner/repo resolves to '/' and is denied.
 # The same rule also checks targetProjectId, the SECOND project carried by
-# create_issue_link (an issue link's other end) and create_merge_request (an
-# MR's target project) — without it, an allowlisted project_id could carry a
-# write whose effect lands in a project outside the allowlist, the same
-# side-channel class as a Jira epicKey smuggled through additional_fields.
+# create_merge_request (an MR's target project) — without it, an allowlisted
+# project_id could carry a write whose effect lands in a project outside the
+# allowlist, the same side-channel class as a Jira epicKey smuggled through
+# additional_fields.
 # Guarded on non-empty, since most of the mapped tools have no such arg.
 #
 # deny-protected-branch is github_repo's rule of the same name, adapted to the
@@ -93,11 +99,9 @@
 # capability resource_github.yaml denies via its reviewers arg, whose comment
 # calls reviewers "the actual PR analog of an assignee". Both are denied for
 # that same reason: rather than build an allowlist for a capability the
-# operator isn't sure should exist, request review manually instead. Issue
-# assignee_ids (create_issue/update_issue) is deliberately NOT covered — GitHub
-# contributes no issue tools to compare against, and assigning a ticket is the
-# Jira/Linear-shaped action this platform allows by default
-# (jiraAllowedAssignees/linearAllowedAssignees both default to unrestricted).
+# operator isn't sure should exist, request review manually instead. There is no
+# issue-assignee carve-out to make any more: the issue write tools that carried
+# assignee_ids are no longer in the allowlist at all.
 #
 # deny-not-own-mr: the GitLab half of deny-not-own-pr, closing the same
 # incident class — an agent hallucinating a wrong MR iid and rewriting someone
