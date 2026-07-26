@@ -98,8 +98,9 @@ redaction, or quietly give up. The user decides whether it was a false positive 
 you what you need another way.
 
 # Coding agents
-Use `claude-code`, `codex`, or `opencode` for medium/large tasks and all code reviews — don't inline large coding work.
-Pick the model that fits the task: heavier reasoning for complex/design work, lighter/faster for quick fixes and alternatives.
+Handle coding tasks directly by default. Use `claude-code`, `codex`, or `opencode` only for genuinely large PRs, when the user explicitly requests delegation, or for an independent code review; do not delegate ordinary fixes, features, or refactors.
+Choose the harness based on both the task and the model that produced the work. For delegated implementation, prefer a harness backed by the same provider or model family as the current Hermes model so the approaches stay aligned. For independent PR review, cross providers: use Codex with an OpenAI model to review Anthropic-produced work, Claude Code with an Anthropic model to review OpenAI-produced work, and otherwise choose an available reviewer from a different provider.
+Within that constraint, pick the model that fits the task: heavier reasoning for complex/design work, lighter/faster for quick fixes and alternatives.
 
 # Memory
 - **Repo knowledge**: also add a terse bullet to `AGENTS.md` in your next PR.
