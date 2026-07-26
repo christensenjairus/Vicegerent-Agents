@@ -48,6 +48,12 @@ agents:
     failover:
       provider: anthropic
       model: claude-sonnet-5
+    moa:
+      aggregator:
+        provider: openai
+        models:
+          default: gpt-5.6-terra
+          frontier: gpt-5.6-sol
     directEgress:
       ssh:
         fqdn: gitlab.hahomelabs.com

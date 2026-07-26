@@ -248,14 +248,12 @@ model_catalog:
 {{- $primaryProvider := "" -}}
 {{- $primaryModel := "" -}}
 {{- $primaryAuxiliaryModel := "" -}}
-{{- $primary := dict -}}
 {{- range $name := $providerOrder -}}
 {{- $provider := index $catalog $name -}}
 {{- if and (not $primaryProvider) $provider.enabled -}}
 {{- $primaryProvider = $provider.id -}}
 {{- $primaryModel = $provider.model -}}
 {{- $primaryAuxiliaryModel = $provider.auxiliaryModel -}}
-{{- $primary = $provider -}}
 {{- end -}}
 {{- end -}}
 {{- if not $primaryProvider }}{{- fail "vicegerent-agent: every provider (anthropic/openai/deepseek/zai) is disabled in values.providers -- at least one must be enabled" -}}
@@ -276,6 +274,10 @@ model:
 {{- end }}
 model_aliases:
 {{ $aliases | toYaml | nindent 2 }}
+{{- $aggregatorName := .Values.moa.aggregator.provider -}}
+{{- if not (hasKey $catalog $aggregatorName) }}{{- fail (printf "vicegerent-agent: moa.aggregator.provider %q must be one of anthropic/openai/deepseek/zai" $aggregatorName) -}}{{- end -}}
+{{- $aggregator := index $catalog $aggregatorName -}}
+{{- if not $aggregator.enabled }}{{- fail (printf "vicegerent-agent: moa.aggregator.provider %q is disabled in values.providers" $aggregatorName) -}}{{- end -}}
 {{- $presets := dict -}}
 {{- range $preset := list "default" "frontier" }}
 {{- $tier := $preset -}}
@@ -287,7 +289,9 @@ model_aliases:
 {{- $references = append $references (dict "provider" $provider.id "model" (index $provider.moaModels $tier)) -}}
 {{- end }}
 {{- end }}
-{{- $_ := set $presets $preset (dict "reference_models" $references "aggregator" (dict "provider" $primaryProvider "model" (index $primary.moaModels $tier)) "enabled" true) -}}
+{{- $aggregatorModel := index $.Values.moa.aggregator.models $preset -}}
+{{- if not (has $aggregatorModel $aggregator.models) }}{{- fail (printf "vicegerent-agent: moa.aggregator.models.%s %q is not declared by provider %q" $preset $aggregatorModel $aggregatorName) -}}{{- end -}}
+{{- $_ := set $presets $preset (dict "reference_models" $references "aggregator" (dict "provider" $aggregator.id "model" $aggregatorModel) "enabled" true) -}}
 {{- end }}
 moa:
   default_preset: default

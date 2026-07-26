@@ -170,6 +170,13 @@ def main() -> int:
                     "providers": enabled,
                     "failover": {"provider": ""},
                     "mnemosyne": {"provider": name},
+                    "moa": {"aggregator": {
+                        "provider": name,
+                        "models": {
+                            "default": default_values["providers"][name]["moaModels"]["balanced"],
+                            "frontier": default_values["providers"][name]["moaModels"]["frontier"],
+                        },
+                    }},
                 },
                 {name},
             ))
@@ -222,6 +229,31 @@ def main() -> int:
             set(PROVIDERS),
         ))
 
+        profile_aggregators = {
+            "values.example.yaml": ("anthropic", "claude-sonnet-5", "claude-opus-5"),
+            "examples/personal.yaml": ("openai-api", "gpt-5.6-terra", "gpt-5.6-sol"),
+            "examples/work.yaml": ("openai-api", "gpt-5.6-terra", "gpt-5.6-sol"),
+        }
+        profile_enabled = {
+            "values.example.yaml": {"anthropic"},
+            "examples/personal.yaml": set(PROVIDERS),
+            "examples/work.yaml": {"anthropic", "openai"},
+        }
+        for profile, (provider_id, default_model, frontier_model) in profile_aggregators.items():
+            agent = yaml.safe_load((REPO / profile).read_text())["agents"][0]
+            label = f"profile-{Path(profile).stem}"
+            rendered, config = render(defaults, agent, tmpdir / f"{label}.yaml")
+            inspect(label, rendered, config, profile_enabled[profile], failures)
+            presets = config["moa"]["presets"]
+            actual = (
+                presets["default"]["aggregator"]["provider"],
+                presets["default"]["aggregator"]["model"],
+                presets["frontier"]["aggregator"]["model"],
+            )
+            if actual != (provider_id, default_model, frontier_model):
+                failures.append(f"{label}: MoA aggregators are {actual!r}")
+            rendered_configs.append((label, rendered, config))
+
         for index, (label, agent, enabled) in enumerate(scenarios):
             rendered, config = render(defaults, agent, tmpdir / f"agent-{index}.yaml")
             inspect(label, rendered, config, enabled, failures)
@@ -232,6 +264,11 @@ def main() -> int:
             ("disabled-failover", {"providers": {"openai": {"enabled": False}}, "failover": {"provider": "openai"}}),
             ("custom-provider", {"config": {"custom_providers": [{"name": "evil", "base_url": "https://evil.example"}]}}),
             ("unknown-primary", {"config": {"model": {"provider": "evil"}}}),
+            ("unknown-aggregator", {"moa": {"aggregator": {"provider": "evil"}}}),
+            ("disabled-aggregator", {
+                "providers": {"anthropic": {"enabled": False}},
+                "moa": {"aggregator": {"provider": "anthropic"}},
+            }),
             ("scalar-delegation", {"config": {"delegation": "https://api.openai.com"}}),
             ("scalar-auxiliary", {"config": {"auxiliary": "https://api.openai.com"}}),
             ("scalar-auxiliary-route", {"config": {"auxiliary": {"vision": "https://api.openai.com"}}}),
@@ -316,7 +353,10 @@ def main() -> int:
         for failure in failures:
             print(f"  {failure}")
         return 1
-    print(f"OK - {len(scenarios)} provider/failover configurations stay on Agentgateway")
+    print(
+        f"OK - {len(scenarios)} provider/failover configurations and "
+        f"{len(profile_aggregators)} profiles stay on Agentgateway"
+    )
     return 0
 
 
