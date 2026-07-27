@@ -21,6 +21,8 @@ C="$UI_CYAN"
 # silently hit whatever cluster the ambient kubeconfig points at.
 # shellcheck source=scripts/lib/kube-context.sh
 source "$REPO_ROOT/scripts/lib/kube-context.sh"
+# shellcheck source=scripts/lib/kind-userns.sh
+source "$REPO_ROOT/scripts/lib/kind-userns.sh"
 
 # Drive the host-side ToolHive/vMCP stack controller (host/mcp/vicegerent_mcp.py) via
 # its venv. Single entrypoint for the host stack: `vicegerent mcp <cmd>` and the
@@ -161,6 +163,7 @@ cluster_setup() {
     KIND_EXPERIMENTAL_DOCKER_NETWORK="$docker_network" \
       kind create cluster --name "$cluster_name" --config "$kind_config"
   fi
+  ensure_kind_userns_hook_access "${cluster_name}-control-plane"
 
   # kind always installs local-path-provisioner + the `standard` default StorageClass on
   # create (pkg/cluster/internal/create/actions/installstorage), with no config flag to skip
@@ -327,6 +330,8 @@ case "${1:-}" in
       echo "  Env: RECREATE=1 (helm --force-replace), HELM_TIMEOUT, VALUES_FILE, DEFAULTS_FILE."
       exit 0
     fi
+    require_kind_context
+    ensure_kind_userns_hook_access "$(kind_node_container)"
     exec "$REPO_ROOT/scripts/install/install.sh" "$@"
     ;;
   logs)

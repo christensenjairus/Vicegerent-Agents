@@ -58,11 +58,52 @@ def render_sandbox() -> dict:
 
 def main() -> None:
     pod_spec = render_sandbox()["spec"]["podTemplate"]["spec"]
+    if pod_spec.get("hostUsers") is not False:
+        die("Sandbox pods must use a private user namespace")
+    if (
+        pod_spec.get("securityContext", {}).get("seccompProfile", {}).get("type")
+        != "RuntimeDefault"
+    ):
+        die("Sandbox pods must use the runtime-default seccomp profile")
+
     prepare = next(
         container
         for container in pod_spec["initContainers"]
         if container["name"] == "prepare-run"
     )
+    prepare_security = prepare.get("securityContext", {})
+    if not (
+        prepare_security.get("runAsUser") == 0
+        and prepare_security.get("runAsGroup") == 0
+        and prepare_security.get("runAsNonRoot") is False
+        and prepare_security.get("privileged") is False
+        and prepare_security.get("allowPrivilegeEscalation") is False
+        and prepare_security.get("readOnlyRootFilesystem") is True
+        and set(prepare_security.get("capabilities", {}).get("drop", []))
+        == {"ALL"}
+        and set(prepare_security.get("capabilities", {}).get("add", []))
+        == {"CHOWN", "DAC_OVERRIDE"}
+    ):
+        die("prepare-run must retain only the privileges required for volume ownership")
+
+    for container in pod_spec["initContainers"] + pod_spec["containers"]:
+        security = container.get("securityContext", {})
+        if security.get("privileged") is True:
+            die(f"{container['name']} must not be privileged")
+        seccomp_type = security.get("seccompProfile", {}).get("type")
+        if seccomp_type not in (None, "RuntimeDefault"):
+            die(f"{container['name']} must not weaken the pod seccomp profile")
+        if container["name"] == "prepare-run":
+            continue
+        capabilities = security.get("capabilities", {})
+        if not (
+            security.get("allowPrivilegeEscalation") is False
+            and security.get("readOnlyRootFilesystem") is True
+            and set(capabilities.get("drop", [])) == {"ALL"}
+            and not capabilities.get("add")
+        ):
+            die(f"{container['name']} must be unprivileged and read-only")
+
     script = prepare["args"][0]
     root_chown = "chown 10000:10000 /opt/data"
     if script.splitlines().count(root_chown) != 1:
