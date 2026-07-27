@@ -106,8 +106,8 @@ agentDefaults:
     openai:
       enabled: true
       model: gpt-5.4
-      # Primary-model reasoning effort; gpt-5.4 tool calls require none, but newer models may opt into an effort level.
-      reasoningEffort: none
+      # Primary-model reasoning effort; overrides the global tuning fallback when enabled.
+      reasoningEffort: medium
       auxiliaryModel: gpt-4o-mini
       mnemosyneModel: gpt-4o-mini
       moaModels:

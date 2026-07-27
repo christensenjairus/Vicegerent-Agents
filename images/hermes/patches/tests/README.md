@@ -19,10 +19,4 @@ python3 images/hermes/patches/tests/test_shared_skills_sync.py
 VICEGERENT_SYNC_SCRIPT=/path/to/sync.sh python3 images/hermes/patches/tests/test_shared_skills_sync.py
 ```
 
-`test_gpt54_fallback_reasoning.py` additionally renders `charts/agent` with `helm template`, so it needs the repo mounted and `helm` on PATH (both are already in the image):
-
-```sh
-python3 test_gpt54_fallback_reasoning.py --chart-dir charts/agent --values values.defaults.yaml
-```
-
-Its static half guards `charts/agent/templates/_helpers.tpl`'s `reasoning_overrides` block; its behavioral half replays Hermes's own resolution chain. A chart edit that drops the override fails the first half even though no patch changed.
+`test_provider_reasoning_overrides.py` renders `charts/agent` with `helm template` and verifies that every enabled provider with a configured model and `reasoningEffort` appears under `agent.reasoning_overrides`. It needs the repository mounted, `helm` on `PATH`, and PyYAML importable.
