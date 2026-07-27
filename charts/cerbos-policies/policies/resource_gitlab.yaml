@@ -20,12 +20,13 @@
 #     GitLab, so there's no fork-owner boundary to enforce. Nothing in the
 #     GitLab tool surface carries a fork-qualified head arg to check either.
 #   - deny-pr-title-missing-ticket-ref / deny-pr-body-missing-change-link:
-#     these encode one specific WORK repo's change-ticket process
-#     (moveworks-emu/k8s-manifests, hardcoded there for exactly that reason).
-#     There is no equivalent process on this self-hosted GitLab, so porting
-#     them would enforce a rule that doesn't exist rather than close a gap.
-#     This is a difference in the surrounding process, not a difference in how
-#     strictly the two forges are policed.
+#     the title rule encodes the specific WORK-repo process for
+#     moveworks-emu/moveworks and moveworks-emu/k8s-manifests; the body-link
+#     rule is specific to moveworks-emu/k8s-manifests. They are hardcoded for
+#     exactly that reason. There is no equivalent process on this self-hosted
+#     GitLab, so porting them would enforce a rule that doesn't exist rather
+#     than close a gap. This is a difference in the surrounding process, not a
+#     difference in how strictly the two forges are policed.
 #
 # Every other difference is a tool-count difference, not an enforcement one:
 # GitLab allowlists more tools because the operator drives it day to day, but
