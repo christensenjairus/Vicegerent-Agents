@@ -240,6 +240,15 @@ To get a shell inside a running agent's container — it drops you into a shell 
 ./vicegerent ssh <name>
 ```
 
+The installed image includes all four configured coding harnesses. From that shell, start whichever one fits the task; the same pod-level containment, credentials, egress policy, shared skills, and MCP access apply to each:
+
+```bash
+hermes
+claude
+codex
+opencode
+```
+
 VictoriaLogs (cluster-wide log aggregation) has no NodePort. Port-forward its server Service and open the web UI with:
 
 ```bash
