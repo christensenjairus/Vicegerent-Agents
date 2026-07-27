@@ -19,6 +19,9 @@ spec:
           - name: ndots
             value: "1"
       automountServiceAccountToken: false
+      # Map every pod UID/GID away from host IDs so a namespace escape does not
+      # emerge with the same identity or capabilities on the node.
+      hostUsers: false
       securityContext:
         fsGroup: 10000
         runAsUser: 10000
@@ -45,6 +48,12 @@ spec:
             runAsUser: 0
             runAsGroup: 0
             runAsNonRoot: false
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE]
           volumeMounts:
             - name: runtime
               mountPath: /run

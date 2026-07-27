@@ -120,6 +120,9 @@ mkdir -p "$KUBECONFORM_CACHE"
 echo "INFO - Asserting every Cerbos policy has a runtime MCP probe"
 python3 scripts/validate-policy-runtime-coverage.py
 
+echo "INFO - Testing the Kind user-namespace OCI hook repair"
+bash scripts/test-kind-userns-hook-access.sh
+
 echo "INFO - Validating YAML syntax"
 # Tracked files only: a `find` walk also descends into .worktrees/ and any other
 # untracked scratch dir, so an unrelated in-progress branch could fail this run.
