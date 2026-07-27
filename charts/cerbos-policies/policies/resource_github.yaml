@@ -40,17 +40,17 @@
 # branch can't change post-creation), so it's not covered. "*" in either var
 # disables the check.
 #
-# deny-pr-title-missing-ticket-ref / deny-pr-body-missing-change-link: PRs
-# against moveworks-emu/k8s-manifests specifically must carry a ticket
-# reference in the title ("[<LINEAR-KEY>] rest of title") and a change-ticket
-# link in the body. Hardcoded to this one owner/repo rather than driven by a
-# cluster-var, since the operator only wants this on the one repo that
-# actually has a change-ticket process, not every allowed repo on every
-# machine. create_pull_request's title is a required arg (mapping.yaml), so
-# a create call always has a populated title to check; body is optional on
-# both tools, so the body rule only fires on create (isPrCreate) -- an
-# update that doesn't touch body isn't reassigning the description away from
-# a link it may already carry.
+# deny-pr-title-missing-ticket-ref: PRs against moveworks-emu/moveworks and
+# moveworks-emu/k8s-manifests specifically must carry a ticket reference in
+# the title ("[<LINEAR-KEY>] rest of title"). deny-pr-body-missing-change-link
+# applies only to moveworks-emu/k8s-manifests, whose PRs must also carry a
+# change-ticket link in the body. These are hardcoded rather than driven by a
+# cluster-var because the operator wants the work-repo process on exactly these
+# repos, not every allowed repo on every machine. create_pull_request's title
+# is a required arg (mapping.yaml), so a create call always has a populated
+# title to check; body is optional on both tools, so the body rule only fires
+# on create (isPrCreate) -- an update that doesn't touch body isn't reassigning
+# the description away from a link it may already carry.
 #
 # deny-not-own-pr: closes the class of incident that motivated it -- an agent
 # hallucinating a wrong PR number and writing to a PR it doesn't own. Every
@@ -139,7 +139,7 @@ resourcePolicy:
         match:
           expr: >-
             request.resource.attr.owner == "moveworks-emu"
-            && request.resource.attr.repo == "k8s-manifests"
+            && request.resource.attr.repo in ["moveworks", "k8s-manifests"]
             && has(request.resource.attr.title) && request.resource.attr.title
             != ""
             && !request.resource.attr.title.matches("^\\[[A-Za-z0-9]+-[0-9]+\\] .+")

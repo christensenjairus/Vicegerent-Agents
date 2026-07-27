@@ -120,6 +120,36 @@ resources:
     id: christensenjairus/vicegerent-agents
     kind: github_repo
     attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', head: some-feature-branch}
+  create_moveworks_good_title:
+    # moveworks-emu/moveworks needs a ticket-prefixed title but no change-ticket body link.
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: moveworks
+      branch: ''
+      title: '[TEAM-1234] Update deployment configuration'
+      isPrCreate: 'true'
+  create_moveworks_bad_title:
+    # moveworks-emu/moveworks must reject a title without a ticket prefix.
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: moveworks
+      branch: ''
+      title: Update deployment configuration
+      isPrCreate: 'true'
+  update_moveworks_bad_title:
+    # Updating moveworks PR titles must preserve the ticket prefix too.
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: moveworks
+      branch: ''
+      title: Update deployment configuration
+      isPrCreate: 'false'
   create_k8s_manifests_good_title_and_body:
     # moveworks-emu/k8s-manifests create with a compliant title+body -- allowed.
     id: moveworks-emu/k8s-manifests
@@ -363,10 +393,14 @@ tests:
       - principal: hermes
         resource: create_pr_non_restricted_owner_bare_head
         actions: {access: EFFECT_ALLOW}
-  - name: PR title/description format is enforced only against moveworks-emu/k8s-manifests
+  - name: PR title format is enforced against moveworks-emu/moveworks and moveworks-emu/k8s-manifests;
+      the change-ticket link is required only for k8s-manifests
     input:
       principals: [hermes]
       resources:
+        - create_moveworks_good_title
+        - create_moveworks_bad_title
+        - update_moveworks_bad_title
         - create_k8s_manifests_good_title_and_body
         - create_k8s_manifests_bad_title
         - create_k8s_manifests_missing_body_link
@@ -379,6 +413,15 @@ tests:
         - list_pull_requests_k8s_manifests
       actions: [access]
     expected:
+      - principal: hermes
+        resource: create_moveworks_good_title
+        actions: {access: EFFECT_ALLOW}
+      - principal: hermes
+        resource: create_moveworks_bad_title
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: update_moveworks_bad_title
+        actions: {access: EFFECT_DENY}
       - principal: hermes
         resource: create_k8s_manifests_good_title_and_body
         actions: {access: EFFECT_ALLOW}
