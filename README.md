@@ -82,7 +82,18 @@ $EDITOR values.yaml          # cluster vars + the agents you want (start with th
 
 # 7. Show the agent's dashboard URL + login
 ./vicegerent creds <name>
+
+# 8. Or enter the pod and launch any configured coding harness
+./vicegerent ssh <name>
+
+# Then choose one:
+hermes
+claude
+codex
+opencode
 ```
+
+The same pod-level containment, credentials, egress policy, shared skills, and MCP access apply to all four harnesses. See [`docs/setup.md`](docs/setup.md) for the full shell-access walkthrough.
 
 Requires `kind`, `cilium-cli`, `kubectl`, `helm` 4+, `yq` v4, `jq`, `git`, and OpenSSL 3 (not macOS's LibreSSL) on `PATH`, plus an SSH key with access to your git host.
 
