@@ -55,9 +55,9 @@ def main() -> int:
 
     cases: list[tuple[str, dict, dict, dict]] = []
 
-    # --- The exact live-incident shape: reasoning disabled for gpt-5.4 ---
+    # --- Explicitly disabled reasoning must not emit the unsupported think field ---
     cases.append((
-        "reasoning disabled (live incident shape, e.g. gpt-5.4 via reasoning_overrides)",
+        "reasoning disabled",
         {"enabled": False},
         {},  # extra_body must NOT contain 'think'
         {"reasoning_effort": "none"},  # top_level must be exactly this
@@ -100,7 +100,7 @@ def main() -> int:
         extra, top = profile.build_api_kwargs_extras(
             reasoning_config=reasoning_config,
             supports_reasoning=reasoning_config is not None,
-            model="gpt-5.4",
+            model="test-model",
             base_url=(
                 "http://agentgateway-proxy.agentgateway-system"
                 ".svc.cluster.local/openai/v1/"

@@ -9,8 +9,8 @@ Context
 is the code path used for any endpoint registered as ``provider: custom``
 (Ollama, vLLM, llama.cpp, GLM/ARK, and any other OpenAI-compatible chat
 completions endpoint a user points Hermes at -- including this cluster's
-``gpt-5.4`` fallback route through agentgateway). When reasoning is
-disabled for the target model, it unconditionally emitted BOTH:
+fallback route through agentgateway). When reasoning is explicitly disabled
+for the target model, it unconditionally emitted BOTH:
 
     top_level["reasoning_effort"] = "none"
     extra_body["think"] = False
@@ -37,26 +37,18 @@ reject the unrecognized ``think`` field outright:
 
     HTTP 400: Unknown parameter: 'think'.
 
-Live incident (2026-07-22, this deployment): the SAME turn that patch 0037
-+ the ``agent.reasoning_overrides.gpt-5.4: none`` config change (MR !604,
-merged the same day) were meant to make survivable hit fallback -- and the
-fallback itself 400'd, this time on ``think`` instead of the previously
-patched ``reasoning_effort``. The ``reasoning_effort`` fix from !604 is
-confirmed working (the log shows fallback engaging cleanly on
-``reasoning_effort``); ``think`` is a SEPARATE, previously-undiscovered
-field emitted by the exact same code path that !604 didn't touch, because
-!604 only exercised the ``reasoning_overrides`` config plumbing, not this
-provider profile's ``extra_body`` side effect.
+Live incident (2026-07-22, this deployment): a fallback request reached this
+code path and 400'd on ``think``. This was a separate, previously-undiscovered
+field emitted by the provider profile, not a gateway capability requirement.
 
 Fix
 ---
-Drop the ``extra_body["think"] = False`` assignment entirely. The
-top-level ``reasoning_effort = "none"`` alone is sufficient and correct
-signal for every backend this profile actually targets (Ollama's
-/v1/chat/completions, vLLM, llama.cpp, GLM/ARK, and strict OpenAI-schema
-endpoints like gpt-5.4) -- each either respects ``reasoning_effort`` or
-silently ignores it, and none of them need (or, for the strict ones,
-tolerate) the extra ``think`` field.
+Drop the ``extra_body["think"] = False`` assignment entirely. When Hermes is
+configured to disable reasoning, its existing top-level
+``reasoning_effort = "none"`` behavior is sufficient for every backend this
+profile actually targets (Ollama's /v1/chat/completions, vLLM, llama.cpp,
+GLM/ARK, and strict OpenAI-schema endpoints). None need (or, for the strict
+ones, tolerate) the extra ``think`` field.
 
 Fail-loud by design: if the anchor is absent or appears an unexpected
 number of times (upstream refactored the profile), the patch raises and
@@ -92,9 +84,8 @@ REPLACEMENT = (
     "            # /v1/chat/completions ignores think -- only /api/chat honours\n"
     "            # it, ollama#14820, and Hermes only ever calls the former) while\n"
     "            # hard-400ing (\"Unknown parameter: 'think'\") on schema-strict\n"
-    "            # OpenAI-compatible endpoints such as gpt-5.4 via agentgateway.\n"
-    "            # top-level reasoning_effort=\"none\" alone is correct and\n"
-    "            # sufficient signal for every backend this profile targets.\n"
+    "            # OpenAI-compatible endpoints. Hermes' top-level reasoning\n"
+    "            # configuration is sufficient for every backend this profile targets.\n"
     "            if _effort == \"none\" or _enabled is False:\n"
     "                top_level[\"reasoning_effort\"] = \"none\"\n"
 )

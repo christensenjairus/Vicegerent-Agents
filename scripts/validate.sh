@@ -236,8 +236,8 @@ python3 scripts/validate-model-pricing.py
 echo "INFO - Asserting Anthropic and OpenAI model switches stay on Agentgateway"
 python3 scripts/validate-model-switch-routing.py
 
-echo "INFO - Asserting gpt-5.4 fallback tool calls keep reasoning disabled"
-python3 images/hermes/patches/tests/test_gpt54_fallback_reasoning.py --chart-dir charts/agent --values values.defaults.yaml
+echo "INFO - Asserting rendered provider reasoning overrides match configured efforts"
+python3 images/hermes/patches/tests/test_provider_reasoning_overrides.py --chart-dir charts/agent --values values.defaults.yaml
 
 echo "INFO - Asserting harness config ownership reconciliation"
 python3 scripts/validate-config-reconciliation.py
