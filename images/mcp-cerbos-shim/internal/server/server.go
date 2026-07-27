@@ -451,13 +451,6 @@ type Server struct {
 	// of guessing every spelling agents might send.
 	gitlabProjectCanonicalizer upstream.ToolCaller
 
-	// gitlabProjectCanonicalCache memoizes successful non-numeric
-	// project_id -> numeric id resolutions for projectCanonicalTTL, so a run
-	// of calls naming a project by path costs one lookup rather than one
-	// each. Successes only; see gitlab_project_cache.go for why failures are
-	// never cached and why entries expire.
-	gitlabProjectCanonicalCache *projectCanonicalCache
-
 	// jiraIssueAssignee, when set, resolves a Jira issue key to its CURRENT
 	// assignee via a live jira_jira_get_issue lookup -- a network round trip
 	// the CEL/Cerbos path can't make, same rationale as linearIssueTeam
@@ -609,7 +602,6 @@ func WithGitlabMRAuthor(client upstream.ToolCaller) Option {
 func WithGitlabProjectCanonicalizer(client upstream.ToolCaller) Option {
 	return func(s *Server) {
 		s.gitlabProjectCanonicalizer = client
-		s.gitlabProjectCanonicalCache = newProjectCanonicalCache(projectCanonicalTTL)
 	}
 }
 
@@ -1433,7 +1425,10 @@ func (s *Server) checkGithubPRAuthor(ctx context.Context, owner, repo string, pu
 // A value that is ALREADY all-digits is returned as-is with no network call:
 // GitLab project ids are numeric, a numeric project_id is by definition
 // already canonical, and this keeps the common case (and every existing
-// numeric-id allowlist entry) free of an extra round trip.
+// numeric-id allowlist entry) free of an extra round trip. A run of calls
+// naming the project by path costs one lookup rather than one each, via the
+// cache the client is wrapped in (internal/upstream/cache.go) rather than a
+// gate-specific one here.
 func (s *Server) checkGitlabProjectCanonical(ctx context.Context, projectID string) (string, error) {
 	if isAllDigits(projectID) {
 		return projectID, nil
@@ -1441,16 +1436,12 @@ func (s *Server) checkGitlabProjectCanonical(ctx context.Context, projectID stri
 	if s.gitlabProjectCanonicalizer == nil {
 		return "", fmt.Errorf("gitlab project-canonicalization gate not configured; denying call against project %q", projectID)
 	}
-	if cached, ok := s.gitlabProjectCanonicalCache.get(projectID); ok {
-		return cached, nil
-	}
 	ctx, cancel := context.WithTimeout(ctx, upstreamLookupTimeout)
 	defer cancel()
 	canonical, err := upstream.CanonicalProjectID(ctx, s.gitlabProjectCanonicalizer, projectID)
 	if err != nil {
 		return "", fmt.Errorf("could not resolve this GitLab project (failing closed): %v", err)
 	}
-	s.gitlabProjectCanonicalCache.put(projectID, canonical)
 	return canonical, nil
 }
 

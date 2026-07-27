@@ -23,8 +23,15 @@ type alertmanagerSilence struct {
 // Returns an error on any lookup failure (timeout, non-200, malformed
 // result, tool-reported error, the silence not appearing in the list, or a
 // found silence with no resolvable createdBy) so the caller can fail closed.
+//
+// This is the one lookup that opts OUT of the shared result cache (see
+// cache.go). Its arguments are always empty, so every silence in the cluster
+// shares a single cache key, and its result is a LIST that grows: a silence
+// created after the entry was stored is absent from the cached copy, and
+// "absent" here means fail closed. Caching would turn deleting a
+// just-created silence into a denial for the rest of the TTL.
 func SilenceCreatedBy(ctx context.Context, getSilencesTool string, client ToolCaller, silenceID string) (string, error) {
-	result, err := client.CallTool(ctx, getSilencesTool, map[string]any{})
+	result, err := Uncached(client).CallTool(ctx, getSilencesTool, map[string]any{})
 	if err != nil {
 		return "", fmt.Errorf("alertmanager silence owner lookup for %q: %w", silenceID, err)
 	}
