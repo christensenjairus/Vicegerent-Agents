@@ -21,6 +21,16 @@ import (
 	pb "github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/proto/gen"
 )
 
+// cacheUpstreamLookups is the off switch for the shared cache in front of
+// reviewed live-resolution lookup tools the shim calls as an MCP client (see
+// internal/upstream/cache.go). Deliberately a constant, not an env var or a
+// Helm value: turning caching off is a debugging move -- proving a gate's
+// verdict comes from the resource's state right now and not from a remembered
+// answer -- not a per-cluster configuration choice, and a knob in values.yaml
+// would invite leaving it off. Flip it to false, bump the image tag, and
+// rebuild.
+const cacheUpstreamLookups = true
+
 func main() {
 	cfg := loadEnv()
 
@@ -66,8 +76,20 @@ func main() {
 	// newUpstream stamps the shim's secret self-token (upstream.WithSelfToken)
 	// so that route's CheckRequest admits the shim and denies any other caller.
 	// See server.WithSelfToken and charts/platform/templates/vmcp.yaml.
-	newUpstream := func() *upstream.Client {
-		return upstream.New(upstream.DefaultVMCPURL, nil, upstream.WithSelfToken(cfg.selfToken))
+	//
+	// Every gate gets its own client (its own MCP session) but they all share
+	// ONE cache, so a lookup one gate already paid for is free for the next --
+	// most visibly the two Notion gates, which fetch the same page id during a
+	// single update-page CheckRequest.
+	var lookupCache *upstream.Cache
+	if cacheUpstreamLookups {
+		lookupCache = upstream.NewCache()
+		log.Printf("upstream lookup cache enabled (reviewed tools only; default TTL %s; restart the pod to clear it)", upstream.DefaultCacheTTL)
+	} else {
+		log.Printf("upstream lookup cache disabled (every ownership gate re-resolves on every call)")
+	}
+	newUpstream := func() upstream.ToolCaller {
+		return upstream.Cached(upstream.New(upstream.DefaultVMCPURL, nil, upstream.WithSelfToken(cfg.selfToken)), lookupCache)
 	}
 
 	var opts []server.Option
