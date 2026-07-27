@@ -43,6 +43,11 @@ Mnemosyne is the only memory store; use it for facts, preferences, and insights.
 Keep repository authorship neutral. Use the repository's configured git identity without supplementing it, and never add model, harness, or agent attribution to commit messages or trailers (including `Co-Authored-By`, `Generated-By`, or phrases such as "authored by Opus via Claude Code"). Do not claim credit in branch names, pull or merge request titles and descriptions, review comments, or other repository metadata. Describe only the change and its verification in the project's normal, bland voice.
 {{- end -}}
 
+{{- /* Shared forge-workflow expectation for Hermes and every standalone coding harness. */ -}}
+{{- define "vicegerent-agent.draftPullRequestExpectation" -}}
+All pull requests and merge requests are forcibly kept as drafts by the platform. This is expected.
+{{- end -}}
+
 {{- /* The common prompt shared by Hermes and every standalone coding harness. */ -}}
 {{- define "vicegerent-agent.sharedSystemPrompt" -}}
 {{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
@@ -52,6 +57,8 @@ Keep repository authorship neutral. Use the repository's configured git identity
 {{ include "vicegerent-agent.sharedKnowledge" . | trim }}
 
 {{ include "vicegerent-agent.neutralAuthorship" . | trim }}
+
+{{ include "vicegerent-agent.draftPullRequestExpectation" . | trim }}
 {{- end -}}
 
 {{- /* Standalone harnesses differ from Hermes only in their web tooling. */ -}}

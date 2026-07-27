@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assert skill-maintenance guidance reaches every configured harness."""
+"""Assert shared operating guidance reaches every configured harness."""
 
 from __future__ import annotations
 
@@ -11,10 +11,11 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
-REQUIRED_GUIDANCE = (
+REQUIRED_GUIDANCE: tuple[str, ...] = (
     "Skills are shared procedural memory:",
     "Read a skill before modifying it",
     "Do not create skills for one-off task progress.",
+    "All pull requests and merge requests are forcibly kept as drafts by the platform. This is expected.",
 )
 HARNESS_PROMPTS = {
     "Hermes": ("agent-soul", "SOUL.md"),
@@ -73,10 +74,11 @@ def main() -> None:
         prompt = configmaps.get(name, {}).get(key)
         if not isinstance(prompt, str):
             die(f"{harness} prompt missing from rendered ConfigMap {name}/{key}")
+        assert isinstance(prompt, str)
         missing = [phrase for phrase in REQUIRED_GUIDANCE if phrase not in prompt]
         if missing:
             die(f"{harness} prompt lacks shared skill guidance: {missing}")
-    print("OK - shared skill-maintenance guidance reaches all four harnesses")
+    print("OK - shared operating guidance reaches all four harnesses")
 
 
 if __name__ == "__main__":
