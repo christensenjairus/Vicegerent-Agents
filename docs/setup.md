@@ -74,6 +74,43 @@ MCP-server API keys are the exception: they are `thv` (ToolHive) secrets on the 
 
 > There is no external secret store in the loop, so **keep your own copy of every API key**. Velero backs up Kubernetes Secrets, but host-side ToolHive secrets are outside the cluster, and a backup is not a substitute for an independently held copy. Re-running the setup scripts is the supported way to seed a fresh cluster.
 
+### External API keys and MCP credentials
+
+Configure model-provider keys with `./vicegerent setup secrets platform`; set an environment variable before running it to avoid its prompt. Configure an MCP backend with `./vicegerent setup mcp`; it interactively enables only the backends you choose and writes their credentials as host-side `thv` secrets. Do not put either kind of secret in `values.yaml`.
+
+#### Model providers
+
+| Provider | Environment variable | Required? | What it enables | Configuration when omitted |
+|---|---|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` | **Required by the current platform-secret setup script.** The default agent and platform configuration also select Anthropic. | Claude models, Claude Code, and Anthropic-backed Hermes/Mnemosyne/MoA routes. | To use a different primary provider, update the relevant `agents[].providers`, `mnemosyne`, `failover`, `moa`, harness, and `models` values so no configured route selects Anthropic. `setup secrets platform` still currently prompts for this key even then. |
+| OpenAI | `OPENAI_API_KEY` | Optional unless an enabled agent/provider route or content-safety feature uses it. | GPT/Codex/OpenCode routes and the platform's content moderation and prompt-injection detection. | Set `agents[].providers.openai.enabled: false`, disable or retarget failover/MoA/harness configuration, and set `models.openai.enabled: false` if no agent uses OpenAI. Both content-safety features are OpenAI-only today, so leave `policy.contentSafety.moderation.status` and `promptInjection.status` disabled without this key. |
+| DeepSeek | `DEEPSEEK_API_KEY` | Optional. | DeepSeek's OpenAI-compatible model routes. | Leave `agents[].providers.deepseek.enabled: false` and set `models.deepseek.enabled: false` unless using it. |
+| Z.ai / GLM | `ZAI_API_KEY` | Optional. | Z.ai/GLM standard-metered, OpenAI-compatible model routes. | Leave `agents[].providers.zai.enabled: false` and set `models.zai.enabled: false` unless using it. |
+
+The `models.*.enabled` switches render platform backends; each `agents[].providers.*.enabled` switch makes that provider available to an individual agent. Both must be aligned with the keys you supplied. `values.example.yaml` shows an Anthropic-only configuration and disables the unused platform backends.
+
+#### MCP backends
+
+Every MCP backend is disabled by default and optional. Enable only the services you intend an agent to use; `./vicegerent mcp doctor` checks only enabled backends. URLs, usernames, and OAuth grants in this table are credentials or connection settings rather than API keys, but are included because they are required to make the corresponding backend work.
+
+| MCP backend | Secret or login | What it enables | Required? |
+|---|---|---|---|
+| GitLab | `gitlab_token` PAT (`api` scope); API URL | Read GitLab issues, labels, todos, merge requests and their discussions/drafts/diffs/approvals; create or update draft merge requests; inspect pipelines/jobs/logs and retry an existing failed job. It cannot merge, approve, write comments, or perform git-object writes. | Optional; required only when GitLab MCP is enabled. |
+| GitHub | `github_token` PAT (`repo` scope) | Read issues and pull requests; create or update pull requests, request Copilot review, and update a pull-request branch. It cannot merge, approve, or write comments/reviews. | Optional; required only when GitHub MCP is enabled. |
+| Tavily | `tavily_api_key` | Public-web search, extraction, crawling, mapping, and research. | Optional. Tavily and Firecrawl substantially overlap. Configure both on their free tiers so the agent can use the other when one exhausts its credits. |
+| Firecrawl | `firecrawl_api_key` | Public-web scraping/search/crawling/mapping/extraction/parsing; async agents and browser interaction; website monitors; and research-paper/GitHub research tools. | Optional. It overlaps with Tavily. Configure both on their free tiers so the agent can use the other when one exhausts its credits. |
+| Notion | Browser OAuth | Search/fetch pages, read comments/teams/users, and create pages, update pages, or add comments subject to the configured Cerbos parent-page rules. | Optional; no API key. |
+| Linear | Browser OAuth | Read issues, projects, cycles, documents, teams, users, statuses, labels, and comments; create/update issues, projects, comments, and issue labels. Documents are read-only and deletes are not exposed. | Optional; no API key. |
+| Jira | `jira_url`, `jira_username`, `jira_api_token` | Read/search issues, fields, project issues, transitions, and link types; create/update issues, add comments, transition issues, and create issue/epic links. Deletes are not exposed. | Optional. |
+| Grafana / Grafana Gov | `grafana_url`, `grafana_service_account_token` (or `_gov` variants) | Read-only dashboards, folders, datasources, dashboard queries/properties, Prometheus metrics, Loki logs, assertions, annotations, and panel images. | Optional. |
+| Alertmanager / Alertmanager Gov | API URL (or Gov URL) | Query alerts, alert groups, critical alerts, silences, receivers, status, history, and correlations; create or delete silences. | Optional; no API key in the current backend. |
+| PagerDuty / PagerDuty Gov | `pagerduty_user_api_key` (or `_gov` variant) | Read incidents, alerts, notes, schedules/on-call, services, teams, users, escalation policies, and analytics; acknowledge/resolve existing incidents and add incident notes. It cannot create incidents. | Optional. |
+| Elastic | Kibana Agent Builder MCP URL and read-only `elastic_api_key` | Read streams and data quality/lifecycle information; search documents and data, run/generate ES|QL, inspect mappings/indices, and use read-only security and observability analysis. | Optional. |
+| Kubernetes | Kubeconfig; optional read-only `~/.aws` mount for EKS exec auth | Read Kubernetes contexts, events, namespaces, nodes, pods/logs/top, arbitrary resources, and Helm releases. | Optional; no API key. |
+| AWS / AWS profiles | Read-only host `~/.aws` mount and valid host credentials (for example SSO) | Run policy-filtered, read-only AWS CLI commands across configured profiles, receive command suggestions, and list available profile names. | Optional; no API key. |
+
+See [`host/mcp/README.md`](../host/mcp/README.md#prerequisites) for the exact secret names and scopes. Enabling an MCP backend grants the agent its policy-filtered tools; it does not bypass the platform's tool allowlist or Cerbos authorization.
+
 ### Platform-wide
 
 Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, generates the SearXNG signing key, the mcp-cerbos-shim self-token, and the Velero S3 credentials, and applies the model API keys you supply. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start. The Velero S3 credentials are likewise mirrored to `~/.vicegerent/rclone-s3/auth-key` (override with `RCLONE_S3_HOST_DIR`), which is what the host `rclone serve s3` process authenticates against.
