@@ -75,40 +75,33 @@ render_cerbos_defs() {
   done < <(yq 'select(.kind=="ConfigMap") | .data | keys | .[]' <<<"$cm")
 }
 
-# Each vMCP AgentgatewayPolicy must carry exactly one well-formed Cerbos guardrail
-# processor (tools/call -> mcp-cerbos-shim, FailClosed). The phase differs by route:
-#   - vmcp-mcp-tools (agent-facing :80 route): phase Full — both CheckRequest and
-#     CheckResponse (the latter drives response-side secret redaction, see
-#     secrets_redact.go).
-#   - vmcp-internal-mcp-tools (the shim's own re-entrant-lookup :81 route): phase
-#     Request — CheckRequest only. Running CheckResponse here would re-open the
-#     shim<->agentgateway prompt-injection loop (see the shim README's
-#     "Re-Entrant Lookup Path").
-# Anything else forwards with no policy check or only half of one — a silent
-# fail-open. This catches a dropped/renamed/downgraded/mis-phased guardrail at MR
-# time (not the live reconcile path — that gap is documented in the shim README).
+# Unmatched methods bypass processors, so pin every security-relevant phase.
+# The internal route must remain request-only to avoid the re-entrant response loop.
 assert_guardrail_well_formed() {
   local rendered="$1"
-  assert_policy_guardrail "$rendered" vmcp-mcp-tools Full
-  assert_policy_guardrail "$rendered" vmcp-internal-mcp-tools Request
+  assert_policy_guardrail "$rendered" vmcp-mcp-tools Full Response Off
+  assert_policy_guardrail "$rendered" vmcp-internal-mcp-tools Request Off Off
 }
 
 assert_policy_guardrail() {
-  local rendered="$1" name="$2" phase="$3" processors well_formed
+  local rendered="$1" name="$2" tools_phase="$3" task_get_phase="$4" task_cancel_phase="$5" processors well_formed
   processors="$(echo "$rendered" | NAME="$name" yq ea '
     select(.kind == "AgentgatewayPolicy" and .metadata.name == strenv(NAME))
     | .spec.backend.mcp.guardrails.processors // [] | length' -)"
-  well_formed="$(echo "$rendered" | NAME="$name" PHASE="$phase" yq ea '
+  well_formed="$(echo "$rendered" | NAME="$name" TOOLS_PHASE="$tools_phase" TASK_GET_PHASE="$task_get_phase" TASK_CANCEL_PHASE="$task_cancel_phase" yq ea '
     select(.kind == "AgentgatewayPolicy" and .metadata.name == strenv(NAME))
     | [ .spec.backend.mcp.guardrails.processors[]
-        | select(.methods["tools/call"] == strenv(PHASE)
+        | select(.methods["tools/call"] == strenv(TOOLS_PHASE)
+            and .methods["tasks/get"] == strenv(TASK_GET_PHASE)
+            and .methods["tasks/cancel"] == strenv(TASK_CANCEL_PHASE)
             and .remote.backendRef.name == "mcp-cerbos-shim"
             and .remote.failureMode == "FailClosed") ]
     | length' -)"
   if [[ "$processors" != "1" || "$well_formed" != "1" ]]; then
     echo "ERROR - AgentgatewayPolicy ${name} has a malformed Cerbos guardrail (found" \
          "${processors:-0} processor(s), ${well_formed:-0} well-formed). It must be" \
-         "exactly one tools/call -> mcp-cerbos-shim processor with phase ${phase} and" \
+         "exactly one tools/call + tasks/get processor with explicit task-cancel handling and phases" \
+         "${tools_phase}/${task_get_phase}/${task_cancel_phase} and" \
          "FailClosed. Refusing to ship a fail-open MCP backend." >&2
     exit 1
   fi

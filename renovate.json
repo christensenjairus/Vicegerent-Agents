@@ -42,7 +42,8 @@
     {
       "matchDatasources": ["docker"],
       "matchPackageNames": [
-        "ghcr.io/agentgateway/controller",
+        "cr.agentgateway.dev/controller",
+        "cr.agentgateway.dev/agentgateway",
         "cr.agentgateway.dev/charts/agentgateway-crds",
         "cr.agentgateway.dev/charts/agentgateway"
       ],
@@ -52,8 +53,7 @@
       "description": "Only locally rebuilt <upstream-version>-rev<N> tags are valid. The numeric build group excludes bare upstream tags and orders rev10 after rev2.",
       "matchDatasources": ["docker"],
       "matchPackageNames": [
-        "harbor.hahomelabs.com/vicegerent/hermes-agent",
-        "harbor.hahomelabs.com/vicegerent/agentgateway"
+        "harbor.hahomelabs.com/vicegerent/hermes-agent"
       ],
       "versioning": "regex:^v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-rev(?<build>\\d+)$"
     },

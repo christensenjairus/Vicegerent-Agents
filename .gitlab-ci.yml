@@ -221,14 +221,6 @@ validate:renovate-config:
         make -C "$IMAGE_DIR" release
       fi
 
-image:publish:agentgateway:
-  extends: .image-publish
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "development")
-      changes: [images/agentgateway-proxy/**/*]
-  variables:
-    IMAGE_DIR: images/agentgateway-proxy
-
 image:publish:aws-api-mcp-server:
   extends: .image-publish
   rules:
@@ -282,7 +274,6 @@ image:republish:all:
   script:
     - |
       for image_dir in \
-        images/agentgateway-proxy \
         images/aws-api-mcp-server \
         images/aws-profiles-mcp \
         images/hermes \

@@ -714,12 +714,8 @@ func TestCheckResponse_NonToolsCallAlwaysPassNoMutation(t *testing.T) {
 	}
 }
 
-func TestCheckResponse_ResourcesReadAndPromptsGetAlsoRedact(t *testing.T) {
-	// HAH-101: resources/read and prompts/get response bodies must be
-	// scrubbed for secret-shaped values same as tools/call, even though
-	// neither carries Cerbos authz (no mapping exists to build a resource
-	// from a resources/read URI or a prompts/get name).
-	for _, method := range []string{"resources/read", "prompts/get"} {
+func TestCheckResponse_ReadAndTaskResultsAlsoRedact(t *testing.T) {
+	for _, method := range []string{"resources/read", "prompts/get", "tasks/get"} {
 		t.Run(method, func(t *testing.T) {
 			s := newTestServer(t, &stubDecider{})
 			secret := fakeSlackBotToken()
@@ -748,11 +744,8 @@ func TestCheckResponse_ResourcesReadAndPromptsGetAlsoRedact(t *testing.T) {
 	}
 }
 
-func TestCheckResponse_ResourcesReadAndPromptsGetCleanBodyPassesUnmutated(t *testing.T) {
-	// Same two methods, but confirming the "nothing to redact" path still
-	// passes unmutated rather than always mutating once a method is in
-	// redactableResponseMethods.
-	for _, method := range []string{"resources/read", "prompts/get"} {
+func TestCheckResponse_ReadAndTaskResultsCleanBodyPassesUnmutated(t *testing.T) {
+	for _, method := range []string{"resources/read", "prompts/get", "tasks/get"} {
 		t.Run(method, func(t *testing.T) {
 			s := newTestServer(t, &stubDecider{})
 			body := []byte(`{"contents":[{"type":"text","text":"nothing secret here"}]}`)

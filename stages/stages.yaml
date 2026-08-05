@@ -43,7 +43,7 @@ stages:
       - name: agentgateway-crds
         type: helm-oci
         chart: oci://cr.agentgateway.dev/charts/agentgateway-crds
-        version: v1.3.1
+        version: v1.4.1
         namespace: agentgateway-system
   - name: storage
     actions:
@@ -110,7 +110,7 @@ stages:
       - name: agentgateway
         type: helm-oci
         chart: oci://cr.agentgateway.dev/charts/agentgateway
-        version: v1.3.1
+        version: v1.4.1
         namespace: agentgateway-system
         values: agentgateway.yaml
       - name: cerbos-policies

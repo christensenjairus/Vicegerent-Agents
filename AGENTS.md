@@ -33,7 +33,7 @@ Vicegerent is a credential-isolated, egress-locked, harness-agnostic agent platf
 
 - Use fully qualified image references with explicit, non-`latest` tags. Do not deploy a frozen digest or set `imagePullPolicy`/`pullPolicy: Always`; deployed images use immutable tags with `IfNotPresent`.
 - Any build-context change under `images/<name>/` requires a tag bump in the same merge request, including tests and build scripts. Update the image's `Makefile` `TAG` and every deployed reference found by search.
-- `hermes-agent` and `agentgateway-proxy` rebuilds retain the upstream version and increment the `-revN` suffix; reset to `-rev1` after an upstream version bump. Renovate models `revN` as a numeric build with explicit regex versioning; do not replace it with `loose`, which treats the suffix as a prerelease.
+- `hermes-agent` rebuilds retain the upstream version and increment the `-revN` suffix; reset to `-rev1` after an upstream version bump. Renovate models `revN` as a numeric build with explicit regex versioning; do not replace it with `loose`, which treats the suffix as a prerelease.
 - Changes to upstream Hermes behavior belong in a numbered patch under `images/hermes/patches/`, registered in `order.txt`, with regression tests. Test patches against a disposable copy of the installed Hermes tree and verify idempotency; never mutate the running installation while validating a patch.
 
 ## Security and Policy
