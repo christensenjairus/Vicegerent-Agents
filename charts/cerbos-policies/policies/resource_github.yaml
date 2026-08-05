@@ -5,7 +5,7 @@
 # allowlist that didn't would false-deny a legitimate call spelled with
 # different capitalization -- both sides are lowercased, so list the value
 # however you like), or
-# whose branch arg names a protected branch (main/master/production), or any
+# whose branch arg names a protected branch (development/main/master/production), or any
 # create/update_pull_request call that sets reviewers (see below); allow
 # everything else. The shim maps every repo-bearing GitHub tool to this
 # resource, carrying owner+repo (always populated) and branch (populated only
@@ -90,7 +90,7 @@ resourcePolicy:
         match:
           expr: >-
             has(request.resource.attr.branch) && request.resource.attr.branch != ""
-            && request.resource.attr.branch in ["main", "master", "production"]
+            && request.resource.attr.branch in ["development", "main", "master", "production"]
       output:
         when:
           ruleActivated: >-

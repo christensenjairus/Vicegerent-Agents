@@ -52,9 +52,9 @@ make push
 
 ## Protected-branch git guard
 
-Agents must never push to `main`/`master`/`production`, even when the operator's own git credentials would allow it. Enforced client-side by two root-owned pieces baked into the image, both on the read-only rootfs so uid 10000 can neither edit nor replace them:
+Agents must never push to `development`/`main`/`master`/`production`, even when the operator's own git credentials would allow it. Enforced client-side by two root-owned pieces baked into the image, both on the read-only rootfs so uid 10000 can neither edit nor replace them:
 
-- `/etc/gitconfig` (mode 444) sets `core.hooksPath=/opt/vicegerent/git-hooks`, where every hook name symlinks to `hook-dispatch.sh`. Its `pre-push` branch reads git's stdin refspec lines and rejects any update or delete whose destination is `refs/heads/{main,master,production}`.
+- `/etc/gitconfig` (mode 444) sets `core.hooksPath=/opt/vicegerent/git-hooks`, where every hook name symlinks to `hook-dispatch.sh`. Its `pre-push` branch reads git's stdin refspec lines and rejects any update or delete whose destination is `refs/heads/{development,main,master,production}`.
 - `/usr/local/bin/git` shadows `/usr/bin/git` on `PATH`. It re-asserts the trusted hook path and rejects the bypasses a hook structurally cannot see.
 
 **`/etc/gitconfig` alone could never have held.** It is *system* scope, which git deliberately ranks **below** worktree, repo-local, global, and `$XDG_CONFIG_HOME/git/config`. Two things close that:
