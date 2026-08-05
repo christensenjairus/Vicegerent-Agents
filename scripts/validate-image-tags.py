@@ -11,8 +11,6 @@ IfNotPresent on a static tag, so a rebuild that reuses a tag is never redeployed
                     <ref> came with a change to that image's TAG line.
   --bump-since <ref> bump missing TAG changes and their deployed references,
                      then run both checks.
-  --train-since       validate the merge-train result against its synthetic
-                      target parent, which contains every earlier train car.
 
 The --since half needs a git base, so scripts/validate.sh runs the static half
 and .gitlab-ci.yml's validate:image-tag-bump job adds the diff half against the
@@ -201,20 +199,6 @@ def next_tag(tag: str) -> str:
     )
 
 
-def merge_train_base() -> str:
-    """The synthetic target parent of the checked-out merge-train commit."""
-    parents = subprocess.run(
-        ["git", "-C", str(ROOT), "show", "-s", "--format=%P", "HEAD"],
-        capture_output=True, text=True, check=True,
-    ).stdout.split()
-    if len(parents) != 2:
-        sys.exit(
-            "--train-since requires a two-parent merge-train commit; "
-            "refusing to validate an unknown topology"
-        )
-    return parents[0]
-
-
 def bump_missing(images: dict[str, tuple[str, str]], since: str) -> list[tuple[str, str, str]]:
     """Bump changed images whose current tag still matches the base revision."""
     bumped = []
@@ -282,24 +266,14 @@ def bump_missing(images: dict[str, tuple[str, str]], since: str) -> list[tuple[s
 def main() -> int:
     since = None
     bump = False
-    train = False
     args = sys.argv[1:]
-    if args == ["--train-since"]:
-        train = True
-        since = merge_train_base()
-    elif args[:1] in (["--since"], ["--bump-since"]):
+    if args[:1] in (["--since"], ["--bump-since"]):
         if len(args) != 2:
-            sys.exit(
-                "usage: validate-image-tags.py "
-                "[--since|--bump-since <git-ref>|--train-since]"
-            )
+            sys.exit("usage: validate-image-tags.py [--since|--bump-since <git-ref>]")
         bump = args[0] == "--bump-since"
         since = args[1]
     elif args:
-        sys.exit(
-            "usage: validate-image-tags.py "
-            "[--since|--bump-since <git-ref>|--train-since]"
-        )
+        sys.exit("usage: validate-image-tags.py [--since|--bump-since <git-ref>]")
 
     images = built_images()
     if bump:
@@ -307,20 +281,12 @@ def main() -> int:
             print(f"BUMP - images/{name}: {old} -> {new}")
         images = built_images()
     errors = check_static(images)
-    bump_errors = []
     if since:
-        bump_errors = check_bumped(images, since)
-        errors += bump_errors
+        errors += check_bumped(images, since)
 
     if errors:
         for e in errors:
             print(f"FAIL - {e}", file=sys.stderr)
-        if train and bump_errors:
-            print(
-                "FAIL - The source branch collides with an earlier merge-train car; "
-                "rebase it after the earlier train car merges, then re-add it to the train.",
-                file=sys.stderr,
-            )
         return 1
     scope = f"deployed tags in sync + bumped since {since}" if since else "deployed tags in sync"
     print(f"OK - {len(images)} built images: {scope}")
