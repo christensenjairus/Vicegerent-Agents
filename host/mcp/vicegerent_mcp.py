@@ -2116,7 +2116,18 @@ def start_stack(
     path_env = os.pathsep.join(
         dict.fromkeys([str(Path(thv_bin).parent), "/opt/homebrew/bin", os.environ.get("PATH", "")])
     )
-    vmcp_env = {"PATH": path_env, "HOME": str(Path.home())}
+    # The MCP Go SDK's DNS-rebinding guard rejects any request whose Host header
+    # isn't loopback when the listener itself is loopback (mcp/streamable.go).
+    # agentgateway addresses this vMCP via host.docker.internal (charts/platform/
+    # templates/vmcp.yaml), which trips that guard even though the connection is
+    # already authenticated end-to-end by ghostunnel's mTLS tunnel. ToolHive does
+    # not wire a supported flag for this (pkg/vmcp/server/dns_rebinding_regression_test.go
+    # pins the SDK default), so fall back to the SDK's own compatibility escape hatch.
+    vmcp_env = {
+        "PATH": path_env,
+        "HOME": str(Path.home()),
+        "MCPGODEBUG": "disablelocalhostprotection=1",
+    }
 
     operator_vmcp_command = ""
     operator_vmcp_env: dict[str, str] = {}
