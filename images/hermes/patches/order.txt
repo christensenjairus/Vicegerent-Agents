@@ -52,3 +52,4 @@
 0045-hooks-doctor-entrypoint-coverage.py
 0046-rootless-config-migration.py
 0047-model-switch-prompt.py
+0048-terminal-lifecycle-binary-remote-read.py
