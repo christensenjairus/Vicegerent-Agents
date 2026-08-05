@@ -79,7 +79,7 @@
       "description": "GitHub pull-request lifecycle \u2014 inspect and manage PRs (routine git goes over SSH, not MCP).",
       "enabled": false,
       "type": "registry",
-      "registry": "ghcr.io/github/github-mcp-server:v1.5.0",
+      "registry": "ghcr.io/github/github-mcp-server:v1.6.0",
       "transport": "stdio",
       "env": {
         "GITHUB_TOOLSETS": "all"
