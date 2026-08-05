@@ -4,20 +4,20 @@
 # GENERATED — do not edit by hand.
 # Regenerate: scripts/probe-mcp-tools.py jira --format yaml -o <this-file>
 group: vicegerent
-tool_count: 58
+tool_count: 63
 servers:
   jira:
-    tool_count: 58
+    tool_count: 63
     tools:
       jira_get_user_profile:
-        description: "Retrieve profile information for a specific Jira user. Args: ctx: The FastMCP context. user_identifier: User identifier (email, username, key, or account ID). Returns: JSON string representing the Jira user profile object, or an error object if not found. Raises: ValueError: If the Jira client is not configured or available."
+        description: "Retrieve profile information for a specific Jira user."
         arguments:
           user_identifier:
             type: "string"
             required: true
             description: "Identifier for the user (e.g., email address 'user@example.com', username 'johndoe', account ID 'accountid:...', or key for Server/DC)."
       jira_search_assignable_users:
-        description: "Search Jira users assignable in a given project or issue. Use this when you have a display name / partial name / email fragment and need a concrete identifier (``name`` / ``key`` for Server/DC, ``accountId`` for Cloud) to feed into assignee, reporter, watcher, etc. Returns the full result set so the caller can disambiguate when several users match \u2014 ``get_user_profile`` only resolves one identifier and is not designed for human-name search. Exactly one of ``project_key`` or ``issue_key`` must be provided \u2014 the underlying API (``/user/assignable/search``) requires a project or issue context and works without the global \"Browse Users\" permission that bot accounts in locked-down DC instances often lack. Args: ctx: The FastMCP context. query: Display name / username / email substring. project_key: Project key (e.g. 'DT') to scope the search. issue_key: Issue key (e.g. 'DT-779') to scope the search. limit: Maximum number of users to return. Returns: JSON string: {\"success\": true, \"count\": N, \"users\": [...]} on success, or an error object on failure."
+        description: "Search Jira users assignable in a given project or issue. Use this when you have a display name / partial name / email fragment and need a concrete identifier (``name`` / ``key`` for Server/DC, ``accountId`` for Cloud) to feed into assignee, reporter, watcher, etc. Returns the full result set so the caller can disambiguate when several users match \u2014 ``get_user_profile`` only resolves one identifier and is not designed for human-name search. Exactly one of ``project_key`` or ``issue_key`` must be provided \u2014 the underlying API (``/user/assignable/search``) requires a project or issue context and works without the global \"Browse Users\" permission that bot accounts in locked-down DC instances often lack."
         arguments:
           issue_key:
             type: "string"
@@ -36,14 +36,14 @@ servers:
             required: true
             description: "Free-form text to search Jira users by: display name, username, or email substring (e.g. 'Smith', 'jane.doe', 'doe@example.com'). Server-side match is case-insensitive and partial."
       jira_get_issue_watchers:
-        description: "Get the list of watchers for a Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. Returns: JSON string with watcher count and list of watchers. Raises: ValueError: If the Jira client is not configured or available."
+        description: "Get the list of watchers for a Jira issue."
         arguments:
           issue_key:
             type: "string"
             required: true
             description: "Jira issue key (e.g., 'PROJ-123')"
       jira_add_watcher:
-        description: "Add a user as a watcher to a Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. user_identifier: Account ID (Cloud) or username (Server/DC). Returns: JSON string with success confirmation. Raises: ValueError: If the Jira client is not configured or available."
+        description: "Add a user as a watcher to a Jira issue."
         arguments:
           issue_key:
             type: "string"
@@ -54,7 +54,7 @@ servers:
             required: true
             description: "User to add as watcher. For Jira Cloud, use the account ID. For Jira Server/DC, use the username."
       jira_remove_watcher:
-        description: "Remove a user from watching a Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. username: Username to remove (Server/DC). account_id: Account ID to remove (Cloud). Returns: JSON string with success confirmation. Raises: ValueError: If the Jira client is not configured or available."
+        description: "Remove a user from watching a Jira issue."
         arguments:
           account_id:
             type: "string"
@@ -69,7 +69,7 @@ servers:
             required: false
             description: "Username to remove (for Jira Server/DC)."
       jira_get_issue:
-        description: "Get details of a specific Jira issue. Includes Epic links and relationship information. Use the ``include`` parameter to inline enrichments (remote_links, transitions, watchers, changelog, comments, worklogs) so that separate tool calls are not needed. Args: ctx: The FastMCP context. issue_key: Jira issue key. fields: Comma-separated fields to return. expand: Optional fields to expand. comment_limit: Maximum number of comments. properties: Issue properties to return. update_history: Whether to update issue view history. include: Comma-separated enrichment sections to inline. Returns: JSON string representing the Jira issue object. Raises: ValueError: If the Jira client is not configured."
+        description: "Get details of a specific Jira issue. Includes Epic links and relationship information. Use the ``include`` parameter to inline enrichments (remote_links, transitions, watchers, changelog, comments, worklogs) so that separate tool calls are not needed."
         arguments:
           comment_limit:
             type: "integer"
@@ -99,8 +99,12 @@ servers:
             type: "boolean"
             required: false
             description: "Whether to update the issue view history for the requesting user"
+          use_display_names:
+            type: "boolean"
+            required: false
+            description: "When true, custom field keys in the output use human-readable display names (e.g. 'Story Points') instead of opaque IDs (e.g. 'customfield_10243'). The 'names' expansion is added automatically. Standard fields are unaffected."
       jira_search:
-        description: "Search Jira issues using JQL (Jira Query Language). Args: ctx: The FastMCP context. jql: JQL query string. fields: Comma-separated fields to return. limit: Maximum number of results. start_at: Starting index for pagination. projects_filter: Comma-separated list of project keys to filter by. expand: Optional fields to expand. page_token: Pagination token from a previous search result (Cloud only). Returns: JSON string representing the search results including pagination info."
+        description: "Search Jira issues using JQL (Jira Query Language)."
         arguments:
           expand:
             type: "string"
@@ -130,8 +134,12 @@ servers:
             type: "integer"
             required: false
             description: "Starting index for pagination (0-based)"
+          use_display_names:
+            type: "boolean"
+            required: false
+            description: "When true, custom field keys in the output use human-readable display names (e.g. 'Story Points') instead of opaque IDs (e.g. 'customfield_10243'). The 'names' expansion is added automatically. Standard fields are unaffected."
       jira_search_fields:
-        description: "Search Jira fields by keyword with fuzzy match. Args: ctx: The FastMCP context. keyword: Keyword for fuzzy search. limit: Maximum number of results. refresh: Whether to force refresh the field list. Returns: JSON string representing a list of matching field definitions."
+        description: "Search Jira fields by keyword with fuzzy match."
         arguments:
           keyword:
             type: "string"
@@ -146,7 +154,7 @@ servers:
             required: false
             description: "Whether to force refresh the field list"
       jira_get_field_options:
-        description: "Get allowed option values for a custom field. Returns the list of valid options for select, multi-select, radio, checkbox, and cascading select custom fields. Cloud: Uses the Field Context Option API. If context_id is not provided, automatically resolves to the global context. Server/DC: Uses createmeta to get allowedValues. Requires project_key and issue_type parameters. Args: ctx: The FastMCP context. field_id: The custom field ID. context_id: Field context ID (Cloud only, auto-resolved if omitted). project_key: Project key (required for Server/DC). issue_type: Issue type name (required for Server/DC). contains: Case-insensitive substring filter on option values. return_limit: Cap on number of results after filtering. values_only: Return compact format with only value strings. Returns: JSON string with the list of available options."
+        description: "Get allowed option values for a custom field. Returns the list of valid options for select, multi-select, radio, checkbox, and cascading select custom fields. Cloud: Uses the Field Context Option API. If context_id is not provided, automatically resolves to the global context. Server/DC: Uses createmeta to get allowedValues. Requires project_key and issue_type parameters."
         arguments:
           contains:
             type: "string"
@@ -177,7 +185,7 @@ servers:
             required: false
             description: "If true, return only value strings in a compact JSON format instead of full option objects."
       jira_get_project_issues:
-        description: "Get all issues for a specific Jira project. Args: ctx: The FastMCP context. project_key: The project key. limit: Maximum number of results. start_at: Starting index for pagination. Returns: JSON string representing the search results including pagination info."
+        description: "Get all issues for a specific Jira project."
         arguments:
           limit:
             type: "integer"
@@ -192,35 +200,35 @@ servers:
             required: false
             description: "Starting index for pagination (0-based)"
       jira_get_transitions:
-        description: "Get available status transitions for a Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. Returns: JSON string representing a list of available transitions."
+        description: "Get available status transitions for a Jira issue."
         arguments:
           issue_key:
             type: "string"
             required: true
             description: "Jira issue key (e.g., 'PROJ-123', 'ACV2-642')"
       jira_get_worklog:
-        description: "Get worklog entries for a Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. Returns: JSON string representing the worklog entries."
+        description: "Get worklog entries for a Jira issue."
         arguments:
           issue_key:
             type: "string"
             required: true
             description: "Jira issue key (e.g., 'PROJ-123', 'ACV2-642')"
       jira_download_attachments:
-        description: "Download attachments from a Jira issue. Returns attachment contents as base64-encoded embedded resources so that they are available over the MCP protocol without requiring filesystem access on the server. Args: ctx: The FastMCP context. issue_key: Jira issue key. Returns: A list containing a text summary and one EmbeddedResource per successfully downloaded attachment."
+        description: "Download attachments from a Jira issue. Returns attachment contents as base64-encoded content so that they are available over the MCP protocol without requiring filesystem access on the server. Image attachments are returned as ``EmbeddedResource`` blobs; all other attachments (documents, archives, etc.) are returned as ``TextContent`` carrying a base64 payload, since many MCP clients only forward ``EmbeddedResource`` blobs for recognized image MIME types and otherwise drop the attachment (#1419)."
         arguments:
           issue_key:
             type: "string"
             required: true
             description: "Jira issue key (e.g., 'PROJ-123', 'ACV2-642')"
       jira_get_issue_images:
-        description: "Get all images attached to a Jira issue as inline image content. Filters attachments to images only (PNG, JPEG, GIF, WebP, SVG, BMP) and returns them as base64-encoded ImageContent that clients can render directly. Non-image attachments are excluded. Files with ambiguous MIME types (application/octet-stream) are detected by filename extension as a fallback. Images larger than 50 MB are skipped with an error entry in the summary. Args: ctx: The FastMCP context. issue_key: Jira issue key. Returns: A list with a text summary followed by one ImageContent per successfully downloaded image."
+        description: "Get all images attached to a Jira issue as inline image content. Filters attachments to images only (PNG, JPEG, GIF, WebP, SVG, BMP) and returns them as base64-encoded ImageContent that clients can render directly. Non-image attachments are excluded. Files with ambiguous MIME types (application/octet-stream) are detected by filename extension as a fallback. Images larger than 50 MB are skipped with an error entry in the summary."
         arguments:
           issue_key:
             type: "string"
             required: true
             description: "Jira issue key (e.g., 'PROJ-123'). Returns image attachments as inline ImageContent for LLM vision."
       jira_get_agile_boards:
-        description: "Get jira agile boards by name, project key, or type. Args: ctx: The FastMCP context. board_name: Name of the board (fuzzy search). project_key: Project key. board_type: Board type ('scrum' or 'kanban'). start_at: Starting index. limit: Maximum results. Returns: JSON string representing a list of board objects."
+        description: "Get jira agile boards by name, project key, or type."
         arguments:
           board_name:
             type: "string"
@@ -243,7 +251,7 @@ servers:
             required: false
             description: "Starting index for pagination (0-based)"
       jira_get_board_issues:
-        description: "Get all issues linked to a specific board filtered by JQL. Args: ctx: The FastMCP context. board_id: The ID of the board. jql: JQL query string to filter issues. fields: Comma-separated fields to return. start_at: Starting index for pagination. limit: Maximum number of results. expand: Optional fields to expand. Returns: JSON string representing the search results including pagination info."
+        description: "Get all issues linked to a specific board filtered by JQL."
         arguments:
           board_id:
             type: "string"
@@ -270,7 +278,7 @@ servers:
             required: false
             description: "Starting index for pagination (0-based)"
       jira_get_sprints_from_board:
-        description: "Get jira sprints from board by state. Args: ctx: The FastMCP context. board_id: The ID of the board. state: Sprint state ('active', 'future', 'closed'). If None, returns all sprints. start_at: Starting index. limit: Maximum results. Returns: JSON string representing a list of sprint objects."
+        description: "Get jira sprints from board by state."
         arguments:
           board_id:
             type: "string"
@@ -289,7 +297,7 @@ servers:
             required: false
             description: "Sprint state (e.g., 'active', 'future', 'closed')"
       jira_get_sprint_issues:
-        description: "Get jira issues from sprint. Args: ctx: The FastMCP context. sprint_id: The ID of the sprint. fields: Comma-separated fields to return. start_at: Starting index. limit: Maximum results. Returns: JSON string representing the search results including pagination info."
+        description: "Get jira issues from sprint."
         arguments:
           fields:
             type: "string"
@@ -308,14 +316,14 @@ servers:
             required: false
             description: "Starting index for pagination (0-based)"
       jira_get_link_types:
-        description: "Get all available issue link types. Args: ctx: The FastMCP context. name_filter: Optional substring to filter link types by name. Returns: JSON string representing a list of issue link type objects."
+        description: "Get all available issue link types."
         arguments:
           name_filter:
             type: "string"
             required: false
             description: "(Optional) Filter link types by name substring (case-insensitive)"
       jira_create_issue:
-        description: "Create a new Jira issue with optional Epic link or parent for subtasks. Args: ctx: The FastMCP context. project_key: The JIRA project key. summary: Summary/title of the issue. issue_type: Issue type (e.g., 'Task', 'Bug', 'Story', 'Epic', 'Subtask'). assignee: Assignee's user identifier (string): Email, display name, or account ID (e.g., 'user@example.com', 'John Doe', 'accountid:...'). description: Issue description in Markdown format. components: Comma-separated list of component names. additional_fields: JSON string of additional fields. Returns: JSON string representing the created issue object. Raises: ValueError: If in read-only mode or Jira client is unavailable."
+        description: "Create a new Jira issue with optional Epic link or parent for subtasks."
         arguments:
           additional_fields:
             type: "string"
@@ -332,7 +340,7 @@ servers:
           description:
             type: "string"
             required: false
-            description: "Issue description in Markdown format"
+            description: "Issue description in Markdown format. On Jira Cloud, use '{expand:Title}...{expand}' for a collapsible section."
           issue_type:
             type: "string"
             required: true
@@ -346,7 +354,7 @@ servers:
             required: true
             description: "Summary/title of the issue"
       jira_batch_create_issues:
-        description: "Create multiple Jira issues in a batch. Args: ctx: The FastMCP context. issues: JSON array string of issue objects. validate_only: If true, only validates without creating. Returns: JSON string indicating success and listing created issues (or validation result). Raises: ValueError: If in read-only mode, Jira client unavailable, or invalid JSON."
+        description: "Create multiple Jira issues in a batch."
         arguments:
           issues:
             type: "string"
@@ -357,7 +365,7 @@ servers:
             required: false
             description: "If true, only validates the issues without creating them"
       jira_batch_get_changelogs:
-        description: "Get changelogs for multiple Jira issues (Cloud only). Args: ctx: The FastMCP context. issue_ids_or_keys: List of issue IDs or keys. fields: List of fields to filter changelogs by. None for all fields. limit: Maximum changelogs per issue (-1 for all). Returns: JSON string representing a list of issues with their changelogs. Raises: NotImplementedError: If run on Jira Server/Data Center. ValueError: If Jira client is unavailable."
+        description: "Get changelogs for multiple Jira issues (Cloud only)."
         arguments:
           fields:
             type: "string"
@@ -372,7 +380,7 @@ servers:
             required: false
             description: "Maximum number of changelogs to return in result for each issue. Default to -1 for all changelogs. Notice that it only limits the results in the response, the function will still fetch all the data."
       jira_update_issue:
-        description: "Update an existing Jira issue including changing status, adding Epic links, updating fields, etc. Args: ctx: The FastMCP context. issue_key: Jira issue key. fields: JSON string of fields to update. Text fields like 'description' should use Markdown format. additional_fields: Optional JSON string of additional fields. components: Comma-separated list of component names. attachments: Optional JSON array string or comma-separated list of file paths. Returns: JSON string representing the updated issue object and attachment results. Raises: ValueError: If in read-only mode or Jira client unavailable, or invalid input."
+        description: "Update an existing Jira issue including changing status, adding Epic links, updating fields, etc."
         arguments:
           additional_fields:
             type: "string"
@@ -389,13 +397,17 @@ servers:
           fields:
             type: "string"
             required: true
-            description: "JSON string of fields to update. For 'assignee', provide a string identifier (email, name, or accountId). For 'description', provide text in Markdown format. Example: '{\"assignee\": \"user@example.com\", \"summary\": \"New Summary\", \"description\": \"## Updated\\nMarkdown text\"}'"
+            description: "JSON string of fields to update. For 'assignee', provide a string identifier (email, name, or accountId). For 'description', provide text in Markdown format; on Jira Cloud, use '{expand:Title}...{expand}' for a collapsible section. Example: '{\"assignee\": \"user@example.com\", \"summary\": \"New Summary\", \"description\": \"## Updated\\nMarkdown text\"}'"
           issue_key:
             type: "string"
             required: true
             description: "Jira issue key (e.g., 'PROJ-123', 'ACV2-642')"
+          return_fields:
+            type: "string"
+            required: false
+            description: "(Optional) Controls which fields of the updated issue are returned, to reduce response size and token usage. Defaults to '*all' (the complete issue, which can be very large). TOKEN-SAVING TIP: after an update you usually do NOT need the whole issue back. Pass a comma-separated list of just the field(s) you care about (e.g., 'summary,duedate'), or a single light field such as 'status' for a minimal confirmation - this can cut the response by thousands of tokens. The issue 'key' is always returned regardless. If you later need other fields, fetch them on demand with jira_get_issue (which also supports field filtering). Use '*all' only when you genuinely need the full updated issue."
       jira_assign_issue:
-        description: "Assign a Jira issue to a user using the dedicated assignment endpoint. This is more reliable than setting assignee via update_issue, which is silently ignored by some Jira configurations. Uses PUT /issue/{key}/assignee. Args: ctx: The FastMCP context. issue_key: Jira issue key. assignee: User identifier (email, display name, or account ID), or a JSON object string from jira_search_assignable_users. Pass None or empty string to unassign. Returns: JSON string representing the updated issue object. Raises: ValueError: If in read-only mode, Jira client unavailable, or user not found."
+        description: "Assign a Jira issue to a user using the dedicated assignment endpoint. This is more reliable than setting assignee via update_issue, which is silently ignored by some Jira configurations. Uses PUT /issue/{key}/assignee."
         arguments:
           assignee:
             type: "string"
@@ -406,14 +418,14 @@ servers:
             required: true
             description: "Jira issue key (e.g., 'PROJ-123', 'ACV2-642')"
       jira_delete_issue:
-        description: "Delete an existing Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. Returns: JSON string indicating success. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Delete an existing Jira issue."
         arguments:
           issue_key:
             type: "string"
             required: true
             description: "Jira issue key (e.g., 'PROJ-123', 'ACV2-642')"
       jira_move_issue:
-        description: "Move a Jira issue to a different project (Jira Cloud only). Uses Jira Cloud's bulk move API to perform a cross-project move. The issue keeps its current issue type and may be assigned a new key in the target project (e.g., OLDPROJ-123 becomes NEWPROJ-456). The move is processed asynchronously on Jira's side; this tool polls until confirmed or times out after 30 seconds. Args: ctx: The FastMCP context. issue_key: Jira issue key of the issue to move. target_project_key: Key of the target project. Returns: JSON string representing the moved issue with its new key and project. Raises: ValueError: If in read-only mode, Jira client unavailable, or the move fails. NotImplementedError: If not running on Jira Cloud."
+        description: "Move a Jira issue to a different project (Jira Cloud only). Uses Jira Cloud's bulk move API to perform a cross-project move. The issue keeps its current issue type and may be assigned a new key in the target project (e.g., OLDPROJ-123 becomes NEWPROJ-456). The move is processed asynchronously on Jira's side; this tool polls until confirmed or times out after 30 seconds."
         arguments:
           issue_key:
             type: "string"
@@ -424,7 +436,7 @@ servers:
             required: true
             description: "Key of the target project (e.g., 'OTHERPROJ'). The issue will keep its current issue type and may receive a new key in the target project."
       jira_add_comment:
-        description: "Add a comment to a Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. body: Comment text in Markdown. visibility: (Optional) Comment visibility as JSON string. public: (Optional) For JSM issues. True = customer-visible, False = internal/agent-only. Uses ServiceDesk API. Returns: JSON string representing the added comment object. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Add a comment to a Jira issue."
         arguments:
           body:
             type: "string"
@@ -437,13 +449,13 @@ servers:
           public:
             type: "boolean"
             required: false
-            description: "(Optional) For JSM/Service Desk issues only. Set to true for customer-visible comment, false for internal agent-only comment. Uses the ServiceDesk API (plain text, not Markdown). Cannot be combined with visibility."
+            description: "(Optional) For JSM/Service Desk issues only. Set to true for customer-visible comment, false for internal agent-only comment. Posted via the ServiceDesk API as a raw string; Jira Cloud renders it server-side and stores ADF (markdown observed to render on Cloud, without the client-side markdown-to-ADF guarantees of the regular comment path). Cannot be combined with visibility. If the issue's project is listed in JIRA_INTERNAL_ONLY_PROJECTS, only public=false is accepted \u2014 public=true or omitting this field is rejected."
           visibility:
             type: "string"
             required: false
             description: "(Optional) Comment visibility as JSON string (e.g. '{\"type\":\"group\",\"value\":\"jira-users\"}')"
       jira_edit_comment:
-        description: "Edit an existing comment on a Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. comment_id: The ID of the comment to edit. body: Updated comment text in Markdown. visibility: (Optional) Comment visibility as JSON string. Returns: JSON string representing the updated comment object. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Edit an existing comment on a Jira issue."
         arguments:
           body:
             type: "string"
@@ -462,7 +474,7 @@ servers:
             required: false
             description: "(Optional) Comment visibility as JSON string (e.g. '{\"type\":\"group\",\"value\":\"jira-users\"}')"
       jira_add_worklog:
-        description: "Add a worklog entry to a Jira issue. Args: ctx: The FastMCP context. issue_key: Jira issue key. time_spent: Time spent in Jira format. comment: Optional comment in Markdown. started: Optional start time in ISO format. original_estimate: Optional new original estimate. remaining_estimate: Optional new remaining estimate. Returns: JSON string representing the added worklog object. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Add a worklog entry to a Jira issue."
         arguments:
           comment:
             type: "string"
@@ -489,7 +501,7 @@ servers:
             required: true
             description: "Time spent in Jira format. Examples: '1h 30m' (1 hour and 30 minutes), '1d' (1 day), '30m' (30 minutes), '4h' (4 hours)"
       jira_link_to_epic:
-        description: "Link an existing issue to an epic. Args: ctx: The FastMCP context. issue_key: The key of the issue to link. epic_key: The key of the epic to link to. Returns: JSON string representing the updated issue object. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Link an existing issue to an epic."
         arguments:
           epic_key:
             type: "string"
@@ -500,12 +512,12 @@ servers:
             required: true
             description: "The key of the issue to link (e.g., 'PROJ-123', 'ACV2-642')"
       jira_create_issue_link:
-        description: "Create a link between two Jira issues. Args: ctx: The FastMCP context. link_type: The type of link (e.g., 'Blocks'). inward_issue_key: The key of the source issue. outward_issue_key: The key of the target issue. comment: Optional comment text. comment_visibility: Optional JSON string for comment visibility. Returns: JSON string indicating success or failure. Raises: ValueError: If required fields are missing, invalid input, in read-only mode, or Jira client unavailable."
+        description: "Create a link between two Jira issues."
         arguments:
           comment:
             type: "string"
             required: false
-            description: "(Optional) Comment to add to the link"
+            description: "(Optional) Comment to add to the link. Rejected when either linked issue belongs to a project listed in JIRA_INTERNAL_ONLY_PROJECTS (a link comment may be customer-visible on JSM and cannot be forced internal): create the link without a comment, then post an internal note with jira_add_comment(public=false) on the relevant issue."
           comment_visibility:
             type: "string"
             required: false
@@ -523,7 +535,7 @@ servers:
             required: true
             description: "The key of the outward issue (e.g., 'PROJ-456')"
       jira_create_remote_issue_link:
-        description: "Create a remote issue link (web link or Confluence link) for a Jira issue. This tool allows you to add web links and Confluence links to Jira issues. The links will appear in the issue's \"Links\" section and can be clicked to navigate to external resources. Args: ctx: The FastMCP context. issue_key: The key of the issue to add the link to. url: The URL to link to (can be any web page or Confluence page). title: The title/name that will be displayed for the link. summary: Optional description of what the link is for. relationship: Optional relationship description. icon_url: Optional URL to a 16x16 icon for the link. Returns: JSON string indicating success or failure. Raises: ValueError: If required fields are missing, invalid input, in read-only mode, or Jira client unavailable."
+        description: "Create a remote issue link (web link or Confluence link) for a Jira issue. This tool allows you to add web links and Confluence links to Jira issues. The links will appear in the issue's \"Links\" section and can be clicked to navigate to external resources."
         arguments:
           icon_url:
             type: "string"
@@ -550,19 +562,19 @@ servers:
             required: true
             description: "The URL to link to (e.g., 'https://example.com/page' or Confluence page URL)"
       jira_remove_issue_link:
-        description: "Remove a link between two Jira issues. Args: ctx: The FastMCP context. link_id: The ID of the link to remove. Returns: JSON string indicating success. Raises: ValueError: If link_id is missing, in read-only mode, or Jira client unavailable."
+        description: "Remove a link between two Jira issues."
         arguments:
           link_id:
             type: "string"
             required: true
             description: "The ID of the link to remove"
       jira_transition_issue:
-        description: "Transition a Jira issue to a new status. Args: ctx: The FastMCP context. issue_key: Jira issue key. transition_id: ID of the transition. fields: Optional JSON string of fields to update during transition. comment: Optional comment for the transition in Markdown format. Returns: JSON string representing the updated issue object. Raises: ValueError: If required fields missing, invalid input, in read-only mode, or Jira client unavailable."
+        description: "Transition a Jira issue to a new status."
         arguments:
           comment:
             type: "string"
             required: false
-            description: "(Optional) Comment to add during the transition in Markdown format. This will be visible in the issue history."
+            description: "(Optional) Comment to add during the transition in Markdown format. This will be visible in the issue history. Rejected for projects listed in JIRA_INTERNAL_ONLY_PROJECTS (a transition comment may be customer-visible on JSM and cannot be forced internal): transition without a comment, then post an internal note with jira_add_comment(public=false)."
           fields:
             type: "string"
             required: false
@@ -576,7 +588,7 @@ servers:
             required: true
             description: "ID of the transition to perform. Use the jira_get_transitions tool first to get the available transition IDs for the issue. Example values: '11', '21', '31'"
       jira_create_sprint:
-        description: "Create Jira sprint for a board. Args: ctx: The FastMCP context. board_id: Board ID. name: Sprint name. start_date: Start date (ISO format). end_date: End date (ISO format). goal: Optional sprint goal. Returns: JSON string representing the created sprint object. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Create Jira sprint for a board."
         arguments:
           board_id:
             type: "string"
@@ -599,7 +611,7 @@ servers:
             required: true
             description: "Start time for sprint (ISO 8601 format)"
       jira_update_sprint:
-        description: "Update jira sprint. Args: ctx: The FastMCP context. sprint_id: The ID of the sprint. name: Optional new name. state: Optional new state (future|active|closed). start_date: Optional new start date. end_date: Optional new end date. goal: Optional new goal. Returns: JSON string representing the updated sprint object or an error message. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Update jira sprint."
         arguments:
           end_date:
             type: "string"
@@ -626,7 +638,7 @@ servers:
             required: false
             description: "(Optional) New state for the sprint (future|active|closed)"
       jira_add_issues_to_sprint:
-        description: "Add issues to a Jira sprint. Args: ctx: The FastMCP context. sprint_id: The ID of the sprint. issue_keys: Comma-separated issue keys. Returns: JSON string with success message. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Add issues to a Jira sprint."
         arguments:
           issue_keys:
             type: "string"
@@ -637,21 +649,21 @@ servers:
             required: true
             description: "Sprint ID to add issues to"
       jira_move_issues_to_backlog:
-        description: "Move issues to the backlog, removing them from any sprint. Args: ctx: The FastMCP context. issue_keys: Comma-separated issue keys. Returns: JSON string with success message. Raises: ValueError: If in read-only mode or Jira client unavailable."
+        description: "Move issues to the backlog, removing them from any sprint."
         arguments:
           issue_keys:
             type: "string"
             required: true
             description: "Comma-separated issue keys (e.g., 'PROJ-1,PROJ-2')"
       jira_get_project_issue_types:
-        description: "Get available issue types for a Jira project. Returns the list of issue types (Bug, Task, Story, Epic, etc.) that can be created in the specified project. Use the returned issue type IDs with get_create_fields to discover what fields each type requires. Args: ctx: The FastMCP context. project_key: The project key. Returns: JSON string with list of issue types (id, name, description, subtask)."
+        description: "Get available issue types for a Jira project. Returns the list of issue types (Bug, Task, Story, Epic, etc.) that can be created in the specified project. Use the returned issue type IDs with get_create_fields to discover what fields each type requires."
         arguments:
           project_key:
             type: "string"
             required: true
             description: "Jira project key (e.g., 'PROJ', 'JTEST')"
       jira_get_create_fields:
-        description: "Get fields available for creating an issue of a specific type. Returns all fields (required and optional) for the given project and issue type, including field names, IDs, whether they're required, and their schema. Use jira_get_field_options when a returned field needs its allowed values. Args: ctx: The FastMCP context. project_key: The project key. issue_type_id: The issue type ID. Returns: JSON string with list of field metadata (field_id, name, required, schema)."
+        description: "Get fields available for creating an issue of a specific type. Returns all fields (required and optional) for the given project and issue type, including field names, IDs, whether they're required, and their schema. Use jira_get_field_options when a returned field needs its allowed values."
         arguments:
           issue_type_id:
             type: "string"
@@ -676,14 +688,14 @@ servers:
             required: true
             description: "Jira project key (e.g., 'PROJ', 'ACV2')"
       jira_get_all_projects:
-        description: "Get all Jira projects accessible to the current user. Args: ctx: The FastMCP context. include_archived: Whether to include archived projects. Returns: JSON string representing a list of project objects accessible to the user. Project keys are always returned in uppercase. If JIRA_PROJECTS_FILTER is configured, only returns projects matching those keys. Raises: ValueError: If the Jira client is not configured or available."
+        description: "Get all Jira projects accessible to the current user."
         arguments:
           include_archived:
             type: "boolean"
             required: false
             description: "Whether to include archived projects in the results"
       jira_search_projects:
-        description: "Search for Jira projects by name or key prefix. Uses the projects picker endpoint to return a ranked list of matching projects without fetching every visible project on the instance. Args: ctx: The FastMCP context. query: Name or key prefix to search for. max_results: Maximum number of results to return. current_project_ids: Comma-separated project IDs to exclude. Returns: JSON string representing a list of matching project objects. Project keys are always returned in uppercase. If JIRA_PROJECTS_FILTER is configured, only returns projects matching those keys."
+        description: "Search for Jira projects by name or key prefix. Uses the projects picker endpoint to return a ranked list of matching projects without fetching every visible project on the instance."
         arguments:
           current_project_ids:
             type: "string"
@@ -698,21 +710,21 @@ servers:
             required: true
             description: "Name or key prefix to search for"
       jira_get_project_fields:
-        description: "Get the fields available on issues of a project (the create schema), deduplicated across the project's issue types \u2014 i.e. which fields tickets in this project have, regardless of whether they are filled. Args: ctx: The FastMCP context. project_key: The project key. Returns: JSON string with a list of fields: each {field_id, name, required, schema_type, custom, issue_types}. Empty list if none / on error. Raises: ValueError: If the Jira client is not configured or available."
+        description: "Get the fields available on issues of a project (the create schema), deduplicated across the project's issue types \u2014 i.e. which fields tickets in this project have, regardless of whether they are filled."
         arguments:
           project_key:
             type: "string"
             required: true
             description: "The project key, e.g. 'PROJ'."
       jira_get_service_desk_for_project:
-        description: "Get the Jira Service Desk associated with a project key. Server/Data Center only. Not available on Jira Cloud. Args: ctx: The FastMCP context. project_key: Jira project key. Returns: JSON string with project key and service desk data (or null if not found). Raises: NotImplementedError: If connected to Jira Cloud (Server/DC only)."
+        description: "Get the Jira Service Desk associated with a project key. Server/Data Center only. Not available on Jira Cloud."
         arguments:
           project_key:
             type: "string"
             required: true
             description: "Jira project key (e.g., 'SUP')"
       jira_get_service_desk_queues:
-        description: "Get queues for a Jira Service Desk. Server/Data Center only. Not available on Jira Cloud. Args: ctx: The FastMCP context. service_desk_id: Service desk ID. start_at: Starting index for pagination. limit: Maximum number of queues to return. Returns: JSON string with queue list and pagination metadata. Raises: NotImplementedError: If connected to Jira Cloud (Server/DC only)."
+        description: "Get queues for a Jira Service Desk. Server/Data Center only. Not available on Jira Cloud."
         arguments:
           limit:
             type: "integer"
@@ -727,7 +739,7 @@ servers:
             required: false
             description: "Starting index for pagination (0-based)"
       jira_get_queue_issues:
-        description: "Get issues from a Jira Service Desk queue. Server/Data Center only. Not available on Jira Cloud. Args: ctx: The FastMCP context. service_desk_id: Service desk ID. queue_id: Queue ID. start_at: Starting index for pagination. limit: Maximum number of issues to return. Returns: JSON string with queue metadata, issues, and pagination metadata. Raises: NotImplementedError: If connected to Jira Cloud (Server/DC only)."
+        description: "Get issues from a Jira Service Desk queue. Server/Data Center only. Not available on Jira Cloud."
         arguments:
           limit:
             type: "integer"
@@ -745,8 +757,65 @@ servers:
             type: "integer"
             required: false
             description: "Starting index for pagination (0-based)"
+      jira_get_request_types:
+        description: "Get request types for a Jira Service Management service desk."
+        arguments:
+          limit:
+            type: "integer"
+            required: false
+            description: "Maximum number of results (1-50)"
+          service_desk_id:
+            type: "string"
+            required: true
+            description: "Service desk ID (e.g., '4')"
+          start_at:
+            type: "integer"
+            required: false
+            description: "Starting index for pagination (0-based)"
+      jira_get_request_type_fields:
+        description: "Get field definitions for a Jira Service Management request type."
+        arguments:
+          request_type_id:
+            type: "string"
+            required: true
+            description: "Request type ID (e.g., '23')"
+          service_desk_id:
+            type: "string"
+            required: true
+            description: "Service desk ID (e.g., '4')"
+      jira_create_customer_request:
+        description: "Create a Jira Service Management customer request."
+        arguments:
+          attachments:
+            type: "string"
+            required: false
+            description: "(Optional) JSON array string of files to attach to the created request. Each object must contain 'filename', 'mime_type', and base64-encoded 'base64' content. Example: [{\"filename\": \"log.txt\", \"mime_type\": \"text/plain\", \"base64\": \"aGVsbG8=\"}]"
+          raise_on_behalf_of:
+            type: "string"
+            required: false
+            description: "(Optional) Jira user identifier for raiseOnBehalfOf. For Server/DC this is typically username or key; for Cloud use the identifier expected by your JSM instance."
+          request_field_values:
+            type: "string"
+            required: true
+            description: "JSON string of request field values keyed by field ID. Examples: - Summary and description: {\"summary\": \"Access issue\", \"description\": \"Cannot log in\"} - Multi-value field: {\"customfield_10001\": [\"alice\", \"bob\"]}"
+          request_participants:
+            type: "string"
+            required: false
+            description: "(Optional) JSON array string or comma-separated list of request participants. Examples: [\"user1\",\"user2\"] or \"user1,user2\""
+          request_type_id:
+            type: "string"
+            required: true
+            description: "Request type ID (e.g., '23')"
+          service_desk_id:
+            type: "string"
+            required: true
+            description: "Service desk ID (e.g., '4')"
+          strict_on_behalf:
+            type: "boolean"
+            required: false
+            description: "If true, fail immediately when raiseOnBehalfOf cannot be applied. If false, retry without raiseOnBehalfOf and return a fallback warning."
       jira_create_version:
-        description: "Create a new fix version in a Jira project. Args: ctx: The FastMCP context. project_key: The project key. name: Name of the version. start_date: Start date (optional). release_date: Release date (optional). description: Description (optional). Returns: JSON string of the created version object."
+        description: "Create a new fix version in a Jira project."
         arguments:
           description:
             type: "string"
@@ -769,7 +838,7 @@ servers:
             required: false
             description: "Start date (YYYY-MM-DD)"
       jira_batch_create_versions:
-        description: "Batch create multiple versions in a Jira project. Args: ctx: The FastMCP context. project_key: The project key. versions: JSON array string of version objects. Returns: JSON array of results, each with success flag, version or error."
+        description: "Batch create multiple versions in a Jira project."
         arguments:
           project_key:
             type: "string"
@@ -780,7 +849,7 @@ servers:
             required: true
             description: "JSON array of version objects. Each object should contain: - name (required): Name of the version - startDate (optional): Start date (YYYY-MM-DD) - releaseDate (optional): Release date (YYYY-MM-DD) - description (optional): Description of the version Example: [ {\"name\": \"v1.0\", \"startDate\": \"2025-01-01\", \"releaseDate\": \"2025-02-01\", \"description\": \"First release\"}, {\"name\": \"v2.0\"} ]"
       jira_update_version:
-        description: "Update an existing fix version in a Jira project. Only fields explicitly provided are modified; other attributes of the version are left untouched. Useful for archiving/unarchiving versions, renaming, or shifting release dates without recreating them. Args: ctx: The FastMCP context. version_id: Numeric ID of the version to update. name: New name (optional). description: New description (optional). start_date: New start date YYYY-MM-DD (optional). release_date: New release date YYYY-MM-DD (optional). archived: Archived flag (optional). released: Released flag (optional). Returns: JSON string of the updated version object."
+        description: "Update an existing fix version in a Jira project. Only fields explicitly provided are modified; other attributes of the version are left untouched. Useful for archiving/unarchiving versions, renaming, or shifting release dates without recreating them."
         arguments:
           archived:
             type: "boolean"
@@ -811,14 +880,14 @@ servers:
             required: true
             description: "Numeric ID of the version to update (e.g. '10001')"
       jira_get_issue_proforma_forms:
-        description: "Get all ProForma forms associated with a Jira issue. Uses the new Jira Forms REST API. Form IDs are returned as UUIDs. Args: ctx: The FastMCP context. issue_key: The issue key to get forms for. Returns: JSON string representing the list of ProForma forms, or an error object if failed."
+        description: "Get all ProForma forms associated with a Jira issue. Uses the new Jira Forms REST API. Form IDs are returned as UUIDs."
         arguments:
           issue_key:
             type: "string"
             required: true
             description: "Jira issue key (e.g., 'PROJ-123')"
       jira_get_proforma_form_details:
-        description: "Get detailed information about a specific ProForma form. Uses the new Jira Forms REST API. Returns form details including ADF design structure. Args: ctx: The FastMCP context. issue_key: The issue key containing the form. form_id: The form UUID identifier. Returns: JSON string representing the ProForma form details, or an error object if failed."
+        description: "Get detailed information about a specific ProForma form. Uses the new Jira Forms REST API. Returns form details including ADF design structure."
         arguments:
           form_id:
             type: "string"
@@ -829,7 +898,7 @@ servers:
             required: true
             description: "Jira issue key (e.g., 'PROJ-123')"
       jira_update_proforma_form_answers:
-        description: "Update form field answers using the Jira Forms REST API. This is the primary method for updating form data. Each answer object must specify the question ID, answer type, and value. **\u26a0\ufe0f KNOWN LIMITATION - DATETIME fields:** The Jira Forms API does NOT properly preserve time components in DATETIME fields. Only the date portion is stored; times are reset to midnight (00:00:00). **Workaround for DATETIME fields:** Use jira_update_issue to directly update the underlying custom fields instead: 1. Get the custom field ID from the form details (question's \"jiraField\" property) 2. Use jira_update_issue with fields like: {\"customfield_XXXXX\": \"2026-01-09T11:50:00-08:00\"} Example: ```python # Instead of updating via form (loses time): # jira_update_proforma_form_answers(issue_key, form_id, [{\"questionId\": \"91\", \"type\": \"DATETIME\", \"value\": \"...\"}]) # Use direct field update (preserves time): jira_update_issue(issue_key, {\"customfield_10542\": \"2026-01-09T11:50:00-08:00\"}) ``` **Automatic DateTime Conversion:** For DATE and DATETIME fields, you can provide values as: - ISO 8601 strings (e.g., \"2024-12-17T19:00:00Z\", \"2024-12-17\") - Unix timestamps in milliseconds (e.g., 1734465600000) The tool automatically converts ISO 8601 strings to Unix timestamps. Example answers: [ {\"questionId\": \"q1\", \"type\": \"TEXT\", \"value\": \"Updated description\"}, {\"questionId\": \"q2\", \"type\": \"SELECT\", \"value\": \"Product A\"}, {\"questionId\": \"q3\", \"type\": \"NUMBER\", \"value\": 42}, {\"questionId\": \"q4\", \"type\": \"DATE\", \"value\": \"2024-12-17\"} ] Common answer types: - TEXT: String values - NUMBER: Numeric values - DATE: Date values (ISO 8601 string or Unix timestamp in ms) - DATETIME: DateTime values - \u26a0\ufe0f USE WORKAROUND ABOVE - SELECT: Single selection from options - MULTI_SELECT: Multiple selections (value as list) - CHECKBOX: Boolean values Args: ctx: The FastMCP context. issue_key: The issue key containing the form. form_id: The form UUID (get from get_issue_proforma_forms). answers: List of answer objects with questionId, type, and value. Returns: JSON string with operation result."
+        description: "Update form field answers using the Jira Forms REST API. This is the primary method for updating form data. Each answer object must specify the question ID, answer type, and value. **\u26a0\ufe0f KNOWN LIMITATION - DATETIME fields:** The Jira Forms API does NOT properly preserve time components in DATETIME fields. Only the date portion is stored; times are reset to midnight (00:00:00). **Workaround for DATETIME fields:** Use jira_update_issue to directly update the underlying custom fields instead: 1. Get the custom field ID from the form details (question's \"jiraField\" property) 2. Use jira_update_issue with fields like: {\"customfield_XXXXX\": \"2026-01-09T11:50:00-08:00\"} Example: ```python # Instead of updating via form (loses time): # jira_update_proforma_form_answers(issue_key, form_id, [{\"questionId\": \"91\", \"type\": \"DATETIME\", \"value\": \"...\"}]) # Use direct field update (preserves time): jira_update_issue(issue_key, {\"customfield_10542\": \"2026-01-09T11:50:00-08:00\"}) ``` **Automatic DateTime Conversion:** For DATE and DATETIME fields, you can provide values as: - ISO 8601 strings (e.g., \"2024-12-17T19:00:00Z\", \"2024-12-17\") - Unix timestamps in milliseconds (e.g., 1734465600000) The tool automatically converts ISO 8601 strings to Unix timestamps. Example answers: [ {\"questionId\": \"q1\", \"type\": \"TEXT\", \"value\": \"Updated description\"}, {\"questionId\": \"q2\", \"type\": \"SELECT\", \"value\": \"Product A\"}, {\"questionId\": \"q3\", \"type\": \"NUMBER\", \"value\": 42}, {\"questionId\": \"q4\", \"type\": \"DATE\", \"value\": \"2024-12-17\"} ] Common answer types: - TEXT: String values - NUMBER: Numeric values - DATE: Date values (ISO 8601 string or Unix timestamp in ms) - DATETIME: DateTime values - \u26a0\ufe0f USE WORKAROUND ABOVE - SELECT: Single selection from options - MULTI_SELECT: Multiple selections (value as list) - CHECKBOX: Boolean values"
         arguments:
           answers:
             type: "array"
@@ -844,7 +913,7 @@ servers:
             required: true
             description: "Jira issue key (e.g., 'PROJ-123')"
       jira_get_issue_dates:
-        description: "Get date information and status transition history for a Jira issue. Returns dates (created, updated, due date, resolution date) and optionally status change history with time tracking for workflow analysis. Args: ctx: The FastMCP context. issue_key: The Jira issue key. include_status_changes: Whether to include status change history. include_status_summary: Whether to include aggregated time per status. Returns: JSON string with issue dates and optional status tracking data."
+        description: "Get date information and status transition history for a Jira issue. Returns dates (created, updated, due date, resolution date) and optionally status change history with time tracking for workflow analysis."
         arguments:
           include_status_changes:
             type: "boolean"
@@ -859,7 +928,7 @@ servers:
             required: true
             description: "Jira issue key (e.g., 'PROJ-123', 'ACV2-642')"
       jira_get_issue_sla:
-        description: "Calculate SLA metrics for a Jira issue. Computes various time-based metrics including cycle time, lead time, time spent in each status, due date compliance, and more. Working hours can be configured via environment variables: - JIRA_SLA_WORKING_HOURS_ONLY: Enable working hours filtering (true/false) - JIRA_SLA_WORKING_HOURS_START: Start time (e.g., \"09:00\") - JIRA_SLA_WORKING_HOURS_END: End time (e.g., \"17:00\") - JIRA_SLA_WORKING_DAYS: Working days (e.g., \"1,2,3,4,5\" for Mon-Fri) - JIRA_SLA_TIMEZONE: Timezone for calculations (e.g., \"America/New_York\") Args: ctx: The FastMCP context. issue_key: The Jira issue key. metrics: Comma-separated list of metrics to calculate. working_hours_only: Use working hours only for calculations. include_raw_dates: Include raw date values in response. Returns: JSON string with calculated SLA metrics."
+        description: "Calculate SLA metrics for a Jira issue. Computes various time-based metrics including cycle time, lead time, time spent in each status, due date compliance, and more. Working hours can be configured via environment variables: - JIRA_SLA_WORKING_HOURS_ONLY: Enable working hours filtering (true/false) - JIRA_SLA_WORKING_HOURS_START: Start time (e.g., \"09:00\") - JIRA_SLA_WORKING_HOURS_END: End time (e.g., \"17:00\") - JIRA_SLA_WORKING_DAYS: Working days (e.g., \"1,2,3,4,5\" for Mon-Fri) - JIRA_SLA_TIMEZONE: Timezone for calculations (e.g., \"America/New_York\")"
         arguments:
           include_raw_dates:
             type: "boolean"
@@ -878,12 +947,12 @@ servers:
             required: false
             description: "Calculate using working hours only (excludes weekends/non-business hours). Defaults to value from JIRA_SLA_WORKING_HOURS_ONLY environment variable."
       jira_get_issue_development_info:
-        description: "Get development information (PRs, commits, branches) linked to a Jira issue. This retrieves the development panel information that shows linked pull requests, branches, and commits from connected source control systems like Bitbucket, GitHub, or GitLab. Args: ctx: The FastMCP context. issue_key: The Jira issue key. application_type: Optional filter by source control type. data_type: Optional filter by data type (pullrequest, branch, etc.). Returns: JSON string with development information including: - pullRequests: List of linked pull requests with status, author, reviewers - branches: List of linked branches - commits: List of linked commits - repositories: List of repositories involved"
+        description: "Get development information (PRs, commits, branches) linked to a Jira issue. This retrieves the development panel information that shows linked pull requests, branches, and commits from connected source control systems like Bitbucket, GitHub, or GitLab."
         arguments:
           application_type:
             type: "string"
             required: false
-            description: "(Optional) Filter by application type (case-sensitive). Examples: 'stash' (Bitbucket Server), 'bitbucket', 'GitHub', 'GitLab'"
+            description: "(Optional) Filter by application type (case-sensitive). Examples: 'stash' (Bitbucket Server), 'bitbucket', 'GitHub', 'githube' (GitHub Enterprise Server), 'GitLab'. If omitted, types are discovered automatically."
           data_type:
             type: "string"
             required: false
@@ -893,12 +962,12 @@ servers:
             required: true
             description: "Jira issue key (e.g., 'PROJ-123')"
       jira_get_issues_development_info:
-        description: "Get development information for multiple Jira issues. Batch retrieves development panel information (PRs, commits, branches) for multiple issues at once. Args: ctx: The FastMCP context. issue_keys: List of Jira issue keys. application_type: Optional filter by source control type. data_type: Optional filter by data type. Returns: JSON string with list of development information for each issue."
+        description: "Get development information for multiple Jira issues. Batch retrieves development panel information (PRs, commits, branches) for multiple issues at once."
         arguments:
           application_type:
             type: "string"
             required: false
-            description: "(Optional) Filter by application type (case-sensitive). Examples: 'stash' (Bitbucket Server), 'bitbucket', 'GitHub', 'GitLab'"
+            description: "(Optional) Filter by application type (case-sensitive). Examples: 'stash' (Bitbucket Server), 'bitbucket', 'GitHub', 'githube' (GitHub Enterprise Server), 'GitLab'. If omitted, types are discovered automatically."
           data_type:
             type: "string"
             required: false
@@ -907,3 +976,25 @@ servers:
             type: "string"
             required: true
             description: "Comma-separated list of Jira issue keys (e.g., 'PROJ-123,PROJ-456')"
+      jira_get_project_epic_hierarchy:
+        description: "Group a project's epics under their cross-project parent issues. Fetches all epics in the project, detects their parent issue via the parent field or inward issue links, then groups them by parent. Epics with no detected parent appear under \"Unlinked\". Useful for understanding how a project's epics roll up to initiatives in another project."
+        arguments:
+          max_epics:
+            type: "integer"
+            required: false
+            description: "Maximum number of epics to fetch (1-500)"
+          project_key:
+            type: "string"
+            required: true
+            description: "Jira project key (e.g., 'PROJ')"
+      jira_get_cross_project_dependencies:
+        description: "Find all cross-project issue links for a project. Scans issues in the project, extracts every issue link whose target belongs to a different project, and groups them by target project and link type. Useful for dependency analysis across multi-project Jira setups."
+        arguments:
+          max_issues:
+            type: "integer"
+            required: false
+            description: "Maximum issues to scan for links (1-500)"
+          project_key:
+            type: "string"
+            required: true
+            description: "Jira project key (e.g., 'PROJ')"

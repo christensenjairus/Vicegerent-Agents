@@ -39,7 +39,7 @@
       "description": "GitLab issues and merge-request lifecycle (create/update/review/comment/labels, pipeline status/logs, retry a failed job) \u2014 the MR-object actions that plain git over SSH can't do.",
       "enabled": false,
       "type": "npx",
-      "package": "@zereight/mcp-gitlab@2.1.42",
+      "package": "@zereight/mcp-gitlab@2.1.46",
       "env": {"USE_PIPELINE": "true"},
       "secrets": [{"name": "gitlab_token", "target": "GITLAB_PERSONAL_ACCESS_TOKEN"}],
       "network": {
@@ -169,7 +169,7 @@
       "description": "Jira issue tracking \u2014 issues, JQL search, transitions, and comments (read+write, no deletes).",
       "enabled": false,
       "type": "registry",
-      "registry": "ghcr.io/sooperset/mcp-atlassian:0.22.1",
+      "registry": "ghcr.io/sooperset/mcp-atlassian:0.23.0",
       "transport": "stdio",
       "network": {
         "host_from_secret": "jira_url"
