@@ -44,7 +44,7 @@ import sys
 
 ANCHOR = (
     "    # Cron: no user is present to approve arbitrary code.\n"
-    "    if env_var_enabled(\"HERMES_CRON_SESSION\"):\n"
+    "    if _is_cron_approval_context():\n"
     "        if _get_cron_approval_mode() == \"deny\":\n"
     "            return {\n"
     "                \"approved\": False,\n"
@@ -68,7 +68,7 @@ ANCHOR = (
 
 REPLACEMENT = (
     "    # Cron: no user is present to approve arbitrary code.\n"
-    "    if env_var_enabled(\"HERMES_CRON_SESSION\"):\n"
+    "    if _is_cron_approval_context():\n"
     "        if _get_cron_approval_mode() == \"deny\":\n"
     "            return {\n"
     "                \"approved\": False,\n"

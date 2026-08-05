@@ -44,6 +44,9 @@ print(f"Patching {loader_path}")
 def _patch(path: Path, old: str, new: str, description: str) -> None:
     src = path.read_text()
     count = src.count(old)
+    if count == 0 and new in src:
+        print(f"  ok  {description} (already applied)")
+        return
     if count == 0:
         raise RuntimeError(
             f"Patch marker not found in {path}\n"

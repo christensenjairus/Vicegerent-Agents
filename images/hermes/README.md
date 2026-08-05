@@ -4,7 +4,7 @@ A thin derivation of the upstream [`nousresearch/hermes-agent`](https://hub.dock
 
 ## Why a derived image
 
-The stock image ships the Hermes runtime but **not** the pieces this platform relies on. Verified against the upstream arm64 image (`v2026.7.20`):
+The stock image ships the Hermes runtime but **not** the pieces this platform relies on. Verified against the upstream arm64 image (`v2026.8.3`):
 
 | Needed | In stock image? |
 | --- | --- |
@@ -29,11 +29,11 @@ make push
 # or: make release PLATFORM=linux/arm64
 ```
 
-`make help` lists targets. `TAG` is `<upstream-version>-rev<N>` (e.g. `v2026.7.20-rev1`): keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
+`make help` lists targets. `TAG` is `<upstream-version>-rev<N>` (e.g. `v2026.8.3-rev1`): keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
 
 ## Base pin
 
-`FROM` is pinned by **tag + digest**. The tag keeps the reference Renovate-trackable (an upstream bump opens an MR); the digest makes the build reproducible. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
+`FROM` is normally pinned by **tag + digest**: the tag keeps the reference Renovate-trackable and the digest makes the build reproducible. This `v2026.8.3` update is temporarily tag-only because the agent sandbox cannot access Docker Hub manifest metadata; restore the digest when registry inspection is available. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
 
 ## Bakes
 

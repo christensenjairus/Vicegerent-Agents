@@ -112,12 +112,12 @@ APPLIED_MARKER = "Vicegerent patch 0041"
 
 ANCHOR_COMMAND_DEF = (
     "    CommandDef(\"yolo\", \"Toggle YOLO mode (skip all dangerous command approvals)\",\n"
-    "               \"Configuration\"),\n"
+    "               \"Configuration\", busy_policy=\"dispatch\"),\n"
 )
 
 REPLACEMENT_COMMAND_DEF = (
     "    CommandDef(\"yolo\", \"Toggle YOLO mode (skip all dangerous command approvals)\",\n"
-    "               \"Configuration\"),\n"
+    "               \"Configuration\", busy_policy=\"dispatch\"),\n"
     "    # Vicegerent patch 0041: gateway_only=True because only the gateway\n"
     "    # (gateway/slash_commands.py::_handle_chatter_command) implements this\n"
     "    # command today -- unlike /yolo, /reasoning, /footer, and /verbose, there\n"
@@ -354,9 +354,9 @@ def _patch_gateway_run() -> None:
         print(f"patch: already applied to {path} -- no-op")
         return
 
-    _count_or_raise(src, ANCHOR_INIT_DICT, path, "__init__ session-override dict block")
-    src = src.replace(ANCHOR_INIT_DICT, REPLACEMENT_INIT_DICT, 1)
-
+    # v2026.8.3 moved most per-session maps into SessionState. /chatter remains a
+    # deliberately small legacy plain dict, initialized lazily by its handler;
+    # _clear_conversation_scope still clears registered plain-dict stores.
     _count_or_raise(src, ANCHOR_SCOPED_STATE, path, "_CONVERSATION_SCOPED_STATE tuple entries")
     src = src.replace(ANCHOR_SCOPED_STATE, REPLACEMENT_SCOPED_STATE, 1)
 
