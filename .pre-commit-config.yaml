@@ -36,6 +36,12 @@ repos:
         entry: python3 -m unittest scripts/test_check_markdown_soft_wrap.py
         files: ^scripts/(check-markdown-soft-wrap|test_check_markdown_soft_wrap)\.py$
         pass_filenames: false
+      - id: test-image-tag-validator
+        name: Image-tag validator tests
+        language: system
+        entry: python3 -m unittest scripts/test_validate_image_tags.py
+        files: ^scripts/(validate-image-tags|test_validate_image_tags)\.py$
+        pass_filenames: false
       - id: markdown-soft-wrap
         name: Markdown soft-wrap
         language: system
