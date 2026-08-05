@@ -143,7 +143,7 @@ validate:image-tag-bump:
   variables:
     GIT_DEPTH: "0"
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE != "merge_train"
       changes:
         - images/**/*
       when: on_success
@@ -152,6 +152,11 @@ validate:image-tag-bump:
     - apk add --no-cache curl git python3 2>/dev/null || true
   script:
     - git fetch --no-tags origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+    # A merged-results pipeline checks out a synthetic merge commit. Mutate only
+    # the real source head, or the generated commit would absorb target changes.
+    - source_sha="${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"
+    - git fetch --no-tags origin "$source_sha"
+    - git checkout --detach "$source_sha"
     - python3 scripts/validate-image-tags.py --bump-since "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
     - |
       if ! git diff --quiet; then
@@ -171,6 +176,23 @@ validate:image-tag-bump:
           --form "ref=${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}" \
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/trigger/pipeline"
       fi
+
+# Read-only final gate: the synthetic target parent includes every earlier train
+# car, so a reused sequential tag fails before GitLab can merge it.
+validate:image-tag-train:
+  stage: validate
+  image: harbor.hahomelabs.com/docker.io/alpine/k8s:1.36.2
+  interruptible: true
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"
+      when: on_success
+    - when: never
+  before_script:
+    - apk add --no-cache git python3 2>/dev/null || true
+  script:
+    - python3 scripts/validate-image-tags.py --train-since
 
 validate:tag-bump-head:
   stage: validate
