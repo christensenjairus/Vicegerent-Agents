@@ -156,10 +156,6 @@ resources:
     id: '148'
     kind: gitlab_project
     attr: {projectId: '148', hasReviewers: 'false', branch: production, isMrCreate: 'false'}
-  mr_targeting_development_branch:
-    id: '148'
-    kind: gitlab_project
-    attr: {projectId: '148', hasReviewers: 'false', branch: development, isMrCreate: 'false'}
   mr_created_against_protected_branch:
     # create_merge_request INTO main — allowed. Opening an MR against the
     # default branch is the normal shape of nearly every merge request; only a
@@ -324,7 +320,6 @@ tests:
         - mr_targeting_protected_branch
         - mr_targeting_master_branch
         - mr_targeting_production_branch
-        - mr_targeting_development_branch
       actions: [access]
     expected:
       - principal: hermes
@@ -335,9 +330,6 @@ tests:
         actions: {access: EFFECT_DENY}
       - principal: hermes
         resource: mr_targeting_production_branch
-        actions: {access: EFFECT_DENY}
-      - principal: hermes
-        resource: mr_targeting_development_branch
         actions: {access: EFFECT_DENY}
   - name: merge requests CREATED against a protected branch are allowed
     input:

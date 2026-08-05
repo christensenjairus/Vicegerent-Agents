@@ -16,7 +16,7 @@ set -uo pipefail
 
 readonly REAL_GIT=/usr/bin/git
 readonly TRUSTED_HOOKS=/opt/vicegerent/git-hooks
-readonly PROTECTED='development|main|master|production'
+readonly PROTECTED='main|master|production'
 readonly MAX_ALIAS_DEPTH=10
 
 die() {

@@ -30,7 +30,7 @@ if [ "${hook}" = "pre-push" ]; then
     trap 'rm -f "${spool}"' EXIT INT TERM
     cat > "${spool}"
 
-    protected='development main master production'
+    protected='main master production'
     blocked=''
     while read -r _local_ref local_sha remote_ref _remote_sha; do
         [ -n "${remote_ref:-}" ] || continue

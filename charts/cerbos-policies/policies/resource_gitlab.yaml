@@ -134,7 +134,7 @@ resourcePolicy:
         match:
           expr: >-
             has(request.resource.attr.branch) && request.resource.attr.branch != ""
-            && request.resource.attr.branch in ["development", "main", "master", "production"]
+            && request.resource.attr.branch in ["main", "master", "production"]
             && has(request.resource.attr.isMrCreate)
             && request.resource.attr.isMrCreate != "true"
       output:

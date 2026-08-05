@@ -3,7 +3,7 @@ workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "pipeline"
-    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "development")
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_PIPELINE_SOURCE == "web"
 
@@ -204,7 +204,6 @@ validate:renovate-config:
   interruptible: true
   variables:
     DOCKER_BUILDKIT: "1"
-    IMAGE_DIR: ""
   before_script:
     - test -n "$DOCKER_AUTH_CONFIG" || { echo "DOCKER_AUTH_CONFIG is required to publish images." >&2; exit 1; }
     - mkdir -p "$DOCKER_CONFIG"
@@ -224,50 +223,50 @@ validate:renovate-config:
 image:publish:agentgateway:
   extends: .image-publish
   rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "development")
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes: [images/agentgateway-proxy/**/*]
-  variables:
-    IMAGE_DIR: images/agentgateway-proxy
+  script:
+    - make -C images/agentgateway-proxy release
 
 image:publish:aws-api-mcp-server:
   extends: .image-publish
   rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "development")
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes: [images/aws-api-mcp-server/**/*]
-  variables:
-    IMAGE_DIR: images/aws-api-mcp-server
+  script:
+    - make -C images/aws-api-mcp-server release
 
 image:publish:aws-profiles-mcp:
   extends: .image-publish
   rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "development")
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes: [images/aws-profiles-mcp/**/*]
-  variables:
-    IMAGE_DIR: images/aws-profiles-mcp
+  script:
+    - make -C images/aws-profiles-mcp release
 
 image:publish:hermes:
   extends: .image-publish
   rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "development")
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes: [images/hermes/**/*]
-  variables:
-    IMAGE_DIR: images/hermes
+  script:
+    - make -C images/hermes release
 
 image:publish:kubernetes-mcp-server:
   extends: .image-publish
   rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "development")
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes: [images/kubernetes-mcp-server/**/*]
-  variables:
-    IMAGE_DIR: images/kubernetes-mcp-server
+  script:
+    - make -C images/kubernetes-mcp-server release
 
 image:publish:mcp-cerbos-shim:
   extends: .image-publish
   rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "development")
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes: [images/mcp-cerbos-shim/**/*]
-  variables:
-    IMAGE_DIR: images/mcp-cerbos-shim
+  script:
+    - make -C images/mcp-cerbos-shim release
 
 # Explicit retry path for a failed main publication. It rebuilds the current immutable
 # release tags; it does not mint versions or alter deployment references.
