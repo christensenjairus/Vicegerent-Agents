@@ -163,6 +163,15 @@ _PRICES: tuple[P, ...] = (
     P("zai", "glm-4.7-flash", "0.10", "0.60", "0.02", None, _ZAI_DOCS, "zai-pricing-2026-07"),
 )
 
+# Retire the pre-V4 DeepSeek identifiers from both pricing surfaces. They are
+# not valid configured targets; retaining their historical rate cards leaves
+# agentburn able to report obsolete DeepSeek pricing after the V4 migration.
+_RETIRED_DEEPSEEK_MODELS = (
+    "deepseek-chat",
+    "deepseek-reasoner",
+    "deepseek-v3.2",
+)
+
 # ---------------------------------------------------------------------------
 # Sink 1: agent/usage_pricing.py -- live session billing + Slack footer
 # ---------------------------------------------------------------------------
@@ -279,6 +288,10 @@ def _patch_usage_pricing() -> None:
         "_OFFICIAL_DOCS_PRICING.update({\n"
         f"{entries}\n"
         "})\n"
+        "# V4 is the supported DeepSeek family; remove legacy entries inherited\n"
+        "# from the upstream snapshot rather than leaving obsolete prices live.\n"
+        f"for _model in {_RETIRED_DEEPSEEK_MODELS!r}:\n"
+        "    _OFFICIAL_DOCS_PRICING.pop((\"deepseek\", _model), None)\n"
     )
 
     compile(src, path, "exec")
@@ -366,6 +379,9 @@ def _patch_agentburn_prices() -> None:
         "# fail-loud) is intentional: upstream PRICES is an OpenRouter median\n"
         "# snapshot, ours are official rate-card figures.\n"
         "PRICES.update({\n" + "\n".join(rows) + "\n})\n"
+        "# V4 is the supported DeepSeek family; remove inherited legacy prices.\n"
+        f"for _model in {_RETIRED_DEEPSEEK_MODELS!r}:\n"
+        "    PRICES.pop(f\"deepseek/{_model}\", None)\n"
     )
 
     compile(src, path, "exec")
