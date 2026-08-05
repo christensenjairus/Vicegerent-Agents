@@ -43,6 +43,7 @@ REPO = Path(__file__).resolve().parent.parent
 DEFAULTS = REPO / "values.defaults.yaml"
 EXAMPLE = REPO / "values.example.yaml"
 PROVIDERS = ("anthropic", "openai", "deepseek", "zai")
+RETIRED_DEEPSEEK_MODELS = ("deepseek-chat", "deepseek-reasoner", "deepseek-v3.2")
 
 VERBOSE = "--verbose" in sys.argv
 
@@ -387,6 +388,22 @@ def main() -> int:
     if burn is None:
         _log("INFO - agentburn.prices not importable; skipping burn_report sink check")
         return 0
+    retired_live = [
+        model for model in RETIRED_DEEPSEEK_MODELS
+        if ("deepseek", model) in usage_pricing._OFFICIAL_DOCS_PRICING
+    ]
+    retired_burn = [
+        model for model in RETIRED_DEEPSEEK_MODELS
+        if burn.lookup(f"deepseek/{model}") is not None
+    ]
+    if retired_live or retired_burn:
+        _log("\nFAIL - retired DeepSeek models remain in a pricing surface:")
+        if retired_live:
+            _log(f"  live billing: {', '.join(retired_live)}")
+        if retired_burn:
+            _log(f"  agentburn: {', '.join(retired_burn)}")
+        _log("\nRemove retired DeepSeek entries from both patched pricing sinks.")
+        return 1
     missing = []
     for provider, model, base_url in pairs:
         route = usage_pricing.resolve_billing_route(
@@ -406,6 +423,7 @@ def main() -> int:
         return 1
     _log(f"OK - all {len(pairs)} routes are also priced in the agentburn "
          "burn_report sink")
+    _log("OK - retired DeepSeek models are absent from both pricing sinks")
     return 0
 
 
