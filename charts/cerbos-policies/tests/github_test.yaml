@@ -68,6 +68,10 @@ resources:
     id: christensenjairus/vicegerent-agents
     kind: github_repo
     attr: {owner: christensenjairus, repo: vicegerent-agents, branch: production}
+  push_to_development:
+    id: christensenjairus/vicegerent-agents
+    kind: github_repo
+    attr: {owner: christensenjairus, repo: vicegerent-agents, branch: development}
   push_to_feature_branch:
     id: christensenjairus/vicegerent-agents
     kind: github_repo
@@ -325,6 +329,7 @@ tests:
         - push_to_main
         - create_or_update_file_on_master
         - create_branch_named_production
+        - push_to_development
         - push_to_main_disallowed_repo
       actions: [access]
     expected:
@@ -336,6 +341,9 @@ tests:
         actions: {access: EFFECT_DENY}
       - principal: hermes
         resource: create_branch_named_production
+        actions: {access: EFFECT_DENY}
+      - principal: hermes
+        resource: push_to_development
         actions: {access: EFFECT_DENY}
       - principal: hermes
         resource: push_to_main_disallowed_repo

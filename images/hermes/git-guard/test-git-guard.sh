@@ -70,7 +70,7 @@ echo seed > f
 # Ground truth: did the protected ref actually land on the remote?
 remote_has() { "${REAL_GIT}" --git-dir="${REMOTE}" show-ref -q "refs/heads/$1"; }
 reset_remote() {
-    for b in main master production; do
+    for b in development main master production; do
         "${REAL_GIT}" --git-dir="${REMOTE}" update-ref -d "refs/heads/${b}" 2>/dev/null
     done
 }
@@ -129,6 +129,7 @@ blocked "push --all"                      git push --all origin
 blocked "push --mirror"                   git push --mirror origin
 blocked "push master"                     git push origin HEAD:master
 blocked "push production"                 git push origin HEAD:production
+blocked "push development"                git push origin HEAD:development
 blocked "-c core.hooksPath= + push main"  git -c core.hooksPath=/dev/null push origin HEAD:main
 blocked "-ccore.hooksPath= (glued)"       git -ccore.hooksPath=/dev/null push origin HEAD:main
 blocked "--config-env core.hooksPath"     git --config-env core.hooksPath=EVIL push origin HEAD:main
@@ -249,6 +250,13 @@ if remote_has main; then
     no "real git push HEAD:main" "hook did not fire"
 else
     ok "real git push HEAD:main caught by global pre-push hook"
+fi
+reset_remote
+"${REAL_GIT}" push origin HEAD:development >/dev/null 2>&1
+if remote_has development; then
+    no "real git push HEAD:development" "hook did not fire"
+else
+    ok "real git push HEAD:development caught by global pre-push hook"
 fi
 reset_remote
 
