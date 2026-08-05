@@ -291,12 +291,12 @@ RUN rm -rf /seed/mnemosyne/models/.cache \
 # `rm`. Cache mounts keep the uv/npm download caches out of the image while
 # still speeding up rebuilds.
 # ---------------------------------------------------------------------------
-FROM nousresearch/hermes-agent:v2026.7.20@sha256:f7b35053268f532f98955195c909f15a230470fbcbdacaa9fdecb95707dad04a
+FROM nousresearch/hermes-agent:v2026.8.3
 
 LABEL org.opencontainers.image.title="vicegerent-hermes-agent" \
       org.opencontainers.image.description="Vicegerent derivation of nousresearch/hermes-agent" \
       org.opencontainers.image.source="https://gitlab.hahomelabs.com/jchristensen/vicegerent-agents" \
-      org.opencontainers.image.base.name="docker.io/nousresearch/hermes-agent:v2026.7.20"
+      org.opencontainers.image.base.name="docker.io/nousresearch/hermes-agent:v2026.8.3"
 
 # requirements.txt tools (pre-commit, detect-secrets, yamlfix) live here but aren't on PATH upstream.
 # ENV covers non-login shells (exec sessions); /etc/profile.d re-prepends it since Debian's /etc/profile

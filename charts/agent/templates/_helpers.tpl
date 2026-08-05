@@ -406,7 +406,7 @@ display:
       long_running_notifications: false
       runtime_footer:
         enabled: true
-        fields: [model, effort, context_pct, cost, duration]
+        fields: [model, effort, context_pct, cost, latency]
       file_mutation_verifier: false
       memory_notifications: "off"
       busy_ack_enabled: false

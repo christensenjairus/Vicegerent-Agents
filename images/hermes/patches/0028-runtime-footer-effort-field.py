@@ -9,7 +9,7 @@ display.runtime_footer.fields (or its per-platform override) is silently
 dropped -- see the function's own trailing comment "Unknown field names are
 silently ignored." There is no way to show the current reasoning-effort
 level in the footer even though gateway/run.py already tracks it on the
-gateway instance (self._reasoning_config, set from
+gateway instance (self._runner._reasoning_config, set from
 hermes_constants.resolve_reasoning_config() -- see run.py's
 _load_reasoning_config()/_resolve_session_reasoning_config()).
 
@@ -28,8 +28,8 @@ Two files, wired together as one patch:
    (the early-return and the final-return, immediately adjacent to their
    existing "model": _resolved_model / "context_length": _context_length
    keys) gain a new "reasoning_effort" key, sourced from
-   self._reasoning_config (already tracked on the gateway instance -- see
-   run.py's `self._reasoning_config = reasoning_config` a few lines above
+   self._runner._reasoning_config (already tracked on the gateway instance -- see
+   run.py's `self._runner._reasoning_config = reasoning_config` a few lines above
    each return, assigned earlier in the same method invocation). The
    build_footer_line() call site then reads
    agent_result.get("reasoning_effort") and forwards it as `effort=`.
@@ -53,6 +53,7 @@ ANCHOR_FORMAT_SIG = (
     "    context_tokens: int,\n"
     "    context_length: Optional[int],\n"
     "    cwd: Optional[str] = None,\n"
+    "    turn_seconds: Optional[float] = None,\n"
     "    fields: Iterable[str] = _DEFAULT_FIELDS,\n"
     ") -> str:\n"
 )
@@ -64,6 +65,7 @@ REPLACEMENT_FORMAT_SIG = (
     "    context_tokens: int,\n"
     "    context_length: Optional[int],\n"
     "    cwd: Optional[str] = None,\n"
+    "    turn_seconds: Optional[float] = None,\n"
     "    effort: Optional[str] = None,\n"
     "    fields: Iterable[str] = _DEFAULT_FIELDS,\n"
     ") -> str:\n"
@@ -99,6 +101,7 @@ ANCHOR_BUILD_SIG = (
     "    context_tokens: int,\n"
     "    context_length: Optional[int],\n"
     "    cwd: Optional[str] = None,\n"
+    "    turn_seconds: Optional[float] = None,\n"
     ") -> str:\n"
 )
 
@@ -111,6 +114,7 @@ REPLACEMENT_BUILD_SIG = (
     "    context_tokens: int,\n"
     "    context_length: Optional[int],\n"
     "    cwd: Optional[str] = None,\n"
+    "    turn_seconds: Optional[float] = None,\n"
     "    effort: Optional[str] = None,\n"
     ") -> str:\n"
 )
@@ -121,6 +125,7 @@ ANCHOR_BUILD_CALL = (
     "        context_tokens=context_tokens,\n"
     "        context_length=context_length,\n"
     "        cwd=cwd,\n"
+    "        turn_seconds=turn_seconds,\n"
     "        fields=cfg.get(\"fields\") or _DEFAULT_FIELDS,\n"
     "    )\n"
 )
@@ -131,6 +136,7 @@ REPLACEMENT_BUILD_CALL = (
     "        context_tokens=context_tokens,\n"
     "        context_length=context_length,\n"
     "        cwd=cwd,\n"
+    "        turn_seconds=turn_seconds,\n"
     "        effort=effort,\n"
     "        fields=cfg.get(\"fields\") or _DEFAULT_FIELDS,\n"
     "    )\n"
@@ -139,57 +145,57 @@ REPLACEMENT_BUILD_CALL = (
 # --- gateway/run.py anchors -------------------------------------------------
 
 ANCHOR_RETURN_EARLY = (
-    "                    \"model\": _resolved_model,\n"
-    "                    \"context_length\": _context_length,\n"
-    "                }\n"
+    "                \"model\": _resolved_model,\n"
+    "                \"context_length\": _context_length,\n"
+    "            }\n"
     "\n"
-    "            # Scan tool results for MEDIA:<path> tags"
+    "        # Scan tool results for MEDIA:<path> tags"
 )
 
 REPLACEMENT_RETURN_EARLY = (
-    "                    \"model\": _resolved_model,\n"
-    "                    \"context_length\": _context_length,\n"
-    "                    # Vicegerent patch 0028: feeds runtime_footer.py's\n"
-    "                    # \"effort\" field.\n"
-    "                    \"reasoning_effort\": (\n"
-    "                        \"none\"\n"
-    "                        if isinstance(self._reasoning_config, dict)\n"
-    "                        and self._reasoning_config.get(\"enabled\") is False\n"
-    "                        else (\n"
-    "                            str((self._reasoning_config or {}).get(\"effort\", \"\") or \"\")\n"
-    "                            if isinstance(self._reasoning_config, dict)\n"
-    "                            else \"\"\n"
-    "                        )\n"
-    "                    ),\n"
-    "                }\n"
-    "\n"
-    "            # Scan tool results for MEDIA:<path> tags"
-)
-
-ANCHOR_RETURN_FINAL = (
     "                \"model\": _resolved_model,\n"
     "                \"context_length\": _context_length,\n"
-    "                \"session_id\": effective_session_id,\n"
-    "                \"response_previewed\": result.get(\"response_previewed\", False),\n"
-)
-
-REPLACEMENT_RETURN_FINAL = (
-    "                \"model\": _resolved_model,\n"
-    "                \"context_length\": _context_length,\n"
-    "                # Vicegerent patch 0028: feeds runtime_footer.py's \"effort\"\n"
-    "                # field.\n"
+    "                # Vicegerent patch 0028: feeds runtime_footer.py's\n"
+    "                # \"effort\" field.\n"
     "                \"reasoning_effort\": (\n"
     "                    \"none\"\n"
-    "                    if isinstance(self._reasoning_config, dict)\n"
-    "                    and self._reasoning_config.get(\"enabled\") is False\n"
+    "                    if isinstance(self._runner._reasoning_config, dict)\n"
+    "                    and self._runner._reasoning_config.get(\"enabled\") is False\n"
     "                    else (\n"
-    "                        str((self._reasoning_config or {}).get(\"effort\", \"\") or \"\")\n"
-    "                        if isinstance(self._reasoning_config, dict)\n"
+    "                        str((self._runner._reasoning_config or {}).get(\"effort\", \"\") or \"\")\n"
+    "                        if isinstance(self._runner._reasoning_config, dict)\n"
     "                        else \"\"\n"
     "                    )\n"
     "                ),\n"
-    "                \"session_id\": effective_session_id,\n"
-    "                \"response_previewed\": result.get(\"response_previewed\", False),\n"
+    "            }\n"
+    "\n"
+    "        # Scan tool results for MEDIA:<path> tags"
+)
+
+ANCHOR_RETURN_FINAL = (
+    "            \"model\": _resolved_model,\n"
+    "            \"context_length\": _context_length,\n"
+    "            \"session_id\": effective_session_id,\n"
+    "            \"response_previewed\": result.get(\"response_previewed\", False),\n"
+)
+
+REPLACEMENT_RETURN_FINAL = (
+    "            \"model\": _resolved_model,\n"
+    "            \"context_length\": _context_length,\n"
+    "            # Vicegerent patch 0028: feeds runtime_footer.py's \"effort\"\n"
+    "            # field.\n"
+    "            \"reasoning_effort\": (\n"
+    "                \"none\"\n"
+    "                if isinstance(self._runner._reasoning_config, dict)\n"
+    "                and self._runner._reasoning_config.get(\"enabled\") is False\n"
+    "                else (\n"
+    "                    str((self._runner._reasoning_config or {}).get(\"effort\", \"\") or \"\")\n"
+    "                    if isinstance(self._runner._reasoning_config, dict)\n"
+    "                    else \"\"\n"
+    "                )\n"
+    "            ),\n"
+    "            \"session_id\": effective_session_id,\n"
+    "            \"response_previewed\": result.get(\"response_previewed\", False),\n"
 )
 
 ANCHOR_FOOTER_CALL = (
@@ -200,6 +206,7 @@ ANCHOR_FOOTER_CALL = (
     "                    context_tokens=agent_result.get(\"last_prompt_tokens\", 0) or 0,\n"
     "                    context_length=agent_result.get(\"context_length\") or None,\n"
     "                    cwd=os.environ.get(\"TERMINAL_CWD\", \"\"),\n"
+    "                    turn_seconds=_turn_seconds,\n"
     "                )\n"
 )
 
@@ -214,6 +221,7 @@ REPLACEMENT_FOOTER_CALL = (
     "                    # Vicegerent patch 0028: see runtime_footer.py for the\n"
     "                    # other half of this field.\n"
     "                    effort=agent_result.get(\"reasoning_effort\") or None,\n"
+    "                    turn_seconds=_turn_seconds,\n"
     "                )\n"
 )
 

@@ -163,11 +163,9 @@ EXCEPTION_ANCHOR = (
     "                \"MCP tool %s/%s call failed: %s\",\n"
     "                server_name, tool_name, exc,\n"
     "            )\n"
-    "            return json.dumps({\n"
-    "                \"error\": _sanitize_error(\n"
-    "                    f\"MCP call failed: {type(exc).__name__}: {_exc_str(exc)}\"\n"
-    "                )\n"
-    "            }, ensure_ascii=False)"
+    "            return tool_error(_sanitize_error(\n"
+    "                f\"MCP call failed: {type(exc).__name__}: {_exc_str(exc)}\"\n"
+    "            ))"
 )
 
 EXCEPTION_REPLACEMENT = (
@@ -192,11 +190,9 @@ EXCEPTION_REPLACEMENT = (
     "                \"MCP tool %s/%s call failed: %s\",\n"
     "                server_name, tool_name, exc,\n"
     "            )\n"
-    "            return json.dumps({\n"
-    "                \"error\": _sanitize_error(\n"
-    "                    f\"MCP call failed: {type(exc).__name__}: {_exc_str(exc)}\"\n"
-    "                )\n"
-    "            }, ensure_ascii=False)"
+    "            return tool_error(_sanitize_error(\n"
+    "                f\"MCP call failed: {type(exc).__name__}: {_exc_str(exc)}\"\n"
+    "            ))"
 )
 
 # Idempotence markers: unique tokens from each replacement so a re-run is a
