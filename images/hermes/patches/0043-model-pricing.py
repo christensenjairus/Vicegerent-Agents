@@ -29,12 +29,7 @@ date suffixes before comparing):
     in burn_report while the live footer says nothing.
   * 49 models priced in usage_pricing but NOT in agentburn -- the reverse.
   * 17 models duplicated across both, i.e. two hand-maintained copies of the
-    same number, and 1 of those 17 had already silently drifted:
-    deepseek/deepseek-chat was (0.32, 0.89) in agentburn vs (0.14, 0.28) in
-    usage_pricing. usage_pricing is correct -- deepseek-chat was deprecated
-    2026-07-24 and now aliases deepseek-v4-flash's rates; agentburn still held
-    the pre-deprecation OpenRouter median. That is a 2.3x cost overstatement in
-    burn_report, and nothing would ever have caught it.
+    same number. The canonical table below eliminates that drift class.
 
 Two REAL gaps this consolidation surfaced, beyond the opus-5 one it started as
 (both are models this repo actually configures in values.defaults.yaml):
@@ -66,8 +61,8 @@ Conflict handling differs per sink, deliberately:
 
   agentburn -- OVERWRITE. Its PRICES table is self-described as an OpenRouter
       *median-endpoint snapshot*, not official rates, so our official-docs
-      numbers are strictly better and disagreement is expected (see the
-      deepseek-chat case above). Overwriting is the point.
+      numbers are strictly better and disagreement is expected. Overwriting is
+      the point.
 
 Both sinks are patched by APPENDING a block at module EOF rather than splicing
 into the dict literal. 0038 and the old 0043 both anchored on exact neighboring
@@ -118,6 +113,7 @@ class P(NamedTuple):
 # ---------------------------------------------------------------------------
 _ANTHROPIC_DOCS = "https://platform.claude.com/docs/en/about-claude/pricing"
 _OPENAI_DOCS = "https://platform.openai.com/docs/pricing"
+_DEEPSEEK_DOCS = "https://api-docs.deepseek.com/quick_start/pricing"
 _ZAI_DOCS = "https://docs.z.ai/guides/overview/pricing"
 
 _PRICES: tuple[P, ...] = (
@@ -146,6 +142,16 @@ _PRICES: tuple[P, ...] = (
     P("openai", "gpt-5.5-pro", "30.00", "180.00", None, None,
       _OPENAI_DOCS, "openai-pricing-2026-07"),
 
+    # ── DeepSeek ─────────────────────────────────────────────────────────
+    # V4 Pro is the configured DeepSeek primary/MoA model; Flash is used for
+    # auxiliary and Mnemosyne work. Keep their official rates in this canonical
+    # table even when the upstream snapshot supplies them, so both billing sinks
+    # remain pinned to the configured V4 family.
+    P("deepseek", "deepseek-v4-pro", "0.435", "0.87", "0.003625", None,
+      _DEEPSEEK_DOCS, "deepseek-pricing-2026-07"),
+    P("deepseek", "deepseek-v4-flash", "0.14", "0.28", "0.0028", None,
+      _DEEPSEEK_DOCS, "deepseek-pricing-2026-07"),
+
     # ── Z.ai (GLM) ───────────────────────────────────────────────────────
     # glm-5/5.1/5.2 were added by 0038; kept here verbatim so deleting 0038
     # loses nothing. glm-4.7-flash is NEW -- it is
@@ -157,27 +163,15 @@ _PRICES: tuple[P, ...] = (
     P("zai", "glm-4.7-flash", "0.10", "0.60", "0.02", None, _ZAI_DOCS, "zai-pricing-2026-07"),
 )
 
-# agentburn-only corrections: models upstream agentburn prices from a stale
-# OpenRouter median where usage_pricing already holds the correct official
-# rate. Keyed by agentburn slug -> (in, out). Kept separate from _PRICES
-# because these must NOT be added to usage_pricing (it is already right).
-_BURN_CORRECTIONS: dict[str, tuple[str, str]] = {
-    # Deprecated 2026-07-24; now aliases deepseek-v4-flash's rates. agentburn
-    # still held the pre-deprecation median (0.32/0.89) = 2.3x overstatement.
-    "deepseek/deepseek-chat": ("0.14", "0.28"),
-}
-
-
 # ---------------------------------------------------------------------------
 # Sink 1: agent/usage_pricing.py -- live session billing + Slack footer
 # ---------------------------------------------------------------------------
 
 # The billing-route branches. 0038 contributed the zai/glm one; the deepseek
 # one is NEW and fixes a dead-table bug found by the global audit:
-# _OFFICIAL_DOCS_PRICING already ships 4 deepseek entries (deepseek-chat,
-# deepseek-reasoner, deepseek-v4-flash, deepseek-v4-pro) but
+# _OFFICIAL_DOCS_PRICING already ships DeepSeek entries, but
 # resolve_billing_route() had NO deepseek branch, so every deepseek session
-# fell through to billing_mode="unknown" and those 4 price entries were
+# fell through to billing_mode="unknown" and those entries were
 # unreachable — priced on paper, unbillable in practice. Same latent shape as
 # the zai gap 0038 fixed. (google/ and bedrock/ entries are likewise
 # unreachable, but this repo routes to neither, so they are left alone and
@@ -362,10 +356,6 @@ def _patch_agentburn_prices() -> None:
             f"({float(entry.input_cost_per_million)}, "
             f"{float(entry.output_cost_per_million)}),"
         )
-
-    # Explicit corrections last so they win over the mirrored value.
-    for slug, (inp, out) in sorted(_BURN_CORRECTIONS.items()):
-        rows.append(f'    "{slug}": ({float(inp)}, {float(out)}),  # corrects stale median')
 
     src += (
         f"\n\n# {APPLIED_MARKER}: canonical vicegerent model prices.\n"
