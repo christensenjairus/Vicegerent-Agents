@@ -3,10 +3,6 @@
 // params/mapping/eval/Cerbos errors deny. Responses are pass or error, except
 // a tool with a mapping `force` set, which allows via a mutated
 // (rewritten-args) result instead of a bare pass — never on a denied call.
-// resources/read and prompts/get responses also pass through secret
-// redaction (redactableResponseMethods) even though they carry no Cerbos
-// authz of their own (HAH-101) — see the resourcesRead/promptsGet doc
-// comment below for why authz and redaction diverge for these two methods.
 package server
 
 import (
@@ -81,26 +77,15 @@ var selfLookupTools = map[string]struct{}{
 
 const toolsCall = "tools/call"
 
-// resources/read and prompts/get carry response bodies that can contain
-// secret-shaped strings just like a tools/call result, so both are routed
-// through CheckResponse's redaction path (HAH-101). Neither carries an
-// authorizable resource/action pair the way tools/call does -- no mapping
-// entry exists to build a Cerbos resource from a resource URI or prompt
-// name -- so CheckRequest still only evaluates Cerbos authz for tools/call;
-// these two just get the secret-redaction pass on their way out.
 const resourcesRead = "resources/read"
 const promptsGet = "prompts/get"
+const tasksGet = "tasks/get"
 
-// redactableResponseMethods are the JSON-RPC methods whose response bodies
-// CheckResponse scrubs for secret-shaped values. tools/call is the original
-// (and only fully-authorized) member; resources/read and prompts/get were
-// added by HAH-101 to close the redaction gap those methods previously had
-// -- CheckResponse used to no-op unconditionally for anything but
-// tools/call, so a resource/prompt response never got scrubbed at all.
 var redactableResponseMethods = map[string]bool{
 	toolsCall:     true,
 	resourcesRead: true,
 	promptsGet:    true,
+	tasksGet:      true,
 }
 
 // The Notion existing-page-write ancestry gate keys off the mapped resource,
@@ -1804,13 +1789,12 @@ func (s *Server) CheckResponse(ctx context.Context, resp *pb.McpResponse) (*pb.M
 	if n == 0 {
 		return responsePass(), nil
 	}
-	log.Printf("redact: %d secret-shaped value(s) scrubbed from a tool result (backend=%v)", n, resp.GetServiceNames())
+	log.Printf("redact: %d secret-shaped value(s) scrubbed from an MCP response (method=%s backend=%v)", n, resp.GetMethod(), resp.GetServiceNames())
 	return responseMutate(redacted), nil
 }
 
 // checkPromptInjection runs the two-stage prompt-injection gate (HAH-107)
-// over raw (the same tools/call, resources/read, or prompts/get response
-// body redaction runs on). A no-op (false, "") when the gate is disabled
+// over redactable MCP responses. A no-op (false, "") when the gate is disabled
 // (nil detector, the per-cluster PROMPT_INJECTION_DETECTION toggle in
 // main.go).
 //
@@ -1851,9 +1835,8 @@ func (s *Server) CheckResponse(ctx context.Context, resp *pb.McpResponse) (*pb.M
 // muxed through one AgentgatewayBackend target. There is therefore no
 // signal here to scope detection to only the read-shaped tools the ticket
 // names (firecrawl_scrape, tavily_extract, notion-fetch, jira_get_issue,
-// github pull_request_read, gitlab get_merge_request_diffs, ...) -- this
-// scans EVERY tools/call/resources/read/prompts/get response body when the
-// gate is enabled, matching the broad-by-default posture WithModeration
+// github pull_request_read, gitlab get_merge_request_diffs, ...). This scans
+// every redactable response when enabled, matching the broad-by-default posture WithModeration
 // takes for unmapped backends, but now with a real cost (stage 2 is not
 // free) -- that's acceptable because stage 2 only runs on stage-1 matches,
 // which are rare in ordinary traffic, and maxJudgeCallsPerResponse bounds

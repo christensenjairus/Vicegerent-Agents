@@ -4,7 +4,7 @@ Regexes are the canonical images/mcp-cerbos-shim/internal/server/secret-patterns
 render via `helm --set-file secretPatterns=…` (the same file the shim embeds via //go:embed and the
 egress-proxy scrubber renders from); `required` + the empty-list guard fail the render closed.
 Custom regex, NOT agentgateway `builtins:` — those carry an unscored bare \b[0-9]{9}\b that self-rejects ordinary numeric content (rationale in MR).
-action: Mask depends on the shipped agentgateway-proxy mask patch; do NOT set streaming: Enabled — v1.3.1 has no streaming-mask path, so it is a silent no-op.
+Do NOT set streaming: Enabled: agentgateway v1.4.1 supports buffered Mask actions but still does not support masking streaming responses.
 */}}
 {{- define "platform.promptGuard" -}}
 {{- $defs := .Values.secretPatterns | required "platform: secretPatterns unset — render with helm --set-file secretPatterns=images/mcp-cerbos-shim/internal/server/secret-patterns.json" | fromJsonArray -}}

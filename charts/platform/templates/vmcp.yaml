@@ -72,6 +72,8 @@ spec:
               tools/call: Full
               resources/read: Response
               prompts/get: Response
+              tasks/get: Response
+              tasks/cancel: "Off"
             remote:
               backendRef:
                 name: mcp-cerbos-shim
@@ -155,6 +157,8 @@ spec:
         processors:
           - methods:
               tools/call: Request
+              tasks/get: "Off"
+              tasks/cancel: "Off"
             remote:
               backendRef:
                 name: mcp-cerbos-shim
