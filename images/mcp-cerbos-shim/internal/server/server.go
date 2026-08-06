@@ -3,10 +3,6 @@
 // params/mapping/eval/Cerbos errors deny. Responses are pass or error, except
 // a tool with a mapping `force` set, which allows via a mutated
 // (rewritten-args) result instead of a bare pass — never on a denied call.
-// resources/read and prompts/get responses also pass through secret
-// redaction (redactableResponseMethods) even though they carry no Cerbos
-// authz of their own (HAH-101) — see the resourcesRead/promptsGet doc
-// comment below for why authz and redaction diverge for these two methods.
 package server
 
 import (
@@ -28,79 +24,31 @@ import (
 	pb "github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/proto/gen"
 )
 
-// internalBackendName is the AgentgatewayBackend the shim's own re-entrant
-// lookups are ROUTED to (the :81 vmcp-internal route -- see
-// upstream.DefaultVMCPURL and charts/platform/templates/vmcp.yaml). That route
-// runs CheckRequest only (no CheckResponse), which is what breaks the
-// shim<->agentgateway prompt-injection loop.
-//
-// It is NOT a reliable way to recognize the shim's own traffic, and must not be
-// used as one. ext_mcp.proto documents service_names as backend names "in their
-// native (unmuxed) namespace": that is the MCP *target* name from
-// spec.mcp.targets[].name, NOT the AgentgatewayBackend resource's
-// metadata.name. Both vmcp.yaml backends front the same host vMCP and so both
-// declare `targets: [- name: vmcp]`, meaning a re-entrant lookup arrives with
-// service_names=["vmcp"] -- identical to agent traffic. Matching this constant
-// against it never fired, and the shim's own gitlab_get_project lookup fell
-// through to the normal gating path and re-entered the canonicalization gate
-// that issued it (recursion, observed in production as 40+ identical denies per
-// agent call). The self-token is the identifier that actually distinguishes the
-// two paths; see isSelfRequest and the recursion guard in CheckRequest.
+// internalBackendName is the distinct MCP target name used by the shim's
+// re-entrant route. Its required methods are request-only. ExtMcp service_names
+// carries this target name, not the AgentgatewayBackend resource name.
 const internalBackendName = "vmcp-internal"
-
-// selfLookupTools are the read-only tools the shim itself calls on its own
-// re-entrant lookups (internal/upstream), for the subset that mapping.yaml also
-// gates. A call for one of these MUST never be run through the gate that issues
-// it: the GitLab canonicalization gate resolves a project by calling
-// gitlab_get_project, and gitlab_get_project is itself mapped to
-// gitlab_project/access, so gating the shim's own lookup makes the gate call
-// itself. The recursion is bounded only by the upstream deadline and each level
-// spawns another, so ONE agent call becomes a storm (observed in production:
-// 40+ identical denies per call).
-//
-// All four entries are structurally recursive in exactly this way; GitLab's is
-// simply the one that fired, because it is the only gate whose lookup tool is
-// mapped to the same resource the gate itself resolves. The other lookup tools
-// the shim calls (notion_notion-fetch, linear_get_issue, linear_get_project,
-// notion_notion-search, pagerduty_*get_incident, alertmanager_*getSilences) are
-// deliberately absent: they are unmapped, so they never reach a gate and adding
-// them here would widen the bypass for no benefit.
-//
-// This is a defence-in-depth backstop keyed on the tool name, which is intrinsic
-// to the call and cannot be lost in transport the way a backend name was. It is
-// deliberately independent of the routing config, because the recursion it
-// prevents is a self-inflicted outage rather than a policy decision. It is
-// gated on an authenticated self-token, so an AGENT calling any of these tools
-// directly is unaffected and stays fully gated.
-var selfLookupTools = map[string]struct{}{
-	"gitlab_get_project":       {},
-	"gitlab_get_merge_request": {},
-	"github_pull_request_read": {},
-	"jira_jira_get_issue":      {},
-}
 
 const toolsCall = "tools/call"
 
-// resources/read and prompts/get carry response bodies that can contain
-// secret-shaped strings just like a tools/call result, so both are routed
-// through CheckResponse's redaction path (HAH-101). Neither carries an
-// authorizable resource/action pair the way tools/call does -- no mapping
-// entry exists to build a Cerbos resource from a resource URI or prompt
-// name -- so CheckRequest still only evaluates Cerbos authz for tools/call;
-// these two just get the secret-redaction pass on their way out.
+var internalAllowedRequestMethods = map[string]bool{
+	"initialize":                true,
+	"notifications/initialized": true,
+	"tools/list":                true,
+	toolsCall:                   true,
+}
+
 const resourcesRead = "resources/read"
 const promptsGet = "prompts/get"
+const tasksGet = "tasks/get"
+const tasksUpdate = "tasks/update"
 
-// redactableResponseMethods are the JSON-RPC methods whose response bodies
-// CheckResponse scrubs for secret-shaped values. tools/call is the original
-// (and only fully-authorized) member; resources/read and prompts/get were
-// added by HAH-101 to close the redaction gap those methods previously had
-// -- CheckResponse used to no-op unconditionally for anything but
-// tools/call, so a resource/prompt response never got scrubbed at all.
 var redactableResponseMethods = map[string]bool{
 	toolsCall:     true,
 	resourcesRead: true,
 	promptsGet:    true,
+	tasksGet:      true,
+	tasksUpdate:   true,
 }
 
 // The Notion existing-page-write ancestry gate keys off the mapped resource,
@@ -358,16 +306,9 @@ type Server struct {
 	decider   authz.Decider
 	principal Principal
 
-	// selfToken, when set (WithSelfToken), is the shim's secret self-identifier.
-	// The shim's own MCP client (internal/upstream) stamps it on every
-	// re-entrant lookup as the upstream.SelfHeaderName header; CheckRequest
-	// verifies it constant-time to admit the shim on the vmcp-internal backend
-	// (which runs no CheckResponse phase, so those lookups escape the shim's own
-	// prompt-injection gate -- the circular dependency), and to deny any other
-	// caller that reaches that backend. Empty leaves the backend admitting on
-	// the CNP network lock alone -- fail-safe: agents still can't reach the :81
-	// listener, and the token lives in a Secret only the shim pod reads. See
-	// isInternalBackend / isSelfRequest / CheckRequest and README.
+	// selfToken is the shim's secret self-identifier. The shim's internal MCP
+	// client stamps it on re-entrant lookups; CheckRequest verifies it in
+	// constant time before admitting vmcp-internal. Empty fails closed.
 	selfToken string
 
 	// notionAncestry, when set, gates every existing-page Notion write
@@ -705,27 +646,19 @@ type callParams struct {
 // set), or an AuthorizationError to deny. It never sets metadata or
 // header_mutation.
 func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpRequestResult, error) {
-	// The shim's own re-entrant lookups (internal/upstream, for the
-	// live-resolved ownership gates) arrive on the dedicated vmcp-internal
-	// backend, whose route runs CheckRequest but NOT CheckResponse -- so the
-	// prompt-injection gate never fires on a lookup of injection-bearing
-	// content and fails the ownership check closed (the circular dependency
-	// this path breaks). Admit them without gates. This branch runs BEFORE
-	// resolveBackend, which errors on an unmapped backend (vmcp-internal has no
-	// mapping entry -- it forwards to the same vMCP the mapped backends do).
 	// The backend is reserved for the shim by two independent locks: a
 	// CiliumNetworkPolicy restricts its :81 listener to the shim pod (network),
-	// and -- when a self-token is configured -- the caller must present it in
-	// the SelfHeaderName header (constant-time), so even a route ever mis-scoped
-	// onto the agent-facing :80 still can't be driven by an agent. An
-	// unconfigured token leaves the CNP as the sole lock (fail-safe, dev). See
-	// isInternalBackend / isSelfRequest. NOTE: this match does not fire in the
-	// current deployed topology (see internalBackendName); the selfLookupTools
-	// recursion backstop below is what actually protects the re-entrant path.
+	// and the caller must present the configured self-token in the
+	// SelfHeaderName header (constant-time). This branch runs before
+	// resolveBackend because vmcp-internal has no mapping entry.
 	if isInternalBackend(req.GetServiceNames()) {
-		if s.selfToken != "" && !s.isSelfRequest(req) {
+		if !s.isSelfRequest(req) {
 			log.Printf("deny: tokenless caller on the reserved vmcp-internal backend (method=%q backend=%v)", req.GetMethod(), req.GetServiceNames())
 			return deny("the vmcp-internal backend is reserved for the cerbos shim's own re-entrant lookups"), nil
+		}
+		if !internalAllowedRequestMethods[req.GetMethod()] {
+			log.Printf("deny: unsupported method on the reserved vmcp-internal backend (method=%q backend=%v)", req.GetMethod(), req.GetServiceNames())
+			return deny(fmt.Sprintf("method %q is not permitted on the vmcp-internal backend", req.GetMethod())), nil
 		}
 		return pass(), nil
 	}
@@ -782,22 +715,6 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 		if cp.Arguments == nil {
 			cp.Arguments = map[string]any{}
 		}
-	}
-
-	// Recursion backstop. A self-lookup tool (gitlab_get_project) is the tool
-	// the canonicalization gate below CALLS to resolve a project, and is itself
-	// mapped to gitlab_project/access -- so running the shim's own lookup
-	// through this path makes the gate invoke itself, and each level spawns
-	// another until the upstream deadline. Keyed on the tool name, which is
-	// intrinsic to the call, so it holds even when the backend name and the
-	// route both fail to identify the internal path (which is exactly what
-	// happened: see internalBackendName).
-	//
-	// Requires an authenticated self request, so this can only ever skip the
-	// shim's own traffic. An AGENT calling gitlab_get_project directly carries
-	// no self-token, falls through, and stays fully gated by the allowlist.
-	if _, isSelfTool := selfLookupTools[cp.Name]; isSelfTool && s.isSelfRequest(req) {
-		return pass(), nil
 	}
 
 	// Content-moderation gate: runs before the mapping lookup below and
@@ -1647,13 +1564,8 @@ func pass() *pb.McpRequestResult {
 	return &pb.McpRequestResult{Result: &pb.McpRequestResult_Pass{Pass: &pb.Pass{}}}
 }
 
-// isInternalBackend reports whether service_names names the vmcp-internal
-// backend. It is the network/route-level lock's app-layer companion, but see
-// internalBackendName: this match does NOT fire in the deployed topology,
-// because service_names carries the MCP target name (both vmcp.yaml backends
-// declare target `vmcp`) rather than the AgentgatewayBackend's metadata.name.
-// Never rely on it alone to recognize the shim's own traffic -- the
-// selfLookupTools backstop in CheckRequest is what actually holds today.
+// isInternalBackend reports whether service_names names the vmcp-internal MCP
+// target. It is the network/route-level lock's app-layer companion.
 func isInternalBackend(names []string) bool {
 	for _, n := range names {
 		if n == internalBackendName {
@@ -1664,12 +1576,9 @@ func isInternalBackend(names []string) bool {
 }
 
 // isSelfRequest reports whether req carries the shim's secret self-token in the
-// upstream.SelfHeaderName header, i.e. it originated from the shim's own MCP
-// client (internal/upstream) rather than an agent. Constant-time compare; a
-// missing token config (selfToken == "") always returns false so callers on
-// the internal backend are admitted on the CNP network lock alone (fail-safe;
-// see CheckRequest). Header keys are matched case-insensitively since
-// agentgateway may normalize them.
+// upstream.SelfHeaderName header. Constant-time compare; a missing token config
+// always returns false, which makes the internal backend fail closed. Header
+// keys are matched case-insensitively.
 func (s *Server) isSelfRequest(req *pb.McpRequest) bool {
 	if s.selfToken == "" {
 		return false
@@ -1774,20 +1683,16 @@ const maxJudgeCallsPerResponse = 20
 // checked and returned BEFORE the redaction pass runs, since there's no
 // point redacting a result that's about to be withheld entirely.
 func (s *Server) CheckResponse(ctx context.Context, resp *pb.McpResponse) (*pb.McpResponseResult, error) {
-	// The shim's own re-entrant lookups run on the vmcp-internal route, whose
-	// AgentgatewayPolicy has no CheckResponse phase (tools/call: Request), so
-	// this handler is not invoked for them -- that no-Response-phase policy is
-	// the primary mechanism breaking the shim<->agentgateway prompt-injection
-	// loop. This backend check is defense-in-depth: were that policy ever
-	// mis-set to Full/Response, a lookup of injection-bearing content would
-	// otherwise hit the gate and fail the ownership check closed again (exactly
-	// the silent failure this whole path fixes). Reaching this backend already
-	// requires the :81 CNP lock and the request-side token gate, and the shim
-	// consumes its lookups programmatically (nothing flows to the model), so
-	// skipping both the injection gate and redaction here is safe. See
-	// CheckRequest / isInternalBackend and charts/platform/templates/vmcp.yaml.
+	// The internal policy runs ordinary methods at Request only. Agentgateway
+	// v1.4.1 cannot run request-phase guardrails for resources/subscribe,
+	// resources/unsubscribe, or completion/complete, so it sends those methods
+	// here at Response instead. The shim never needs them: deny unconditionally
+	// so a tokenless caller cannot use a response-only method to bypass the
+	// app-layer lock. This also fails closed if the policy is ever accidentally
+	// changed to run any other internal response phase.
 	if isInternalBackend(resp.GetServiceNames()) {
-		return responsePass(), nil
+		log.Printf("deny: response-phase method not permitted on the reserved vmcp-internal backend (method=%q backend=%v)", resp.GetMethod(), resp.GetServiceNames())
+		return responseDeny(fmt.Sprintf("method %q is not permitted on the vmcp-internal backend", resp.GetMethod())), nil
 	}
 
 	if !redactableResponseMethods[resp.GetMethod()] {
@@ -1804,13 +1709,12 @@ func (s *Server) CheckResponse(ctx context.Context, resp *pb.McpResponse) (*pb.M
 	if n == 0 {
 		return responsePass(), nil
 	}
-	log.Printf("redact: %d secret-shaped value(s) scrubbed from a tool result (backend=%v)", n, resp.GetServiceNames())
+	log.Printf("redact: %d secret-shaped value(s) scrubbed from an MCP response (method=%s backend=%v)", n, resp.GetMethod(), resp.GetServiceNames())
 	return responseMutate(redacted), nil
 }
 
 // checkPromptInjection runs the two-stage prompt-injection gate (HAH-107)
-// over raw (the same tools/call, resources/read, or prompts/get response
-// body redaction runs on). A no-op (false, "") when the gate is disabled
+// over redactable MCP responses. A no-op (false, "") when the gate is disabled
 // (nil detector, the per-cluster PROMPT_INJECTION_DETECTION toggle in
 // main.go).
 //
@@ -1851,9 +1755,8 @@ func (s *Server) CheckResponse(ctx context.Context, resp *pb.McpResponse) (*pb.M
 // muxed through one AgentgatewayBackend target. There is therefore no
 // signal here to scope detection to only the read-shaped tools the ticket
 // names (firecrawl_scrape, tavily_extract, notion-fetch, jira_get_issue,
-// github pull_request_read, gitlab get_merge_request_diffs, ...) -- this
-// scans EVERY tools/call/resources/read/prompts/get response body when the
-// gate is enabled, matching the broad-by-default posture WithModeration
+// github pull_request_read, gitlab get_merge_request_diffs, ...). This scans
+// every redactable response when enabled, matching the broad-by-default posture WithModeration
 // takes for unmapped backends, but now with a real cost (stage 2 is not
 // free) -- that's acceptable because stage 2 only runs on stage-1 matches,
 // which are rare in ordinary traffic, and maxJudgeCallsPerResponse bounds

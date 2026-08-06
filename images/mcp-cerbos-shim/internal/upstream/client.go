@@ -8,9 +8,8 @@
 //
 // RECURSION-SAFETY NOTE (read before mapping notion_notion-fetch in Cerbos):
 // every lookup this package makes is itself a tools/call that re-enters the
-// shim's own CheckRequest AND CheckResponse gates exactly once (agentgateway
-// routes it back through the shim before forwarding to vMCP, and scrubs the
-// result on the way back).
+// shim's own CheckRequest gate exactly once before agentgateway forwards it to
+// vMCP. The dedicated route deliberately has no response hook for tools/call.
 //
 // CheckRequest leg: today notion_notion-fetch is completely unmapped in
 // mapping.yaml (falls through to defaultAction: allow), so that re-entry
@@ -29,10 +28,8 @@
 // whose author this package is resolving) would otherwise be DENIED by the
 // shim's own response gate -- the lookup errors, the ownership gate fails
 // closed, and the agent's original call is denied with a misleading reason.
-// To break that loop, this package targets a DEDICATED request-only route
-// (DefaultVMCPURL -> the :81 vmcp-internal backend, whose AgentgatewayPolicy
-// runs CheckRequest but NOT CheckResponse), so the prompt-injection gate never
-// runs on the shim's own lookups. Two independent locks keep agents off that
+// To break that loop, this package targets a dedicated route whose required
+// methods run CheckRequest but not CheckResponse. Two independent locks keep agents off that
 // route: the :81 listener is restricted to the shim pod by a CiliumNetworkPolicy
 // (network/port), and CheckRequest denies any caller on the vmcp-internal
 // backend that doesn't present the shim's secret self-token in the
@@ -71,7 +68,7 @@ const SelfHeaderName = "X-Vicegerent-Shim-Self"
 // DefaultVMCPURL is the in-cluster agentgateway route this package uses for its
 // re-entrant lookups: the DEDICATED :81 "internal" listener and vmcp-internal
 // route, NOT the agent-facing :80 /mcp/vmcp route. The vmcp-internal
-// AgentgatewayPolicy runs CheckRequest only (no CheckResponse), so the
+// AgentgatewayPolicy runs the required lookup methods at Request only, so the
 // prompt-injection gate never fires on the shim's own lookups (the circular
 // dependency this whole path breaks -- see the package RECURSION-SAFETY NOTE).
 // Reachable over plain HTTP (no mTLS) -- the mTLS hop (ghostunnel) only covers
@@ -122,9 +119,8 @@ type Option func(*Client)
 // request it sends, so the shim's CheckRequest gate can recognize its own
 // re-entrant lookups on the vmcp-internal backend and admit them (see the
 // package RECURSION-SAFETY NOTE). Empty token omits the header; the internal
-// backend's CheckRequest then falls back to admitting on the CNP network lock
-// alone (server.go leaves the token check inert when it too is unconfigured),
-// so lookups still work in a dev deploy without the Secret -- fail-safe.
+// backend's CheckRequest denies an omitted token, and main refuses to start
+// without the Secret, so the CNP is never the only live lock.
 func WithSelfToken(token string) Option {
 	return func(c *Client) { c.selfToken = token }
 }

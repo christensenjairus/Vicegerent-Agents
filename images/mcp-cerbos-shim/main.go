@@ -92,13 +92,12 @@ func main() {
 		return upstream.Cached(upstream.New(upstream.DefaultVMCPURL, nil, upstream.WithSelfToken(cfg.selfToken)), lookupCache)
 	}
 
-	var opts []server.Option
-	if cfg.selfToken != "" {
-		opts = append(opts, server.WithSelfToken(cfg.selfToken))
-		log.Printf("vmcp-internal backend token gate enabled (re-entrant lookups authenticated by secret self-token)")
-	} else {
-		log.Printf("WARNING: SHIM_SELF_TOKEN unset/empty; vmcp-internal backend admits on the CiliumNetworkPolicy network lock alone (no app-layer token check). Run 'vicegerent setup secrets platform' and redeploy to enable it.")
+	if cfg.selfToken == "" {
+		log.Fatal("FATAL SHIM_SELF_TOKEN unset/empty; refusing to start without the vmcp-internal app-layer lock. Run 'vicegerent setup secrets platform' and redeploy.")
 	}
+	var opts []server.Option
+	opts = append(opts, server.WithSelfToken(cfg.selfToken))
+	log.Printf("vmcp-internal backend token gate enabled (re-entrant lookups authenticated by secret self-token)")
 
 	if ids := splitNonEmpty(cfg.notionAllowedParentPageIDs, ","); len(ids) > 0 {
 		opts = append(opts, server.WithNotionAncestry(newUpstream(), ids))
@@ -210,7 +209,7 @@ func main() {
 			promptinjection.New(),
 			promptinjection.NewClient(promptinjection.DefaultJudgeURL, cfg.promptInjectionJudgeModel, nil),
 		))
-		log.Printf("prompt-injection detection gate enabled (BLOCKING, tools/call+resources/read+prompts/get results)")
+		log.Printf("prompt-injection detection gate enabled (BLOCKING, redactable MCP results)")
 	} else {
 		log.Printf("prompt-injection detection gate disabled (PROMPT_INJECTION_DETECTION unset/not enabled)")
 	}
@@ -269,8 +268,8 @@ func loadEnv() envConfig {
 		// High-entropy secret the shim presents on its own re-entrant lookups so
 		// the vmcp-internal backend's CheckRequest gate can authenticate them
 		// (see server.WithSelfToken). Auto-generated into a Secret by
-		// setup-secrets-platform.sh; empty falls back to the CNP network lock
-		// alone (fail-safe).
+		// setup-secrets-platform.sh; empty aborts startup so the app-layer lock
+		// cannot silently disappear.
 		selfToken: envOr("SHIM_SELF_TOKEN", ""),
 	}
 }
