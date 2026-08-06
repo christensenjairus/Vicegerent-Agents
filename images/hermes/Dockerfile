@@ -500,6 +500,20 @@ RUN --mount=type=bind,source=package.json,target=/tmp/npm/package.json \
         $(node -p "Object.entries(require('./package.json').dependencies).map(([k,v])=>k+'@'+v).join(' ')") \
     && opencode --version
 
+# Codex has no native LSP client. Bake the standalone runtime from codex-lsp so
+# its stdio MCP server uses the image's language servers without runtime egress.
+# Pinned to the revision codex-lsp v0.2.0 embeds as its lsp-tools-mcp submodule.
+ARG CODEX_LSP_TOOLS_MCP_REVISION=e7c65b04d0cc549f0478d3b78b51714fc0f572b3
+RUN --mount=type=cache,target=/root/.cache/codex-lsp \
+    mkdir -p /tmp/codex-lsp/node_modules/@types /opt/vicegerent/codex-lsp \
+    && curl -fsSL "https://github.com/code-yeongyu/lsp-tools-mcp/archive/${CODEX_LSP_TOOLS_MCP_REVISION}.tar.gz" \
+        | tar -xz -C /tmp/codex-lsp --strip-components=1 \
+    && ln -s /usr/local/lib/node_modules/@types/node /tmp/codex-lsp/node_modules/@types/node \
+    && tsc -p /tmp/codex-lsp/tsconfig.build.json \
+    && cp -a /tmp/codex-lsp/dist/. /opt/vicegerent/codex-lsp/ \
+    && node /opt/vicegerent/codex-lsp/cli.js mcp </dev/null \
+    && rm -rf /tmp/codex-lsp
+
 # Claude Code serializes the optimizer's generic call_tool requests. This local
 # stdio adapter keeps the normal vMCP path and adds one bounded concurrent batch.
 COPY vmcp-bridge/vmcp-stdio-bridge.py /usr/local/bin/vmcp-stdio-bridge
