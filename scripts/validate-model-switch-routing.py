@@ -94,6 +94,8 @@ def assert_route(
 
 def inspect(label: str, rendered: str, config: dict, enabled: set[str], failures: list[str]) -> None:
     providers = config.get("providers") or {}
+    if (config.get("kanban") or {}).get("dispatch_in_gateway") is not True:
+        failures.append(f"{label}: Kanban gateway dispatcher is not enabled")
     expected_ids = {PROVIDERS[name]["id"] for name in enabled}
     if set(providers) != expected_ids:
         failures.append(f"{label}: provider IDs are {sorted(providers)}, expected {sorted(expected_ids)}")
