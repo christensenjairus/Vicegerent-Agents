@@ -36,6 +36,11 @@ mcp_py() {
   "$venv_python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" "$@"
 }
 
+restore_terminal() {
+  [[ -t 1 ]] || return 0
+  printf '\033[<u\033[?2004l\033[?1000l\033[?1002l\033[?1003l\033[?1004l\033[?1006l\033[?2026l\033[?1049l\033[?1l\033>\033c'
+}
+
 usage() {
   cat <<EOF
 ${B}vicegerent${N} — operational CLI for the vicegerent infra-agent platform
@@ -392,8 +397,12 @@ case "${1:-}" in
     require_kind_context
     # The agent-sandbox controller names the Pod after the Sandbox/agent; every agent's
     # app container is named 'agent' regardless of the Sandbox/agent name.
-    exec kubectl --context "$KUBE_CONTEXT" -n agent-sandbox exec -it "$AGENT" -c agent \
+    # Do not exec: the local EXIT trap must reset a TUI-abandoned terminal.
+    trap restore_terminal EXIT
+    kubectl --context "$KUBE_CONTEXT" -n agent-sandbox exec -it "$AGENT" -c agent \
       -- bash -c "cd /workspace && exec bash"
+    trap - EXIT
+    restore_terminal
     ;;
   test)
     shift
