@@ -12,8 +12,8 @@ description: manage_incidents calls that change anything other than status=ackno
 options:
   now: '2026-07-05T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   small_ack_batch:
@@ -59,36 +59,36 @@ resources:
 tests:
   - name: ack/resolve-only batches of any size are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [small_ack_batch, large_ack_only_batch]
       actions: [manage]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: small_ack_batch
         actions: {manage: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: large_ack_only_batch
         actions: {manage: EFFECT_ALLOW}
   - name: any non-ack/resolve field change (urgency, escalation_level, assignement,
       triggered) is denied even in a single-incident call
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [batch_with_urgency_change, batch_with_escalation_change]
       actions: [manage]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: batch_with_urgency_change
         actions: {manage: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: batch_with_escalation_change
         actions: {manage: EFFECT_DENY}
   - name: add_note_to_incident (unmapped attrs) is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [note_add]
       actions: [annotate]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: note_add
         actions: {annotate: EFFECT_ALLOW}
   - name: service scoping (pagerdutyAllowedServiceIds is PJD41LB/PV3S4O5/PORBNK3,
@@ -96,31 +96,31 @@ tests:
       targeting a disallowed service, denies the whole batch if ANY targeted incident's
       service is disallowed, and allows a call confined to allowed services
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - ack_in_allowed_service
         - ack_in_disallowed_service
         - ack_across_mixed_services
       actions: [manage]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: ack_in_allowed_service
         actions: {manage: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: ack_in_disallowed_service
         actions: {manage: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: ack_across_mixed_services
         actions: {manage: EFFECT_DENY}
   - name: service scoping applies to add_note_to_incident too, not just manage_incidents
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [note_in_allowed_service, note_in_disallowed_service]
       actions: [annotate]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: note_in_allowed_service
         actions: {annotate: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: note_in_disallowed_service
         actions: {annotate: EFFECT_DENY}

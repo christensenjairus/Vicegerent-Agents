@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Behavioral regression test for the shared-skills sync script
-(``images/hermes/skills-scripts/sync-shared-skills.sh``).
+(``images/agent/skills-scripts/sync-shared-skills.sh``).
 
 Runs the script against throwaway fixture trees. Needs no Hermes install --
 only bash and python3 -- so it is safe to run in CI. Each assertion names the
@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SCRIPT_SRC = REPO_ROOT / "images" / "hermes" / "skills-scripts" / "sync-shared-skills.sh"
+SCRIPT_SRC = REPO_ROOT / "images" / "agent" / "skills-scripts" / "sync-shared-skills.sh"
 
 def _extract_script() -> str:
     """Read the script the Dockerfile bakes into /usr/local/bin."""
@@ -32,7 +32,7 @@ def _skill(path: Path, name: str, body: str = "probe") -> None:
         f"---\nname: {name}\ndescription: {body}\n---\n\n# {name}\n", encoding="utf-8"
     )
 
-def _run(script: Path, hermes: Path, agents: Path, farm: Path):
+def _run(script: Path, canonical: Path, agents: Path, farm: Path):
     proc = subprocess.run(
         ["bash", str(script)],
         capture_output=True,
@@ -40,7 +40,7 @@ def _run(script: Path, hermes: Path, agents: Path, farm: Path):
         timeout=120,
         env={
             **os.environ,
-            "HERMES_SKILLS_DIR": str(hermes),
+            "AGENT_SKILLS_DIR": str(canonical),
             "AGENTS_SKILLS_ROOT": str(agents),
             "CLAUDE_SKILLS_FARM": str(farm),
         },
@@ -67,23 +67,23 @@ def main() -> int:
         chk = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
         assert chk.returncode == 0, f"bash -n failed: {chk.stderr}"
 
-        hermes = root / "skills"
+        canonical = root / "skills"
         agents = root / "agents" / "skills"
         farm = root / "claude"
 
-        _skill(hermes / "flat-one", "flat-one")
-        _skill(hermes / "github" / "code-review", "code-review")
-        _skill(hermes / "mlops" / "inference" / "vllm", "vllm")
+        _skill(canonical / "flat-one", "flat-one")
+        _skill(canonical / "github" / "code-review", "code-review")
+        _skill(canonical / "mlops" / "inference" / "vllm", "vllm")
         # A preserved SKILL.md inside a support package: documentation, not a skill.
-        _skill(hermes / "github" / "code-review" / "references" / "legacy", "legacy")
+        _skill(canonical / "github" / "code-review" / "references" / "legacy", "legacy")
         farm.mkdir(parents=True, exist_ok=True)
         _skill(farm / "claude-authored", "claude-authored")
-        (farm / "ghost").symlink_to(hermes / "gone")
+        (farm / "ghost").symlink_to(canonical / "gone")
 
-        _run(script, hermes, agents, farm)
+        _run(script, canonical, agents, farm)
 
         assert (agents).is_symlink(), "~/.agents/skills is not a symlink"
-        assert agents.resolve() == hermes.resolve(), "agents root points elsewhere"
+        assert agents.resolve() == canonical.resolve(), "agents root points elsewhere"
         for name in ("flat-one", "code-review", "vllm"):
             link = farm / name
             assert link.is_symlink(), f"{name} not published to the farm"
@@ -94,9 +94,9 @@ def main() -> int:
         assert not (farm / "ghost").exists(), "stale farm link was not pruned"
         print("  ok  publish: flattened, support packages skipped, stale pruned")
 
-        adopted = hermes / "harness-authored" / "claude-authored"
+        adopted = canonical / "harness-authored" / "claude-authored"
         assert adopted.is_symlink(), (
-            "a Claude-authored skill was not adopted into the Hermes tree — "
+            "a Claude-authored skill was not adopted into the canonical tree — "
             "Codex/OpenCode would never see it"
         )
         assert (adopted / "SKILL.md").exists(), "adopted link does not resolve"
@@ -107,23 +107,23 @@ def main() -> int:
         print("  ok  adopt: harness-authored skill reaches the shared root")
 
         found = subprocess.run(
-            ["find", "-L", str(hermes), "-name", "SKILL.md"],
+            ["find", "-L", str(canonical), "-name", "SKILL.md"],
             capture_output=True, text=True, timeout=60,
         )
         assert found.returncode == 0, f"find -L failed (symlink loop?): {found.stderr}"
-        # 3 hermes skills + 1 preserved doc + 1 adopted = 5 reachable
+        # 3 canonical skills + 1 preserved doc + 1 adopted = 5 reachable
         n = len([x for x in found.stdout.split() if x])
         assert n == 5, f"expected 5 reachable SKILL.md via -L, got {n}"
         print("  ok  no symlink loop between farm and adopt category")
 
-        second = _run(script, hermes, agents, farm)
+        second = _run(script, canonical, agents, farm)
         assert "0 published, 0 adopted" in second.stderr, (
             f"second run was not a no-op: {second.stderr.strip()}"
         )
         print("  ok  idempotent: second run writes nothing")
 
-        _skill(hermes / "misc" / "claude-authored", "claude-authored")
-        third = _run(script, hermes, agents, farm)
+        _skill(canonical / "misc" / "claude-authored", "claude-authored")
+        third = _run(script, canonical, agents, farm)
         assert not (farm / "claude-authored").is_symlink(), (
             "name collision overwrote the owner's real directory"
         )
@@ -139,7 +139,7 @@ def main() -> int:
         import shutil
 
         shutil.rmtree(farm / "claude-authored")
-        _run(script, hermes, agents, farm)
+        _run(script, canonical, agents, farm)
         assert not adopted.exists(), "adopted link survived deletion of its source"
         print("  ok  adopted link pruned when its source is deleted")
 
@@ -149,9 +149,9 @@ def main() -> int:
         # stays live for them forever. Note .archive sits at depth 1, so a
         # `-mindepth 2 ... -name '.*' -prune` never evaluates it; the prune has
         # to match by path.
-        archived = hermes / ".archive" / "archived-skill"
+        archived = canonical / ".archive" / "archived-skill"
         _skill(archived, "archived-skill")
-        fourth = _run(script, hermes, agents, farm)
+        fourth = _run(script, canonical, agents, farm)
         assert not (farm / "archived-skill").exists(), (
             "a curator-archived skill was re-published to the shared farm; "
             "archiving must remove it from the other harnesses too"

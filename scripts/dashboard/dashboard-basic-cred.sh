@@ -16,8 +16,8 @@ source "$SCRIPT_DIR/../lib/cli-ui.sh"
 # shellcheck source=../lib/kube-context.sh
 source "$SCRIPT_DIR/../lib/kube-context.sh"
 
-NAMESPACE="${HERMES_DASHBOARD_NAMESPACE:-agent-sandbox}"
-DEFAULT_NODEPORT="${HERMES_DASHBOARD_NODEPORT:-30119}"
+NAMESPACE="${AGENT_DASHBOARD_NAMESPACE:-agent-sandbox}"
+DEFAULT_NODEPORT="${AGENT_DASHBOARD_NODEPORT:-30119}"
 
 usage() {
   ui_error "Usage: $0 <agent-name>"
@@ -41,7 +41,7 @@ password="$(kubectl "${CONTEXT_ARG[@]}" -n "$NAMESPACE" get secret "${name}-secr
   exit 1
 }
 
-SERVICE="${HERMES_DASHBOARD_SERVICE:-${name}-dashboard}"
+SERVICE="${AGENT_DASHBOARD_SERVICE:-${name}-dashboard}"
 node_port="$(kubectl "${CONTEXT_ARG[@]}" -n "$NAMESPACE" get svc "$SERVICE" -o jsonpath='{.spec.ports[?(@.name=="dashboard")].nodePort}' 2>/dev/null || true)"
 [ -n "$node_port" ] || node_port="$DEFAULT_NODEPORT"
 

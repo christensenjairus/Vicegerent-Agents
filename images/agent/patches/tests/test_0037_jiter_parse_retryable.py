@@ -14,7 +14,7 @@ independent call sites, and both must agree on what counts as retryable:
    that actually fired), falling through to the eager-fallback path this
    whole patch exists to prevent.
 
-Usage: run this INSIDE a Hermes image/container after the patch has been
+Usage: run this inside the agent image after the Hermes patch has been
 applied (i.e. against the live installed files), or against scratch copies
 during patch development.
 

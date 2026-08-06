@@ -30,7 +30,7 @@ func TestDeployedJiraMapping_ReadToolsUseReadAction(t *testing.T) {
 	for _, tool := range []string{"jira_jira_get_issue", "jira_jira_get_project_issues", "jira_jira_get_transitions"} {
 		t.Run(tool, func(t *testing.T) {
 			d := &stubDecider{allow: true}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tool, map[string]any{"issue_key": "FOO-9"})))
 			if err != nil {
@@ -64,7 +64,7 @@ func TestDeployedJiraMapping_WriteToolsUseWriteAction(t *testing.T) {
 			// allow=false: the shim must forward a well-formed resource to
 			// Cerbos and honor its deny.
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tool, map[string]any{"project_key": "FOO"})))
 			if err != nil {
@@ -91,7 +91,7 @@ func TestDeployedJiraMapping_AdditionalFieldsEpicKeySmugglingReachesCerbos(t *te
 	}
 
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("jira_jira_create_issue", map[string]any{
 			"project_key":       "CHANGE",
@@ -119,7 +119,7 @@ func TestDeployedJiraMapping_TopLevelIssueTypeReachesCerbos(t *testing.T) {
 	}
 
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("jira_jira_create_issue", map[string]any{
 			"project_key": "CHANGE",
@@ -150,7 +150,7 @@ func TestDeployedJiraMapping_SmuggledIssueTypeInFieldsReachesCerbos(t *testing.T
 	// lookup to succeed; this test only cares that the issueType-smuggling
 	// mapping reaches Cerbos, not the assignee gate itself.
 	up := &fakeUpstream{text: `{"id":"1","key":"CHANGE-1","assignee":null}`}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithJiraIssueAssignee(up))
+	s := New(m, e, d, AuditPrincipal(), WithJiraIssueAssignee(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("jira_jira_update_issue", map[string]any{
 			"issue_key": "CHANGE-1",

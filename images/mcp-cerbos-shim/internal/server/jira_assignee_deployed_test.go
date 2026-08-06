@@ -41,9 +41,9 @@ func newJiraServer(t *testing.T, d *stubDecider, up upstream.ToolCaller) *Server
 		t.Fatalf("compile: %v", err)
 	}
 	if up == nil {
-		return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+		return New(m, e, d, AuditPrincipal())
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithJiraIssueAssignee(up))
+	return New(m, e, d, AuditPrincipal(), WithJiraIssueAssignee(up))
 }
 
 func TestDeployedJiraMapping_UpdateIssueWithNoAssigneeArgResolvesCurrentAssignee(t *testing.T) {

@@ -19,7 +19,7 @@ func TestDeployedNotionMapping_CreatePagesReachesCerbosWithParentAttrs(t *testin
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false} // prove the shim forwards a well-formed resource and honors Cerbos's deny
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("notion_notion-create-pages",
 			map[string]any{
@@ -56,7 +56,7 @@ func TestDeployedNotionMapping_CreatePagesOmittedParentStillReachesCerbos(t *tes
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("notion_notion-create-pages",
 			map[string]any{"pages": []any{map[string]any{"properties": map[string]any{"title": "t"}}}})))
@@ -92,7 +92,7 @@ func TestDeployedNotionMapping_UpdatePageReachesCerbosWithCommandAndDeleteAttrs(
 <parent-page url="https://app.notion.com/p/393de8859710809c9f5ec57a91d2c81a" title="Scratchpad"/>
 </ancestor-path>
 </page>`}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+	s := New(m, e, d, AuditPrincipal(),
 		WithNotionAncestry(up, []string{scratchpadID}),
 		WithNotionPageAuthor(&permissiveNotionAuthorUpstream{}, "operator-user-id"))
 	res, err := s.CheckRequest(context.Background(),

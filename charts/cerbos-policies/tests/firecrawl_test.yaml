@@ -5,8 +5,8 @@ description: firecrawl_interact calls that carry raw `code` are denied regardles
 options:
   now: '2026-07-06T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   prompt_only_call:
@@ -28,25 +28,25 @@ resources:
 tests:
   - name: prompt-only interaction (no code) is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [prompt_only_call]
       actions: [interact]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: prompt_only_call
         actions: {interact: EFFECT_ALLOW}
   - name: any call carrying raw code is denied regardless of language
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [bash_code_call, python_code_call, node_code_call]
       actions: [interact]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: bash_code_call
         actions: {interact: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: python_code_call
         actions: {interact: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: node_code_call
         actions: {interact: EFFECT_DENY}

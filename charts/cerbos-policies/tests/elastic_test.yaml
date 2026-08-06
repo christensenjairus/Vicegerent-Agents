@@ -9,8 +9,8 @@ description: Data-access calls targeting a denied index/datastream token are den
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   denied_datastream:
@@ -49,7 +49,7 @@ resources:
 tests:
   - name: targeting the denied datastream / its backing index / via ES|QL is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - denied_datastream
         - denied_rollover_index
@@ -60,25 +60,25 @@ tests:
         - platform_core_execute_esql
         - platform_streams_query_documents
     expected:
-      - principal: hermes
+      - principal: agent
         resource: denied_datastream
         actions:
           platform_core_search: EFFECT_DENY
           platform_core_execute_esql: EFFECT_DENY
           platform_streams_query_documents: EFFECT_DENY
-      - principal: hermes
+      - principal: agent
         resource: denied_rollover_index
         actions:
           platform_core_search: EFFECT_DENY
           platform_core_execute_esql: EFFECT_DENY
           platform_streams_query_documents: EFFECT_DENY
-      - principal: hermes
+      - principal: agent
         resource: denied_via_esql
         actions:
           platform_core_search: EFFECT_DENY
           platform_core_execute_esql: EFFECT_DENY
           platform_streams_query_documents: EFFECT_DENY
-      - principal: hermes
+      - principal: agent
         resource: denied_mixed_case_pattern
         actions:
           platform_core_search: EFFECT_DENY
@@ -86,15 +86,15 @@ tests:
           platform_streams_query_documents: EFFECT_DENY
   - name: a non-denied index and a call with no target arg are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [allowed_index, no_target]
       actions: [platform_core_search]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: allowed_index
         actions:
           platform_core_search: EFFECT_ALLOW
-      - principal: hermes
+      - principal: agent
         resource: no_target
         actions:
           platform_core_search: EFFECT_ALLOW

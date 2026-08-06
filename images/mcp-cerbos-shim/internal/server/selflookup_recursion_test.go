@@ -78,7 +78,7 @@ func TestSelfLookupTool_NoRecursion(t *testing.T) {
 
 	up := &reentrantUpstream{token: token}
 	// allow=true so a deny can't mask the recursion by cutting it short.
-	s := New(m, e, &stubDecider{allow: true}, Principal{ID: "hermes", Roles: []string{"agent"}},
+	s := New(m, e, &stubDecider{allow: true}, AuditPrincipal(),
 		WithSelfToken(token), WithGitlabProjectCanonicalizer(up))
 	up.s = s
 
@@ -119,7 +119,7 @@ func TestSelfLookupTool_AgentCallStillGated(t *testing.T) {
 	} {
 		t.Run(tool+"/no token", func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+			s := New(m, e, d, AuditPrincipal(),
 				WithSelfToken("self-tok"))
 			// Numeric/simple ids so no canonicalization lookup is needed --
 			// this isolates the authz question from the recursion one.
@@ -140,7 +140,7 @@ func TestSelfLookupTool_AgentCallStillGated(t *testing.T) {
 
 		t.Run(tool+"/wrong token", func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+			s := New(m, e, d, AuditPrincipal(),
 				WithSelfToken("self-tok"))
 			req := mcpReq("vmcp", "tools/call", toolCall(tool, map[string]any{
 				"project_id": "999", "merge_request_iid": "1",

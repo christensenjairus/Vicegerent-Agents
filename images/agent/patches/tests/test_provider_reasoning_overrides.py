@@ -39,7 +39,7 @@ def render_config(chart_dir: str, agent_values: dict) -> dict:
             [
                 "helm",
                 "template",
-                "hermes",
+                "agent",
                 chart_dir,
                 "-f",
                 temp_path,

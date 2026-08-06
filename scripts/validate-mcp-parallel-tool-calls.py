@@ -116,10 +116,10 @@ def main() -> None:
     for harness in ("Hermes", "Codex", "OpenCode"):
         if CLAUDE_BATCH_TOOL in harness_prompts[harness]:
             failures.append(f"{harness} must not receive Claude-only batch tool guidance")
-    bridge = REPO / "images/hermes/vmcp-bridge/vmcp-stdio-bridge.py"
-    dockerfile = (REPO / "images/hermes/Dockerfile").read_text()
+    bridge = REPO / "images/agent/vmcp-bridge/vmcp-stdio-bridge.py"
+    dockerfile = (REPO / "images/agent/Dockerfile").read_text()
     if not bridge.is_file() or "vmcp-bridge/vmcp-stdio-bridge.py" not in dockerfile:
-        failures.append("Claude Code vmcp bridge must be baked into the Hermes image")
+        failures.append("Claude Code vmcp bridge must be baked into the agent image")
     if failures:
         raise SystemExit("FAIL - " + "; ".join(failures))
     print(

@@ -21,7 +21,7 @@ Every setting carries an inline comment in `values.defaults.yaml`; the example c
 - **`agents[].git`** — `userName` / `userEmail` are the identity each agent commits as. Ships as `your-git-username` / `you@example.com`.
 - **`egress`** — `wildcardDomains` / `exactDomains` are YAML lists of external HTTP(S) destinations the egress proxy allows; `internalAllowedCIDRs` carves RFC1918 hosts out of the private-network deny.
 - **`agents[].directEgress`** — `ssh.fqdn` and `ssh.cnameChain` describe your git host and its full CNAME chain; the Slack and edge-TTS lists hold direct WebSocket destinations.
-- **Container registry** (`values.defaults.yaml`'s `agentDefaults.image` and `charts/mcp-cerbos-shim/templates/deployment.yaml`) — these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave them as-is and install directly against it. Only repoint them if you want to build and host your own copies of `hermes-agent` or `mcp-cerbos-shim` — see each image's README under `images/*/README.md` for the build and push steps. The agentgateway controller and proxy use upstream images from `cr.agentgateway.dev`.
+- **Container registry** (`values.defaults.yaml`'s `agentDefaults.image` and `charts/mcp-cerbos-shim/templates/deployment.yaml`) — these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave them as-is and install directly against it. Only repoint them if you want to build and host your own copies of `agent` or `mcp-cerbos-shim` — see each image's README under `images/*/README.md` for the build and push steps. The agentgateway controller and proxy use upstream images from `cr.agentgateway.dev`.
 - **`.gitlab-ci.yml` / `renovate.json`** — these are wired for this repository's self-hosted GitLab instance. Adapt them if you host the repository elsewhere, or ignore them; they validate and update this repository but are not installed in the cluster.
 
 ### Migrating values from the former schema
@@ -160,7 +160,7 @@ This applies these Kubernetes Secrets in namespace `agent-sandbox` (agent `<name
 <name>-secrets               password, signing-secret, public-key,
                              SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
                              SLACK_ALLOWED_USERS, SLACK_HOME_CHANNEL (Slack optional)
-<name>-ssh-key               hermes_agent_ed25519    (ed25519 private key)
+<name>-ssh-key               agent_ed25519  (ed25519 private key)
 ```
 
 Slack remains optional. If any Slack value is configured, all four Slack values are required: `SLACK_ALLOWED_USERS` must be exactly one Slack user ID (`U…` or `W…`), and `SLACK_HOME_CHANNEL` must be a direct-message channel ID (`D…`). The rendered Sandbox repeats this check at startup and rejects `SLACK_ALLOW_ALL_USERS`, `GATEWAY_ALLOWED_USERS`, and `GATEWAY_ALLOW_ALL_USERS` overrides that could broaden access.
@@ -210,6 +210,8 @@ The three agent PVCs (`data-<agent>`, `gitrepos-<agent>`, `models-<agent>`) are 
 The second reason to own them in the chart is that labels are then re-asserted on every `helm upgrade`. A claim template's metadata is read only when the controller first creates the PVC, so a label added later never reaches an existing volume — and a Velero restore, which recreates the PVC from a backup taken before the label existed, silently drops it.
 
 Because the data no longer depends on the Sandbox surviving, **the Sandbox CR itself is freely disposable**. It carries no `helm.sh/resource-policy: keep`, so Helm deletes and recreates it like any other object: an agent removed from `values.yaml` is `helm uninstall`ed and its Sandbox really goes away, and `kubectl delete sandbox <agent>` followed by `./vicegerent install` is a clean way to rebuild an agent from scratch. The replacement Pod remounts the same three claims; only `runtime` and `tmp` are lost, and both are `emptyDir` that the Pod rebuilds anyway.
+
+An agent's configured name is also its Helm release name and the suffix on all three PVCs. **Renaming a deployed agent does not rename its volumes or Secrets**: changing `hermes` to `bot-jchristensen`, for example, requires new `*-bot-jchristensen` claims plus `bot-jchristensen-secrets` and `bot-jchristensen-ssh-key`; the retained `*-hermes` resources do not attach to the new release automatically. The committed `examples/*.yaml` names do not alter a machine's gitignored `values.yaml`; follow the [agent rename procedure](backup-and-restore.md#rename-an-agent-and-keep-its-volumes-and-secrets) before installing the new release or deleting any old resources.
 
 Deleting a volume's data is therefore an explicit act:
 

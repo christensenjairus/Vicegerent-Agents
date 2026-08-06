@@ -11,8 +11,8 @@ description: GitLab calls targeting a project outside the allowlist are denied, 
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   numeric_project:
@@ -191,7 +191,7 @@ resources:
 tests:
   - name: calls confined to an allowed project are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - numeric_project
         - other_numeric_project
@@ -200,24 +200,24 @@ tests:
         - canonicalized_numeric_from_path
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: mixed_case_path_project
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: canonicalized_numeric_from_path
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: numeric_project
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: other_numeric_project
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: path_project
         actions: {access: EFFECT_ALLOW}
   - name: calls targeting a project outside the allowlist are denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - disallowed_project
         - disallowed_path_project
@@ -225,141 +225,141 @@ tests:
         - missing_project_id
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: disallowed_project
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: disallowed_path_project
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: path_form_of_allowed_numeric_project
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: missing_project_id
         actions: {access: EFFECT_DENY}
   - name: a second target project outside the allowlist is denied even from an allowed
       project
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - cross_project_link_allowed_target
         - cross_project_link_disallowed_target
         - cross_project_link_empty_target
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: cross_project_link_allowed_target
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: cross_project_link_disallowed_target
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: cross_project_link_empty_target
         actions: {access: EFFECT_ALLOW}
   - name: merge-request calls setting reviewers or assignees are denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_mr_with_reviewers
         - update_mr_with_reviewers
         - create_mr_with_reviewers_disallowed_project
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_mr_with_reviewers
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_mr_with_reviewers
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_mr_with_reviewers_disallowed_project
         actions: {access: EFFECT_DENY}
   - name: merge requests without reviewers, and issue assignees, stay allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [create_mr_no_reviewers, issue_with_assignees]
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_mr_no_reviewers
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: issue_with_assignees
         actions: {access: EFFECT_ALLOW}
   - name: writes to a merge request authored by someone else are denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - update_mr_other_author
         - update_mr_other_author_disallowed_project
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_mr_other_author
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_mr_other_author_disallowed_project
         actions: {access: EFFECT_DENY}
   - name: writes to the agent's own merge request, and calls with no resolved author,
       are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [update_mr_own_author, read_tool_no_author_attr]
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_mr_own_author
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: read_tool_no_author_attr
         actions: {access: EFFECT_ALLOW}
   - name: merge requests RETARGETED at a protected branch are denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - mr_targeting_protected_branch
         - mr_targeting_master_branch
         - mr_targeting_production_branch
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: mr_targeting_protected_branch
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: mr_targeting_master_branch
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: mr_targeting_production_branch
         actions: {access: EFFECT_DENY}
   - name: merge requests CREATED against a protected branch are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - mr_created_against_protected_branch
         - mr_created_against_production_branch
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: mr_created_against_protected_branch
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: mr_created_against_production_branch
         actions: {access: EFFECT_ALLOW}
   - name: merge requests targeting an ordinary branch, or no branch at all, are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - mr_targeting_feature_branch
         - mr_no_target_branch
         - branch_named_like_protected_but_not
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: mr_targeting_feature_branch
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: mr_no_target_branch
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: branch_named_like_protected_but_not
         actions: {access: EFFECT_ALLOW}

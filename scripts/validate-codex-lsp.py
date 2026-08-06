@@ -64,7 +64,7 @@ def main() -> None:
     if lsp != expected:
         fail(f"Codex lsp MCP must be {json.dumps(expected, sort_keys=True)}")
 
-    dockerfile = (REPO / "images/hermes/Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (REPO / "images/agent/Dockerfile").read_text(encoding="utf-8")
     required = (
         f"CODEX_LSP_TOOLS_MCP_REVISION={REVISION}",
         "github.com/code-yeongyu/lsp-tools-mcp/archive/${CODEX_LSP_TOOLS_MCP_REVISION}.tar.gz",
@@ -73,11 +73,11 @@ def main() -> None:
     )
     missing = [value for value in required if value not in dockerfile]
     if missing:
-        fail(f"Hermes image must build and smoke-test codex-lsp: {', '.join(missing)}")
+        fail(f"Agent image must build and smoke-test codex-lsp: {', '.join(missing)}")
 
-    packages = json.loads((REPO / "images/hermes/package.json").read_text(encoding="utf-8"))
+    packages = json.loads((REPO / "images/agent/package.json").read_text(encoding="utf-8"))
     if packages.get("dependencies", {}).get("@types/node") != "25.7.0":
-        fail("Hermes image must provide @types/node 25.7.0 to compile codex-lsp")
+        fail("Agent image must provide @types/node 25.7.0 to compile codex-lsp")
 
     print("OK - Codex launches the baked codex-lsp MCP runtime")
 

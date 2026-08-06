@@ -35,7 +35,7 @@ func TestDeployedPagerdutyMapping_ManageIncidentsReachesCerbosWithStatus(t *test
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceA}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_manage_incidents",
 			map[string]any{
@@ -69,7 +69,7 @@ func TestDeployedPagerdutyMapping_ManageIncidentsTriggeredStatusFlagged(t *testi
 	}
 	d := &stubDecider{allow: false}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceA}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_manage_incidents",
 			map[string]any{
@@ -100,7 +100,7 @@ func TestDeployedPagerdutyMapping_ManageIncidentsUrgencyFlagged(t *testing.T) {
 	}
 	d := &stubDecider{allow: false}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceA}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_manage_incidents",
 			map[string]any{
@@ -134,7 +134,7 @@ func TestDeployedPagerdutyMapping_ManageIncidentsEscalationLevelFlagged(t *testi
 	}
 	d := &stubDecider{allow: false}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceA}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_manage_incidents",
 			map[string]any{
@@ -162,7 +162,7 @@ func TestDeployedPagerdutyMapping_AddNoteToIncidentReachesCerbos(t *testing.T) {
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceA}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_add_note_to_incident",
 			map[string]any{"incident_id": "PT4KHLK", "note": "Investigating"})))
@@ -192,7 +192,7 @@ func TestDeployedPagerdutyMapping_ServiceGateInjectsServiceIdsAttr(t *testing.T)
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceA}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_manage_incidents",
 			map[string]any{
@@ -224,7 +224,7 @@ func TestDeployedPagerdutyMapping_AddNoteServiceGateInjectsServiceIdsAttr(t *tes
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceB}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_add_note_to_incident",
 			map[string]any{"incident_id": "PT4KHLK", "note": "Investigating"})))
@@ -253,7 +253,7 @@ func TestDeployedPagerdutyMapping_ServiceLookupFailureFailsClosed(t *testing.T) 
 	// not from Cerbos -- Cerbos is never even reached.
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{err: errors.New("connection refused")}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_manage_incidents",
 			map[string]any{
@@ -284,7 +284,7 @@ func TestDeployedPagerdutyMapping_UnconfiguredServiceGateFailsClosed(t *testing.
 	// so reaching here unconfigured means a broken deploy, not a license to
 	// allow an unscoped incident write through -- same posture as the Notion
 	// ancestry gate's unconfigured-gate test.
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_manage_incidents",
 			map[string]any{
@@ -318,7 +318,7 @@ func TestDeployedPagerdutyMapping_GovBackendReachesCerbosViaItsOwnGetIncidentToo
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceA}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_secondary_manage_incidents",
 			map[string]any{
@@ -353,7 +353,7 @@ func TestDeployedPagerdutyMapping_GovAddNoteReachesCerbosViaItsOwnGetIncidentToo
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceB}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
+	s := New(m, e, d, AuditPrincipal(), WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_secondary_add_note_to_incident",
 			map[string]any{"incident_id": "PT4KHLK", "note": "Investigating"})))
@@ -386,7 +386,7 @@ func TestDeployedPagerdutyMapping_NoIncidentIdsSkipsGateAndReachesCerbosUnaffect
 	// No WithPagerdutyIncidentService configured at all -- proves the gate
 	// genuinely never fires here (an unconfigured gate would otherwise deny,
 	// per the test above).
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("pagerduty_manage_incidents",
 			map[string]any{

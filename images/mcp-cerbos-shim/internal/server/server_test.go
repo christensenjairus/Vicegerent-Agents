@@ -21,19 +21,22 @@ import (
 // stubDecider lets tests assert exactly what resource/action the connector
 // would send to Cerbos, and force allow/deny/error verdicts.
 type stubDecider struct {
-	allow   bool
-	reason  string // policy-authored deny output; "" exercises the denyMessage fallback
-	err     error
-	gotType string
-	gotID   string
-	gotAttr map[string]any
-	gotAct  string
-	calls   int
+	allow          bool
+	reason         string // policy-authored deny output; "" exercises the denyMessage fallback
+	err            error
+	gotPrincipalID string
+	gotRoles       []string
+	gotType        string
+	gotID          string
+	gotAttr        map[string]any
+	gotAct         string
+	calls          int
 }
 
-func (s *stubDecider) IsAllowed(_ context.Context, _ string, _ []string,
+func (s *stubDecider) IsAllowed(_ context.Context, principalID string, roles []string,
 	resourceType, resourceID string, attr map[string]any, action string) (bool, string, error) {
 	s.calls++
+	s.gotPrincipalID, s.gotRoles = principalID, append([]string(nil), roles...)
 	s.gotType, s.gotID, s.gotAttr, s.gotAct = resourceType, resourceID, attr, action
 	// Mirror the real Cerbos PDP, which rejects an empty resource.id with
 	// InvalidArgument before evaluating policy. Without this, the mock hides
@@ -110,7 +113,14 @@ func newTestServer(t *testing.T, d *stubDecider) *Server {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	return New(m, e, d, AuditPrincipal())
+}
+
+func TestAuditPrincipalIsGenericAgent(t *testing.T) {
+	principal := AuditPrincipal()
+	if principal.ID != "agent" || !reflect.DeepEqual(principal.Roles, []string{"agent"}) {
+		t.Fatalf("unexpected audit principal: %#v", principal)
+	}
 }
 
 func toolCall(name string, args map[string]any) []byte {
@@ -223,6 +233,9 @@ func TestCheckRequest_AllowsNonSecretReads(t *testing.T) {
 		t.Fatalf("expected pass for allowed Pod read")
 	}
 	assertNoSideEffects(t, r)
+	if d.gotPrincipalID != "agent" || !reflect.DeepEqual(d.gotRoles, []string{"agent"}) {
+		t.Errorf("wrong cerbos principal: id=%q roles=%v", d.gotPrincipalID, d.gotRoles)
+	}
 	if d.gotAttr["kind"] != "Pod" || d.gotAct != "getResource" {
 		t.Errorf("wrong cerbos input: kind=%q action=%q", d.gotAttr["kind"], d.gotAct)
 	}
@@ -1547,7 +1560,7 @@ func newTestServerWithModeration(t *testing.T, d *stubDecider, m moderation.Chec
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	return New(cfg, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithModeration(m))
+	return New(cfg, e, d, AuditPrincipal(), WithModeration(m))
 }
 
 // TestIsModeratedWriteTool_GeneralizesToUnenumeratedTools proves the verb
@@ -1591,7 +1604,7 @@ func TestWithModerationVerbs_OverridesDefault(t *testing.T) {
 		if err != nil {
 			t.Fatalf("compile: %v", err)
 		}
-		s := New(cfg, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+		s := New(cfg, e, d, AuditPrincipal(),
 			WithModeration(m), WithModerationVerbs([]string{"getresource"}))
 		r, err := s.CheckRequest(context.Background(), mcpReq("kubernetes", "tools/call",
 			toolCall("getResource", map[string]any{"name": "n"})))
@@ -1617,7 +1630,7 @@ func TestWithModerationVerbs_OverridesDefault(t *testing.T) {
 		if err != nil {
 			t.Fatalf("compile: %v", err)
 		}
-		s := New(cfg, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+		s := New(cfg, e, d, AuditPrincipal(),
 			WithModeration(m), WithModerationVerbs(nil))
 		r, err := s.CheckRequest(context.Background(), mcpReq("github", "tools/call",
 			toolCall("github_create_pull_request", map[string]any{"repo": "r", "title": "a perfectly normal title"})))
@@ -1844,7 +1857,7 @@ func newTestServerWithPromptInjection(t *testing.T, d *stubDecider, det promptin
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	return New(cfg, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPromptInjectionDetection(det, judge))
+	return New(cfg, e, d, AuditPrincipal(), WithPromptInjectionDetection(det, judge))
 }
 
 // newTestServerWithSelfToken builds a server carrying the shim's self-token so
@@ -1865,7 +1878,7 @@ func newTestServerWithSelfToken(t *testing.T, d *stubDecider, token string, det 
 	if det != nil {
 		opts = append(opts, WithPromptInjectionDetection(det, judge))
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, opts...)
+	return New(m, e, d, AuditPrincipal(), opts...)
 }
 
 // TestCheckRequest_InternalBackend proves the dedicated vmcp-internal backend

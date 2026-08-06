@@ -25,7 +25,7 @@ func newLinearServer(t *testing.T, d *stubDecider, up upstream.ToolCaller) *Serv
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+	return New(m, e, d, AuditPrincipal(),
 		WithLinearIssueTeam(up))
 }
 

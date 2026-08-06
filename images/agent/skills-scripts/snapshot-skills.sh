@@ -2,7 +2,7 @@
 # Commit the skills tree to a local git repo so content destroyed through a
 # published symlink can be recovered.
 #
-# The other harnesses reach Hermes' skills through symlinks
+# The other harnesses reach the canonical skills through symlinks
 # (.claude/skills/<name> -> /opt/data/skills/<cat>/<name>). Both
 # `rm -rf <link>/` and `rm -rf <link>/*` recurse THROUGH the link and delete
 # the real content, silently, exit 0. Most skills ship in the image, but an
@@ -16,7 +16,7 @@
 #       --work-tree=/opt/data/skills checkout -- .
 set -uo pipefail
 
-skills="${HERMES_SKILLS_DIR:-/opt/data/skills}"
+skills="${AGENT_SKILLS_DIR:-/opt/data/skills}"
 gitdir="${SKILLS_SNAPSHOT_GITDIR:-/opt/data/.skills-snapshots.git}"
 retain_days="${SKILLS_SNAPSHOT_RETAIN_DAYS:-7}"
 

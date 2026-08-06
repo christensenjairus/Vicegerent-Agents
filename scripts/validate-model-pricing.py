@@ -4,7 +4,7 @@
 Why this exists
 ---------------
 Model prices live in Hermes' own tables (patched by
-images/hermes/patches/0043-model-pricing.py). Nothing previously connected the
+images/agent/patches/0043-model-pricing.py). Nothing previously connected the
 models this chart *configures* to the prices Hermes actually *has*, so a model
 could be wired up and silently record cost_status="unknown" forever -- the
 Slack runtime footer just omits the cost line, which looks like a display quirk
@@ -211,7 +211,7 @@ def _load_pricing_module():
     if spec is None or not spec.origin:
         return None, "agent.usage_pricing not found (not inside the sandbox image)"
 
-    patch = REPO / "images/hermes/patches/0043-model-pricing.py"
+    patch = REPO / "images/agent/patches/0043-model-pricing.py"
     if not patch.is_file():
         return None, f"{patch.relative_to(REPO)} missing"
 
@@ -256,7 +256,7 @@ def _load_pricing_module():
     )
     if proc.returncode != 0:
         raise SystemExit(
-            "FAIL - images/hermes/patches/0043-model-pricing.py did not apply "
+            "FAIL - images/agent/patches/0043-model-pricing.py did not apply "
             f"cleanly to a pristine agent/usage_pricing.py:\n{proc.stdout}\n{proc.stderr}"
         )
 
@@ -299,7 +299,7 @@ def main() -> int:
     usage_pricing, note = _load_pricing_module()
     if usage_pricing is None:
         _log(f"SKIP - {note}; this check only runs where Hermes is importable "
-             "(sandbox image / CI with the hermes image)")
+             "(sandbox image / CI with the agent image)")
         return 0
     try:
         import yaml  # noqa: F401
@@ -370,7 +370,7 @@ def main() -> int:
             _log(f"      why:   {why}")
             _log(f"      used:  {', '.join(sites)}")
         _log("\nFix by adding the model to _PRICES (and, if the provider has no "
-             "route branch, a branch too) in images/hermes/patches/0043-model-pricing.py")
+             "route branch, a branch too) in images/agent/patches/0043-model-pricing.py")
         return 1
 
     scenario_count = len({r[4] for r in refs})
@@ -417,7 +417,7 @@ def main() -> int:
              "agentburn burn_report (cost_known=false):\n")
         for slug in sorted(set(missing)):
             _log(f"  {slug}")
-        _log("\nThe agentburn sink in images/hermes/patches/0043-model-pricing.py is "
+        _log("\nThe agentburn sink in images/agent/patches/0043-model-pricing.py is "
              "derived from the post-patch usage_pricing table; if a model is missing "
              "here but present above, that mirroring broke.")
         return 1

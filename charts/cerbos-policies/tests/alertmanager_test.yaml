@@ -13,8 +13,8 @@ description: createSilence calls whose duration exceeds the cap are denied; call
 options:
   now: '2026-07-05T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   short_silence:
@@ -43,50 +43,50 @@ resources:
 tests:
   - name: createSilence within or at the cap is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [short_silence, at_work_cap_silence]
       actions: [create]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: short_silence
         actions: {create: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: at_work_cap_silence
         actions: {create: EFFECT_ALLOW}
   - name: createSilence exceeding the cap is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [over_work_cap_silence]
       actions: [create]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: over_work_cap_silence
         actions: {create: EFFECT_DENY}
   - name: deleteSilence on a silence this machine created is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [own_silence_to_delete]
       actions: [delete]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: own_silence_to_delete
         actions: {delete: EFFECT_ALLOW}
   - name: deleteSilence on a silence created by someone else is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [other_silence_to_delete]
       actions: [delete]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: other_silence_to_delete
         actions: {delete: EFFECT_DENY}
   - name: deleteSilence on a silence with no createdBy attr falls through to allow
       (has()-guard)
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [no_attr_silence_to_delete]
       actions: [delete]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: no_attr_silence_to_delete
         actions: {delete: EFFECT_ALLOW}

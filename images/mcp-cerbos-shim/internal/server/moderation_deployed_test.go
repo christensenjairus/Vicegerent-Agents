@@ -24,7 +24,7 @@ func newDeployedServerWithModeration(t *testing.T, d *stubDecider, m *stubModera
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	return New(mapping, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+	return New(mapping, e, d, AuditPrincipal(),
 		WithModeration(m))
 }
 
@@ -191,7 +191,7 @@ func TestDeployedMapping_ModerationDisabledSkipsGateEntirely(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	s := New(mapping, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}) // no WithModeration
+	s := New(mapping, e, d, AuditPrincipal()) // no WithModeration
 
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("github_create_pull_request",

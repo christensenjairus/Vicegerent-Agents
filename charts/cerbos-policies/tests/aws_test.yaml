@@ -8,8 +8,8 @@ description: Credential/access-minting ops, secret-value reads, and commands the
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   # --- credential / access minting (deny) ---
@@ -125,7 +125,7 @@ resources:
 tests:
   - name: credential/access-minting ops are denied (incl. inside a batch)
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - eks_get_token
         - sts_assume_role
@@ -140,40 +140,40 @@ tests:
         - batch_with_a_minter
       actions: [execute]
     expected:
-      - {principal: hermes, resource: eks_get_token, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: sts_assume_role, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: ecr_get_auth_token, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: rds_db_auth_token, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: kms_decrypt, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: s3_presign, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: ssm_start_session, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: acm_export_certificate, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: apigateway_get_api_key, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: iam_create_login_profile, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: batch_with_a_minter, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: eks_get_token, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: sts_assume_role, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: ecr_get_auth_token, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: rds_db_auth_token, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: kms_decrypt, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: s3_presign, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: ssm_start_session, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: acm_export_certificate, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: apigateway_get_api_key, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: iam_create_login_profile, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: batch_with_a_minter, actions: {execute: EFFECT_DENY}}
   - name: secret-value reads are denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - get_secret_value
         - batch_get_secret_value
         - ssm_get_parameter
       actions: [execute]
     expected:
-      - {principal: hermes, resource: get_secret_value, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: batch_get_secret_value, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: ssm_get_parameter, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: get_secret_value, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: batch_get_secret_value, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: ssm_get_parameter, actions: {execute: EFFECT_DENY}}
   - name: unparseable commands are denied (incl. inside a batch)
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [unparsed, batch_with_an_unparsed]
       actions: [execute]
     expected:
-      - {principal: hermes, resource: unparsed, actions: {execute: EFFECT_DENY}}
-      - {principal: hermes, resource: batch_with_an_unparsed, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: unparsed, actions: {execute: EFFECT_DENY}}
+      - {principal: agent, resource: batch_with_an_unparsed, actions: {execute: EFFECT_DENY}}
   - name: metadata / inventory / recon reads are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - get_caller_identity
         - eks_describe_cluster
@@ -182,8 +182,8 @@ tests:
         - unrelated_read
       actions: [execute]
     expected:
-      - {principal: hermes, resource: get_caller_identity, actions: {execute: EFFECT_ALLOW}}
-      - {principal: hermes, resource: eks_describe_cluster, actions: {execute: EFFECT_ALLOW}}
-      - {principal: hermes, resource: describe_secret, actions: {execute: EFFECT_ALLOW}}
-      - {principal: hermes, resource: ssm_describe_parameters, actions: {execute: EFFECT_ALLOW}}
-      - {principal: hermes, resource: unrelated_read, actions: {execute: EFFECT_ALLOW}}
+      - {principal: agent, resource: get_caller_identity, actions: {execute: EFFECT_ALLOW}}
+      - {principal: agent, resource: eks_describe_cluster, actions: {execute: EFFECT_ALLOW}}
+      - {principal: agent, resource: describe_secret, actions: {execute: EFFECT_ALLOW}}
+      - {principal: agent, resource: ssm_describe_parameters, actions: {execute: EFFECT_ALLOW}}
+      - {principal: agent, resource: unrelated_read, actions: {execute: EFFECT_ALLOW}}

@@ -38,7 +38,7 @@ func TestDeployedElasticMapping_DeniedTargetReachesCerbos(t *testing.T) {
 			// allow=false: the shim must forward a well-formed resource to Cerbos
 			// and honor its deny (turning it into a PERMISSION_DENIED error).
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -79,7 +79,7 @@ func TestDeployedElasticMapping_NonDeniedTargetPasses(t *testing.T) {
 	}
 	// A non-blocked index: mapped, reaches Cerbos, allowed.
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("elastic_platform_core_search",
 			map[string]any{"index": "logs-nginx", "query": "errors"})))
@@ -114,7 +114,7 @@ func TestDeployedElasticMapping_UnmappedToolPasses(t *testing.T) {
 	// -> passes without a Cerbos call. Confirms the guardrail doesn't over-block
 	// the read tools that legitimately mention a data source by name.
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("elastic_platform_core_product_documentation",
 			map[string]any{"query": "how does the snowflake integration work"})))

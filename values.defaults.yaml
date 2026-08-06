@@ -74,9 +74,9 @@ policy:
 # Per-agent defaults. The installer layers this template under each machine agent. A machine supports at most ten agents; their dashboards use NodePorts 30119-30128 in list order.
 agentDefaults:
   image:
-    # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/hermes-agent
-    repository: harbor.hahomelabs.com/vicegerent/hermes-agent
-    tag: v2026.8.3-rev13
+    # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/agent
+    repository: harbor.hahomelabs.com/vicegerent/agent
+    tag: v2026.8.3-rev14
   storage:
     data: 10Gi
     gitRepos: 50Gi

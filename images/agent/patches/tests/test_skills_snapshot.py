@@ -1,9 +1,9 @@
 """Exercise the skills-snapshot script against the symlink-deletion disaster.
 
-Run: python3 images/hermes/patches/tests/test_skills_snapshot.py
+Run: python3 images/agent/patches/tests/test_skills_snapshot.py
 
 The script is baked into the image at /usr/local/bin/snapshot-skills.sh; this
-tests the source under images/hermes/skills-scripts/.
+tests the source under images/agent/skills-scripts/.
 """
 import os
 import pathlib
@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[4]
-SCRIPT = str(REPO / "images" / "hermes" / "skills-scripts" / "snapshot-skills.sh")
+SCRIPT = str(REPO / "images" / "agent" / "skills-scripts" / "snapshot-skills.sh")
 
 ROOT = pathlib.Path("/tmp/snaptest")
 SKILLS = ROOT / "skills"
@@ -21,7 +21,7 @@ GITDIR = ROOT / "snap.git"
 
 def run(**extra):
     env = {**os.environ, "HOME": "/opt/data",
-           "HERMES_SKILLS_DIR": str(SKILLS), "SKILLS_SNAPSHOT_GITDIR": str(GITDIR)}
+           "AGENT_SKILLS_DIR": str(SKILLS), "SKILLS_SNAPSHOT_GITDIR": str(GITDIR)}
     env.update(extra)
     return subprocess.run(["bash", SCRIPT], capture_output=True, text=True, env=env)
 

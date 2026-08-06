@@ -12,8 +12,8 @@ description: Jira reads are allowed against any project; Jira writes targeting a
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   create_in_change:
@@ -330,7 +330,7 @@ resources:
 tests:
   - name: reads against any project are always allowed, regardless of allowlist
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_in_change
         - create_in_other
@@ -341,30 +341,30 @@ tests:
         - no_keys
       actions: [read]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_in_change
         actions: {read: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_in_other
         actions: {read: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: get_change_issue
         actions: {read: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: get_other_issue
         actions: {read: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: link_mixed_projects
         actions: {read: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: link_to_other_epic
         actions: {read: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: no_keys
         actions: {read: EFFECT_ALLOW}
   - name: writes confined to an allowed project are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_in_change
         - get_change_issue
@@ -373,24 +373,24 @@ tests:
         - create_change_with_allowed_smuggled_epic
       actions: [write]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_in_change
         actions: {write: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: get_change_issue
         actions: {write: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: link_to_change_epic
         actions: {write: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: no_keys
         actions: {write: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_change_with_allowed_smuggled_epic
         actions: {write: EFFECT_ALLOW}
   - name: writes targeting another project are denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_in_other
         - get_other_issue
@@ -400,22 +400,22 @@ tests:
         - create_change_but_smuggled_parent
       actions: [write]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_in_other
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: get_other_issue
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: link_mixed_projects
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: link_to_other_epic
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_change_but_smuggled_epic
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_change_but_smuggled_parent
         actions: {write: EFFECT_DENY}
   - name: assignee scoping (jiraAllowedAssignees is jchristensen@moveworks.ai, matching
@@ -423,7 +423,7 @@ tests:
       an assignee on create (force-self-assignee), but doesn't require one on an ordinary
       update that doesn't touch assignee
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_with_disallowed_assignee
         - create_with_allowed_assignee
@@ -431,16 +431,16 @@ tests:
         - update_with_no_assignee
       actions: [write]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_with_disallowed_assignee
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_with_allowed_assignee
         actions: {write: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_with_no_assignee
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_with_no_assignee
         actions: {write: EFFECT_ALLOW}
   - name: a live-verified unassigned issue (assigneeVerified=true, assignee empty
@@ -449,16 +449,16 @@ tests:
       case above where the gate never ran at all; a verified issue with an allowed
       assignee is unaffected
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - update_verified_unassigned
         - update_verified_with_allowed_assignee
       actions: [write]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_verified_unassigned
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_verified_with_allowed_assignee
         actions: {write: EFFECT_ALLOW}
   - name: assignee-scope denials carry situation-accurate messages -- an explicitly
@@ -467,13 +467,13 @@ tests:
       CURRENT assignee (assigneeVerified=true, e.g. a comment on someone else's issue)
       says the issue is already assigned outside that scope
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_with_disallowed_assignee
         - update_verified_disallowed_assignee
       actions: [write]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_with_disallowed_assignee
         actions: {write: EFFECT_DENY}
         outputs:
@@ -482,7 +482,7 @@ tests:
               - src: resource.jira_project.vdefault#deny-assignee-outside-allowed
                 val: This agent may only assign Jira issues to an allowed user. The
                   requested assignee is outside that scope.
-      - principal: hermes
+      - principal: agent
         resource: update_verified_disallowed_assignee
         actions: {write: EFFECT_DENY}
         outputs:
@@ -499,7 +499,7 @@ tests:
       type, and doesn't require one on an ordinary update that doesn't touch issue
       type
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_with_allowed_issue_type
         - create_with_allowed_ops_issue_type
@@ -509,21 +509,21 @@ tests:
         - update_with_smuggled_disallowed_issue_type
       actions: [write]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_with_allowed_issue_type
         actions: {write: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_with_allowed_ops_issue_type
         actions: {write: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_with_disallowed_issue_type
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_with_disallowed_task_issue_type
         actions: {write: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_with_no_issue_type
         actions: {write: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: update_with_smuggled_disallowed_issue_type
         actions: {write: EFFECT_DENY}

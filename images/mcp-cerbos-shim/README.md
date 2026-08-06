@@ -207,7 +207,7 @@ A YAML mapping mounted at `MAPPING_PATH`. `mapping.example.yaml` is a two-tool s
 | `PROMPT_INJECTION_JUDGE_MODEL` | `gpt-4.1-mini` | stage-2 judge chat-completion model override |
 | `SHIM_SELF_TOKEN` | required | secret token the shim presents on its own re-entrant lookups so the `vmcp-internal` route's `CheckRequest` gate authenticates them and denies any other caller (see "Re-Entrant Lookup Path (vmcp-internal)"); unset aborts startup |
 
-The Cerbos principal is a fixed constant (`hermes`/`agent`) stamped on every request for audit context. It is **not** an authorization control: the policy allows all roles and denies only by resource, so there is nothing to configure.
+The Cerbos principal uses the fixed ID `agent` and role `agent` on every request for audit context. It is **not** an authorization control: the policy allows all roles and denies only by resource, so there is nothing to configure.
 
 ## Helpers (per-backend, pluggable)
 

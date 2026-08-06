@@ -41,9 +41,9 @@ func newAlertmanagerServer(t *testing.T, d *stubDecider, up upstream.ToolCaller)
 		t.Fatalf("compile: %v", err)
 	}
 	if up == nil {
-		return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+		return New(m, e, d, AuditPrincipal())
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithAlertmanagerSilenceOwner(up))
+	return New(m, e, d, AuditPrincipal(), WithAlertmanagerSilenceOwner(up))
 }
 
 func TestDeployedAlertmanagerMapping_DeleteSilenceResolvesAndForwardsOwnCreator(t *testing.T) {
@@ -190,7 +190,7 @@ func TestDeployedAlertmanagerMapping_CreateSilenceReachesCerbosWithDurationSecon
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("alertmanager_createSilence",
 			map[string]any{"alertName": "HighMemoryUsage", "duration": "2h"})))
@@ -220,7 +220,7 @@ func TestDeployedAlertmanagerMapping_CreateSilenceOmittedDurationDefaultsToTwoHo
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("alertmanager_createSilence",
 			map[string]any{"alertName": "HighMemoryUsage"})))
@@ -247,7 +247,7 @@ func TestDeployedAlertmanagerMapping_CreateSilenceForcesCreatedBy(t *testing.T) 
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("alertmanager_createSilence",
 			map[string]any{"alertName": "HighMemoryUsage", "duration": "2h", "createdBy": "whatever-the-caller-sent"})))
@@ -280,7 +280,7 @@ func TestDeployedAlertmanagerMapping_GetAlertsReachesCerbosWithFilterLabel(t *te
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("alertmanager_getAlerts",
 			map[string]any{"filterLabel": "severity=critical"})))
@@ -313,7 +313,7 @@ func TestDeployedAlertmanagerMapping_GetAlertsMissingFilterLabelIsDeniedByShippe
 	// the shape defs/resource_alertmanager_alert_query.yaml's
 	// deny-getAlerts-missing-filter rule matches on.
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("alertmanager_getAlerts",
 			map[string]any{})))

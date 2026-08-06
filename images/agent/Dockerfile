@@ -293,7 +293,7 @@ RUN rm -rf /seed/mnemosyne/models/.cache \
 # ---------------------------------------------------------------------------
 FROM nousresearch/hermes-agent:v2026.8.3@sha256:16788311e2fa3035456bdc1bafb8ec2b1777db64ebf020af9bb7eb73c3712c9e
 
-LABEL org.opencontainers.image.title="vicegerent-hermes-agent" \
+LABEL org.opencontainers.image.title="vicegerent-agent" \
       org.opencontainers.image.description="Vicegerent derivation of nousresearch/hermes-agent" \
       org.opencontainers.image.source="https://gitlab.hahomelabs.com/jchristensen/vicegerent-agents" \
       org.opencontainers.image.base.name="docker.io/nousresearch/hermes-agent:v2026.8.3"
@@ -325,8 +325,8 @@ LABEL org.opencontainers.image.title="vicegerent-hermes-agent" \
 # work rather than after anything that changes more often.
 ENV PATH="/opt/hermes/.venv/bin:${PATH}" \
     BASH_ENV=/etc/bash-shadow-builtins.sh
-RUN printf 'export PATH="/opt/hermes/.venv/bin:$PATH"\n' > /etc/profile.d/00-hermes-venv-path.sh \
-    && chmod 644 /etc/profile.d/00-hermes-venv-path.sh \
+RUN printf 'export PATH="/opt/hermes/.venv/bin:$PATH"\n' > /etc/profile.d/00-agent-venv-path.sh \
+    && chmod 644 /etc/profile.d/00-agent-venv-path.sh \
     && printf 'enable -n "[" echo false kill printf pwd test true\n' > /etc/bash-shadow-builtins.sh \
     && chmod 644 /etc/bash-shadow-builtins.sh \
     && find /opt/hermes/skills -name "SKILL.md" -exec chmod 644 {} +
@@ -361,7 +361,7 @@ ENV PATH="/usr/local/go/bin:${PATH}" \
     GOPROXY=https://proxy.golang.org,direct \
     GOSUMDB=sum.golang.org \
     GOTOOLCHAIN=local
-RUN printf 'export PATH="/usr/local/go/bin:$PATH"\n' >> /etc/profile.d/00-hermes-venv-path.sh \
+RUN printf 'export PATH="/usr/local/go/bin:$PATH"\n' >> /etc/profile.d/00-agent-venv-path.sh \
     && go version
 
 # Bake the Mnemosyne + STT model seed outside /opt/data so the data PVC cannot shadow it.
@@ -486,10 +486,10 @@ RUN LCM_DEST="$(/opt/hermes/.venv/bin/python -c 'import plugins.context_engine a
 # moves, so it sits below everything that changes less often. The cache mount
 # keeps uv's download cache out of the image while still making rebuilds fast.
 RUN --mount=type=bind,source=requirements.txt,target=/tmp/requirements.txt \
-    --mount=type=cache,id=vicegerent-hermes-uv-v1,target=/root/.cache/uv,sharing=locked \
+    --mount=type=cache,id=vicegerent-agent-uv-v1,target=/root/.cache/uv,sharing=locked \
     uv pip install --python /opt/hermes/.venv/bin/python -r /tmp/requirements.txt
 
-# Global npm CLIs used by Hermes/coding agents; package.json is the Renovate-tracked source.
+# Global npm CLIs used by the bundled agent harnesses; package.json is the Renovate-tracked source.
 # The most frequently bumped large input in the image (claude-code, codex, and
 # opencode all move weekly or faster), so it is deliberately the last big layer:
 # only the patch layer below it can be invalidated by an npm pin change.

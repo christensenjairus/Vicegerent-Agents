@@ -2,7 +2,7 @@
 """Behavioral regression test for patch 0044 (shell hooks for the
 ``dashboard``/``serve`` entrypoints).
 
-Run inside a Hermes image after the patch is applied, or against a scratch
+Run inside the agent image after the Hermes patch is applied, or against a scratch
 copy during development:
 
     HERMES_CLI_MAIN=/path/to/hermes_cli/main.py python3 \
@@ -90,7 +90,7 @@ def check_hook_dispatch() -> None:
     except ImportError as exc:  # pragma: no cover - env guard
         raise AssertionError(
             f"failed to import Hermes hook machinery — run this inside the "
-            f"hermes-agent image with /opt/hermes importable: {exc}"
+            f"agent image with /opt/hermes importable: {exc}"
         )
 
     with tempfile.TemporaryDirectory() as tmp:

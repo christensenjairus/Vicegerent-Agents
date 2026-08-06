@@ -52,7 +52,7 @@ func TestDeployedGitlabMapping_MappedToolsReachCerbos(t *testing.T) {
 			// Cerbos and honor its deny (turning it into a PERMISSION_DENIED
 			// error).
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -93,7 +93,7 @@ func TestDeployedGitlabMapping_AllowedProjectPasses(t *testing.T) {
 	// configured fails closed -- proven by
 	// TestDeployedGitlabMapping_UnconfiguredCanonicalizerFailsClosed below).
 	up := &fakeUpstream{text: `{"id":"148","path_with_namespace":"hahomelabs/vicegerent-agents"}`}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+	s := New(m, e, d, AuditPrincipal(),
 		WithGitlabProjectCanonicalizer(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("gitlab_get_issue",
@@ -243,7 +243,7 @@ func TestDeployedGitlabMapping_NumericProjectIdIsStringified(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("gitlab_get_issue",
 			map[string]any{"project_id": 148, "issue_iid": 1})))
@@ -293,7 +293,7 @@ func TestDeployedGitlabMapping_TargetProjectIdIsSurfaced(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.tool, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -363,7 +363,7 @@ func TestDeployedGitlabMapping_MergeRequestsAlwaysForceDraft(t *testing.T) {
 			// force-draft mapping, not the author gate, which has its own
 			// dedicated tests in gitlab_mr_author_deployed_test.go.
 			d := &stubDecider{allow: true}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+			s := New(m, e, d, AuditPrincipal(),
 				WithGitlabMRAuthor(&fakeUpstream{text: gitlabMRResultOwnAuthor}))
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
@@ -412,7 +412,7 @@ func TestDeployedGitlabMapping_DraftForceDoesNotBypassProjectAllowlist(t *testin
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("gitlab_create_merge_request",
 			map[string]any{"project_id": "999", "title": "t", "source_branch": "f", "target_branch": "main"})))
@@ -465,7 +465,7 @@ func TestDeployedGitlabMapping_ReviewersAttrWiredOnMergeRequestCreateAndUpdate(t
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+			s := New(m, e, d, AuditPrincipal(),
 				WithGitlabMRAuthor(&fakeUpstream{text: gitlabMRResultOwnAuthor}))
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
@@ -542,7 +542,7 @@ func TestDeployedGitlabMapping_RemovedToolsAreUnmapped(t *testing.T) {
 	for _, tool := range removed {
 		t.Run(tool, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tool,
 					map[string]any{"project_id": "999", "branch": "main"})))
@@ -576,7 +576,7 @@ func TestDeployedGitlabMapping_TodoDoneToolsAreUnmapped(t *testing.T) {
 	for _, tool := range []string{"gitlab_mark_todo_done", "gitlab_mark_all_todos_done"} {
 		t.Run(tool, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tool, map[string]any{"todo_id": "1"})))
 			if err != nil {

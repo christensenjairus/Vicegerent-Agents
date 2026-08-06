@@ -1,6 +1,6 @@
-# hermes-agent (vicegerent derived image)
+# Vicegerent agent sandbox image
 
-A thin derivation of the upstream [`nousresearch/hermes-agent`](https://hub.docker.com/r/nousresearch/hermes-agent) image, published to `harbor.hahomelabs.com/vicegerent/hermes-agent`. The sandbox is egress-locked and cannot reach Docker Hub, npm, or PyPI at runtime (`HERMES_DISABLE_LAZY_INSTALLS=1` is baked into the upstream image), so anything the agent needs must be present in the image. This is the base every bake builds on.
+The Vicegerent agent sandbox image is derived from upstream [`nousresearch/hermes-agent`](https://hub.docker.com/r/nousresearch/hermes-agent) and published to `harbor.hahomelabs.com/vicegerent/agent`. The sandbox is egress-locked and cannot reach Docker Hub, npm, or PyPI at runtime (`HERMES_DISABLE_LAZY_INSTALLS=1` is baked into the upstream image), so anything any bundled harness needs must be present in the image. This is the base every bake builds on.
 
 ## Why a derived image
 
@@ -85,7 +85,7 @@ Claude Code only overlaps MCP tools advertised as read-only, while the optimizer
 
 ## Shared skills and recovery
 
-Hermes owns the canonical skill tree at `/opt/data/skills`. `images/hermes/skills-scripts/sync-shared-skills.sh` publishes the whole tree at `~/.agents/skills` for Codex and OpenCode, which recurse, and builds a flat farm of per-skill links at `~/.claude/skills` because Claude Code scans only one level deep. Keep the flat farm: replacing it with one root link makes categorized skills invisible to Claude Code. A real skill directory created in Claude's farm is adopted under `/opt/data/skills/harness-authored/`, which makes it visible to the other harnesses; `skills.external_dirs` deliberately names only Claude's root so Hermes treats those adopted skills as externally owned without importing Codex's vendored `.system` skills.
+The platform stores the canonical skill tree at `/opt/data/skills`. `images/agent/skills-scripts/sync-shared-skills.sh` publishes the whole tree at `~/.agents/skills` for Codex and OpenCode, which recurse, and builds a flat farm of per-skill links at `~/.claude/skills` because Claude Code scans only one level deep. Keep the flat farm: replacing it with one root link makes categorized skills invisible to Claude Code. A real skill directory created in Claude's farm is adopted under `/opt/data/skills/harness-authored/`, which makes it visible to the other harnesses; `skills.external_dirs` deliberately names only Claude's root so Hermes treats those adopted skills as externally owned without importing Codex's vendored `.system` skills.
 
 The sync runs during `seed-data` and after every `skill_manage` call. The post-tool hook requires JSON on stdout, so the script writes diagnostics to stderr and prints `{}`. Hermes `dashboard` and `serve` must register configured hooks for this to work; patch `0044` adds those entrypoints, and patch `0045` makes `hermes hooks doctor` report entrypoint coverage instead of returning a misleading all-green result.
 

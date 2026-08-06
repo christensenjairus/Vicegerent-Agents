@@ -16,8 +16,8 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
-DOCKERFILE = REPO / "images" / "hermes" / "Dockerfile"
-SRC_DIR = REPO / "images" / "hermes" / "skills-scripts"
+DOCKERFILE = REPO / "images" / "agent" / "Dockerfile"
+SRC_DIR = REPO / "images" / "agent" / "skills-scripts"
 CHART = REPO / "charts" / "agent" / "templates"
 
 SCRIPTS = ["sync-shared-skills.sh", "snapshot-skills.sh"]

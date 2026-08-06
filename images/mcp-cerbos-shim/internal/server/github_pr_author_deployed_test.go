@@ -35,9 +35,9 @@ func newGithubServer(t *testing.T, d *stubDecider, up upstream.ToolCaller) *Serv
 		t.Fatalf("compile: %v", err)
 	}
 	if up == nil {
-		return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+		return New(m, e, d, AuditPrincipal())
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithGithubPRAuthor(up))
+	return New(m, e, d, AuditPrincipal(), WithGithubPRAuthor(up))
 }
 
 func TestDeployedGithubMapping_UpdatePullRequestBranchResolvesAndForwardsAuthor(t *testing.T) {
