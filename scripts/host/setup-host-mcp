@@ -62,38 +62,15 @@ need_cmd python3
 # ---------------------------------------------------------------------------
 step "Homebrew packages"
 
-# ToolHive ships from the stacklok tap; ghostunnel + supervisor are core formulae.
-# `bin:formula` pairs — plain indexed array so this works on macOS's stock bash 3.2
-# (which has no associative arrays; `declare -A [thv]=…` there dies under `set -u`).
-BREW_FORMULAE=(
-  "thv:stacklok/tap/thv"
-  "ghostunnel:ghostunnel"
-  "supervisor:supervisor"
-  "rclone:rclone"
-  "terminal-notifier:terminal-notifier"
-)
-MISSING=()
-for entry in "${BREW_FORMULAE[@]}"; do
-  formula="${entry#*:}"
-  if brew list --formula "$formula" >/dev/null 2>&1; then
-    info "$formula already installed"
-  else
-    MISSING+=("$formula")
-  fi
-done
-
-if [[ ${#MISSING[@]} -gt 0 ]]; then
-  echo "  Will install: ${MISSING[*]}"
-  if confirm; then
-    brew install "${MISSING[@]}"
-    info "Installed: ${MISSING[*]}"
-  else
-    warn "Skipped Homebrew install. Install manually, e.g.:"
-    warn "    brew install ${MISSING[*]}"
-  fi
+# Every managed formula is an immutable, version-qualified formula in this repo's
+# custom tap. The reconciler installs missing versions, migrates floating formulae,
+# verifies the linked binary, and pins the result against casual `brew upgrade`.
+BREW_RECONCILER="$REPO_ROOT/host/brew/reconcile.py"
+BREW_ARGS=(apply)
+if [[ "$ASSUME_YES" == "1" ]]; then
+  BREW_ARGS+=(--yes)
 fi
-
-command -v thv >/dev/null 2>&1 || warn "thv still not on PATH — see https://github.com/stacklok/toolhive"
+python3 "$BREW_RECONCILER" "${BREW_ARGS[@]}"
 
 # ---------------------------------------------------------------------------
 # 2. Python deps

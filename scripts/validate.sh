@@ -356,4 +356,8 @@ if [[ -n "$unpinned" ]]; then
   exit 1
 fi
 
+echo "INFO - Testing managed Homebrew package reconciliation"
+python3 -m unittest host.brew.test_generate host.brew.test_reconcile
+python3 host/brew/reconcile.py validate
+
 echo "INFO - All validations passed"

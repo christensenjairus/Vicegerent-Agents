@@ -2405,12 +2405,26 @@ def doctor(
     binaries.add_column("Check", style="bold")
     binaries.add_column("Status")
     binaries.add_row("[bold cyan]Binaries[/bold cyan]", "")
+    host_packages = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "host" / "brew" / "reconcile.py"), "check"],
+        capture_output=True, text=True, check=False,
+    )
+    optional_package_drift = any(
+        line.startswith("OPTIONAL") for line in host_packages.stdout.splitlines()
+    )
+    if host_packages.returncode == 0 and not optional_package_drift:
+        binaries.add_row("managed Homebrew versions", "[green]✓ exact[/green]")
+    elif host_packages.returncode == 0:
+        binaries.add_row("managed Homebrew versions", "[yellow]! required exact; optional drift[/yellow]")
+    else:
+        binaries.add_row("managed Homebrew versions", "[red]✗ drifted[/red]")
+        ok = False
     for binary in (
         "thv", "ghostunnel", "rclone", "supervisord", "supervisorctl",
         "caffeinate", "kind", "aws", "terminal-notifier",
     ):
         found = shutil.which(binary)
-        optional = binary in ("kind", "aws", "terminal-notifier")
+        optional = binary in ("kind", "aws")
         if found:
             result = f"[green]✓[/green] {found}"
         elif optional:
@@ -2420,12 +2434,20 @@ def doctor(
         binaries.add_row(binary, result)
         # kind is only needed for the local Kind cluster's kubeconfig; aws is only
         # needed for mcp-health-watch's AWS credential check (when `aws` is
-        # enabled); terminal-notifier is only needed for mcp-health-watch's own
-        # notifications -- none are fatal here (detection still works without it,
-        # notifications just silently don't fire).
-        if not found and binary not in ("kind", "aws", "terminal-notifier"):
+        # enabled); neither is fatal here.
+        if not found and binary not in ("kind", "aws"):
             ok = False
     console.print(binaries)
+    if host_packages.returncode != 0 or optional_package_drift:
+        heading = (
+            "Managed Homebrew package drift:"
+            if host_packages.returncode else "Optional Homebrew package drift:"
+        )
+        _ui(f"  {heading}", "yellow")
+        for line in (host_packages.stdout + host_packages.stderr).splitlines():
+            if host_packages.returncode != 0 or line.startswith("OPTIONAL"):
+                _ui(f"    {line}", "yellow")
+        _ui("  Fix: ./vicegerent host-packages apply", "yellow")
 
     secrets_table = Table(box=None, show_header=False, padding=(0, 2))
     secrets_table.add_column("Secret", style="bold")

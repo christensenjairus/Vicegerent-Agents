@@ -54,6 +54,7 @@ ${B}Usage:${N}
   ${C}vicegerent test gateway${N}                 run MCP gateway tests
   ${C}vicegerent test policies${N}                run MCP policy enforcement tests
   ${C}vicegerent test egress <name>${N}           run egress-proxy redaction/enforcement tests
+  ${C}vicegerent host-packages <cmd>${N}           check or reconcile exact Homebrew package versions
   ${C}vicegerent mcp <cmd>${N}                    host ToolHive/vMCP stack controller (start/stop/status/…)
   ${C}vicegerent tui${N}                          open the host stack TUI dashboard
 EOF
@@ -299,7 +300,7 @@ case "${1:-}" in
         shift
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
           echo "vicegerent setup mcp — set up all host-side MCP prerequisites, then configure servers"
-          echo "  Installs Homebrew packages (thv, ghostunnel, supervisor, rclone, terminal-notifier),"
+          echo "  Reconciles exact Homebrew package versions (thv, ghostunnel, supervisor, rclone, terminal-notifier),"
           echo "  the Python venv, and the thv secrets provider, then walks you through enabling/skipping each"
           echo "  MCP server and setting its secrets."
           echo "  Flags: -y/--yes (auto-approves the prerequisite installs; the per-server"
@@ -432,6 +433,23 @@ case "${1:-}" in
         ;;
       *)
         echo "unknown test subcommand: $1" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  host-packages)
+    shift
+    case "${1:-}" in
+      check|apply)
+        exec python3 "$REPO_ROOT/host/brew/reconcile.py" "$@"
+        ;;
+      --help|-h|"")
+        echo "vicegerent host-packages check       report exact-version drift (read-only)"
+        echo "vicegerent host-packages apply       install, link, verify, and pin declared versions"
+        exit 0
+        ;;
+      *)
+        echo "unknown host-packages command: $1 (expected 'check' or 'apply')" >&2
         exit 1
         ;;
     esac
