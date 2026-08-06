@@ -1,5 +1,5 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server
-TAG   ?= v0.2.0
+TAG   ?= v0.2.1
 REF   := $(IMAGE):$(TAG)
 
 DOCKER    ?= docker
