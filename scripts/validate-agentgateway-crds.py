@@ -12,11 +12,11 @@ skip, so a renamed kind or a bumped apiVersion can't slip through unvalidated.
 Resources in every other group are skipped -- kubeconform validates those.
 
 Limits (documented, not silent): JSON-schema cannot evaluate the CRD's
-x-kubernetes-validations CEL rules, and the upstream schema does not set
-additionalProperties:false, so a misplaced-but-type-valid extra key is not
-caught here — the apiserver's CEL is the backstop. This catches the high-value
-cases: bad enums (e.g. lowercase phase), wrong types, and missing required
-fields such as remote.backendRef.
+x-kubernetes-validations CEL rules. Kubernetes structural schemas nevertheless
+reject undeclared fields during typed patch construction even when generated
+CRDs omit explicit additionalProperties:false. This validator mirrors that
+behavior for objects with declared properties, while preserving explicit maps
+and x-kubernetes-preserve-unknown-fields subtrees.
 
 Usage: validate-agentgateway-crds.py <crd-glob> <rendered.yaml> [<rendered.yaml> ...]
 """
@@ -29,6 +29,36 @@ try:
 except ImportError:
     print("ERROR - python 'jsonschema' not installed", file=sys.stderr)
     sys.exit(2)
+
+
+def close_structural_objects(node):
+    """Mirror Kubernetes typed-object handling for generated CRD schemas.
+
+    jsonschema permits undeclared object keys unless additionalProperties is
+    explicitly false. Kubernetes' structured-merge-diff type converter does
+    not: a typed Helm patch fails when a manifest contains a field absent from
+    an object's declared properties. Generated CRDs commonly omit the JSON
+    Schema keyword, so add it in-memory for declared structural objects only.
+    """
+    if isinstance(node, list):
+        for item in node:
+            close_structural_objects(item)
+        return
+    if not isinstance(node, dict):
+        return
+
+    properties = node.get("properties")
+    if (
+        node.get("type") == "object"
+        and isinstance(properties, dict)
+        and properties
+        and node.get("x-kubernetes-preserve-unknown-fields") is not True
+        and "additionalProperties" not in node
+    ):
+        node["additionalProperties"] = False
+
+    for value in node.values():
+        close_structural_objects(value)
 
 
 def main() -> int:
@@ -47,7 +77,9 @@ def main() -> int:
                 group = doc["spec"]["group"]
                 kind = doc["spec"]["names"]["kind"]
                 for v in doc["spec"]["versions"]:
-                    schemas[(group, v["name"], kind)] = v["schema"]["openAPIV3Schema"]
+                    schema = v["schema"]["openAPIV3Schema"]
+                    close_structural_objects(schema)
+                    schemas[(group, v["name"], kind)] = schema
 
     if not schemas:
         print(f"ERROR - no CRD schemas loaded from {crd_glob}", file=sys.stderr)

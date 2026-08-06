@@ -72,6 +72,9 @@ spec:
               tools/call: Full
               resources/read: Response
               prompts/get: Response
+              tasks/get: Response
+              tasks/update: Response
+              tasks/cancel: "Off"
             remote:
               backendRef:
                 name: mcp-cerbos-shim
@@ -95,7 +98,7 @@ metadata:
 spec:
   mcp:
     targets:
-      - name: vmcp
+      - name: vmcp-internal
         static:
           host: host.docker.internal
           port: 8453
@@ -154,7 +157,10 @@ spec:
       guardrails:
         processors:
           - methods:
-              tools/call: Request
+              "*": Request
+              resources/subscribe: Response
+              resources/unsubscribe: Response
+              completion/complete: Response
             remote:
               backendRef:
                 name: mcp-cerbos-shim

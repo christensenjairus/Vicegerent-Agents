@@ -75,41 +75,113 @@ render_cerbos_defs() {
   done < <(yq 'select(.kind=="ConfigMap") | .data | keys | .[]' <<<"$cm")
 }
 
-# Each vMCP AgentgatewayPolicy must carry exactly one well-formed Cerbos guardrail
-# processor (tools/call -> mcp-cerbos-shim, FailClosed). The phase differs by route:
-#   - vmcp-mcp-tools (agent-facing :80 route): phase Full — both CheckRequest and
-#     CheckResponse (the latter drives response-side secret redaction, see
-#     secrets_redact.go).
-#   - vmcp-internal-mcp-tools (the shim's own re-entrant-lookup :81 route): phase
-#     Request — CheckRequest only. Running CheckResponse here would re-open the
-#     shim<->agentgateway prompt-injection loop (see the shim README's
-#     "Re-Entrant Lookup Path").
-# Anything else forwards with no policy check or only half of one — a silent
-# fail-open. This catches a dropped/renamed/downgraded/mis-phased guardrail at MR
-# time (not the live reconcile path — that gap is documented in the shim README).
+# Unmatched methods bypass processors, so pin every security-relevant phase.
+# The internal route uses a request catchall. The three methods agentgateway
+# v1.4.1 cannot process on the request phase run Response only and are denied by
+# the shim before their bodies are inspected.
 assert_guardrail_well_formed() {
-  local rendered="$1"
-  assert_policy_guardrail "$rendered" vmcp-mcp-tools Full
-  assert_policy_guardrail "$rendered" vmcp-internal-mcp-tools Request
+  local rendered="$1" internal_target internal_route internal_policy_target
+  assert_policy_guardrail "$rendered" vmcp-mcp-tools Full Response Response Off "prompts/get,resources/read,tasks/cancel,tasks/get,tasks/update,tools/call"
+  assert_internal_policy_guardrail "$rendered"
+
+  internal_target="$(echo "$rendered" | yq ea '
+    select(.kind == "AgentgatewayBackend" and .metadata.name == "vmcp-internal")
+    | select((.spec.mcp.targets | length) == 1)
+    | .spec.mcp.targets[0].name' -)"
+  internal_route="$(echo "$rendered" | yq ea '
+    select(.kind == "HTTPRoute" and .metadata.name == "vmcp-internal")
+    | select((.spec.parentRefs | length) == 1 and .spec.parentRefs[0].sectionName == "internal")
+    | select((.spec.rules | length) == 1 and (.spec.rules[0].backendRefs | length) == 1)
+    | .spec.rules[0].backendRefs[0].name' -)"
+  internal_policy_target="$(echo "$rendered" | yq ea '
+    select(.kind == "AgentgatewayPolicy" and .metadata.name == "vmcp-internal-mcp-tools")
+    | select((.spec.targetRefs | length) == 1)
+    | .spec.targetRefs[0].name' -)"
+  if [[ "$internal_target" != "vmcp-internal" || "$internal_route" != "vmcp-internal" || "$internal_policy_target" != "vmcp-internal" ]]; then
+    echo "ERROR - vmcp-internal must use the distinct MCP target name vmcp-internal and attach its route and policy only to the internal backend." >&2
+    exit 1
+  fi
+}
+
+assert_internal_policy_guardrail() {
+  local rendered="$1" processors well_formed
+  processors="$(echo "$rendered" | yq ea '
+    select(.kind == "AgentgatewayPolicy" and .metadata.name == "vmcp-internal-mcp-tools")
+    | .spec.backend.mcp.guardrails.processors // [] | length' -)"
+  well_formed="$(echo "$rendered" | yq ea '
+    select(.kind == "AgentgatewayPolicy" and .metadata.name == "vmcp-internal-mcp-tools")
+    | [ .spec.backend.mcp.guardrails.processors[]
+        | select(.methods["*"] == "Request"
+            and .methods["resources/subscribe"] == "Response"
+            and .methods["resources/unsubscribe"] == "Response"
+            and .methods["completion/complete"] == "Response"
+            and (.methods | keys | sort | join(",")) == "*,completion/complete,resources/subscribe,resources/unsubscribe"
+            and .remote.backendRef.name == "mcp-cerbos-shim"
+            and .remote.backendRef.namespace == "cerbos"
+            and .remote.backendRef.port == 4445
+            and .remote.failureMode == "FailClosed") ]
+    | length' -)"
+  if [[ "$processors" != "1" || "$well_formed" != "1" ]]; then
+    echo "ERROR - vmcp-internal-mcp-tools must have one FailClosed shim processor with a Request catchall and Response-only denials for agentgateway v1.4.1's three request-phase-unsupported methods." >&2
+    exit 1
+  fi
 }
 
 assert_policy_guardrail() {
-  local rendered="$1" name="$2" phase="$3" processors well_formed
+  local rendered="$1" name="$2" tools_phase="$3" task_get_phase="$4" task_update_phase="$5" task_cancel_phase="$6" expected_methods="$7" processors well_formed
   processors="$(echo "$rendered" | NAME="$name" yq ea '
     select(.kind == "AgentgatewayPolicy" and .metadata.name == strenv(NAME))
     | .spec.backend.mcp.guardrails.processors // [] | length' -)"
-  well_formed="$(echo "$rendered" | NAME="$name" PHASE="$phase" yq ea '
+  well_formed="$(echo "$rendered" | NAME="$name" TOOLS_PHASE="$tools_phase" TASK_GET_PHASE="$task_get_phase" TASK_UPDATE_PHASE="$task_update_phase" TASK_CANCEL_PHASE="$task_cancel_phase" EXPECTED_METHODS="$expected_methods" yq ea '
     select(.kind == "AgentgatewayPolicy" and .metadata.name == strenv(NAME))
     | [ .spec.backend.mcp.guardrails.processors[]
-        | select(.methods["tools/call"] == strenv(PHASE)
+        | select(.methods["tools/call"] == strenv(TOOLS_PHASE)
+            and .methods["tasks/get"] == strenv(TASK_GET_PHASE)
+            and .methods["tasks/update"] == strenv(TASK_UPDATE_PHASE)
+            and .methods["tasks/cancel"] == strenv(TASK_CANCEL_PHASE)
+            and (.methods | keys | sort | join(",")) == strenv(EXPECTED_METHODS)
             and .remote.backendRef.name == "mcp-cerbos-shim"
+            and .remote.backendRef.namespace == "cerbos"
+            and .remote.backendRef.port == 4445
             and .remote.failureMode == "FailClosed") ]
     | length' -)"
   if [[ "$processors" != "1" || "$well_formed" != "1" ]]; then
     echo "ERROR - AgentgatewayPolicy ${name} has a malformed Cerbos guardrail (found" \
          "${processors:-0} processor(s), ${well_formed:-0} well-formed). It must be" \
-         "exactly one tools/call -> mcp-cerbos-shim processor with phase ${phase} and" \
-         "FailClosed. Refusing to ship a fail-open MCP backend." >&2
+         "exactly one processor with explicit tools/call, tasks/get, tasks/update, and tasks/cancel phases" \
+         "${tools_phase}/${task_get_phase}/${task_update_phase}/${task_cancel_phase} and" \
+         "the exact FailClosed shim attachment. Refusing to ship a fail-open MCP backend." >&2
+    exit 1
+  fi
+}
+
+assert_agentgateway_release_locked() {
+  local rendered="$1" crd_version chart_version controller_tag data_tag
+  crd_version="$(yq '.stages[].actions[] | select(.name == "agentgateway-crds") | .version' stages/stages.yaml)"
+  chart_version="$(yq '.stages[].actions[] | select(.name == "agentgateway") | .version' stages/stages.yaml)"
+  controller_tag="$(yq '.controller.image.tag' stages/values/agentgateway.yaml)"
+  data_tag="$(echo "$rendered" | yq ea 'select(.kind == "AgentgatewayParameters" and .metadata.name == "agentgateway-config") | .spec.image.tag' -)"
+  if [[ -z "$crd_version" || "$crd_version" != "$chart_version" || "$crd_version" != "$controller_tag" || "$crd_version" != "$data_tag" ]]; then
+    echo "ERROR - agentgateway CRDs/chart/controller/data-plane versions must be identical; got CRDs=${crd_version:-unset}, chart=${chart_version:-unset}, controller=${controller_tag:-unset}, data-plane=${data_tag:-unset}." >&2
+    exit 1
+  fi
+}
+
+assert_promptguard_well_formed() {
+  local rendered="$1" guarded
+  # shellcheck disable=SC2016  # $guard is a yq variable, not a shell expansion.
+  guarded="$(echo "$rendered" | yq ea '
+    select(.kind == "AgentgatewayBackend" and (.spec.ai.groups | length) > 0)
+    | .spec.ai.groups[].providers[]
+    | .policies.ai.promptGuard as $guard
+    | ($guard.streaming == "Enabled" and
+       ($guard.request | length) == 1 and
+       $guard.request[0].regex.action == "Mask" and
+       ($guard.response | length) == 1 and
+       $guard.response[0].regex.action == "Reject" and
+       $guard.response[0].rejection == null)' -)"
+  if [[ -z "$guarded" || "$guarded" == *false* ]]; then
+    echo "ERROR - every AI provider must mask matching request content and reject matching buffered or streaming responses using the v1.4.1 CRD-supported default rejection." >&2
     exit 1
   fi
 }
@@ -258,6 +330,12 @@ echo "INFO - Asserting shared operating guidance reaches every harness"
 python3 scripts/validate-shared-skill-guidance.py
 
 platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
+
+echo "INFO - Asserting AI prompt guards cover buffered and streaming responses"
+assert_promptguard_well_formed "$platform_rendered"
+
+echo "INFO - Asserting the agentgateway release versions stay in lockstep"
+assert_agentgateway_release_locked "$platform_rendered"
 
 echo "INFO - Asserting the vMCP Cerbos guardrail is well-formed"
 assert_guardrail_well_formed "$platform_rendered"

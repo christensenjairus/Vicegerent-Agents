@@ -10,32 +10,16 @@ import (
 	pb "github.com/jchristensen/vicegerent-agents/images/mcp-cerbos-shim/proto/gen"
 )
 
-// These tests cover the recursion hazard that reached production in v0.33.8 and
-// that NO existing test could observe: every other canonicalization test injects
-// a fake upstream that returns a canned answer WITHOUT re-entering the shim, so
-// the gate calling itself is invisible to them. The fake here re-enters
-// CheckRequest exactly as the real re-entrant lookup does, which is what makes
-// the recursion reproducible in-process.
-//
-// Production shape being reproduced: the GitLab canonicalization gate resolves a
-// non-numeric project_id by calling gitlab_get_project, and gitlab_get_project is
-// itself mapped to gitlab_project/access. The reserved vmcp-internal backend was
-// trusted to keep the shim's own lookup off the gated path, but service_names
-// carries the MCP *target* name -- `vmcp` for BOTH backends in vmcp.yaml -- so
-// isInternalBackend never matched, the lookup was gated, and each gated lookup
-// issued another. One agent call produced 40+ identical denies.
+// These tests cover the recursion hazard caused by routing the shim's own live
+// lookups through the normal vmcp target. The fake below re-enters CheckRequest
+// the way the real internal client does, so the reserved target and token checks
+// are exercised in-process.
 
-// reentrantUpstream is a ToolCaller that feeds the shim's own lookup back into
-// CheckRequest, carrying the self-token the way internal/upstream does. depth
-// records the deepest nesting reached and calls the total re-entries, so a test
-// can assert the gate does not invoke itself rather than merely that it returned
-// something.
+// reentrantUpstream feeds the shim's own lookup back into CheckRequest. depth
+// records whether the lookup re-enters the authorization gate recursively.
 type reentrantUpstream struct {
-	s     *Server
-	token string
-	// backend is the service_names value the re-entrant call arrives with.
-	// Defaults to "vmcp" -- the deployed reality (both backends declare target
-	// `vmcp`), NOT "vmcp-internal".
+	s       *Server
+	token   string
 	backend string
 
 	calls atomic.Int32
@@ -66,7 +50,7 @@ func (r *reentrantUpstream) CallTool(ctx context.Context, tool string, args map[
 
 	backend := r.backend
 	if backend == "" {
-		backend = "vmcp"
+		backend = internalBackendName
 	}
 	req := mcpReq(backend, "tools/call", toolCall(tool, args))
 	req.Headers = []*pb.McpHeader{{Key: upstream.SelfHeaderName, Value: []byte(r.token)}}
@@ -82,15 +66,8 @@ func (r *reentrantUpstream) CallTool(ctx context.Context, tool string, args map[
 	}{{Type: "text", Text: `{"id":"148","path_with_namespace":"jchristensen/vicegerent-agents"}`}}}, nil
 }
 
-// TestSelfLookupTool_NoRecursion is the regression test for the production
-// storm. A path-form project_id forces the canonicalization lookup; that lookup
-// re-enters CheckRequest on the SAME backend name agent traffic uses, presenting
-// the self-token. Exactly one lookup must occur: the re-entrant
-// gitlab_get_project has to short-circuit on the selfLookupTools backstop rather
-// than reach the canonicalization gate again.
-//
-// Mutation-verified: removing the selfLookupTools guard from CheckRequest fails
-// this with "lookup depth = 9, want 1".
+// TestSelfLookupTool_NoRecursion verifies the reserved target short-circuits a
+// valid self-token before a mapped lookup can re-enter its own live gate.
 func TestSelfLookupTool_NoRecursion(t *testing.T) {
 	const token = "self-tok-recursion"
 	m := deployedMapping(t)
@@ -183,18 +160,11 @@ func TestSelfLookupTool_AgentCallStillGated(t *testing.T) {
 	}
 }
 
-// TestIsInternalBackend_DoesNotMatchDeployedTargetName pins the root cause so a
-// future reader cannot re-derive the original wrong assumption. ext_mcp.proto
-// documents service_names as backend names "in their native (unmuxed)
-// namespace" -- the MCP target name from spec.mcp.targets[].name, not the
-// AgentgatewayBackend's metadata.name -- and both vmcp.yaml backends declare
-// target `vmcp`. So a real re-entrant lookup does NOT satisfy
-// isInternalBackend, which is precisely why the tool-name backstop exists.
-func TestIsInternalBackend_DoesNotMatchDeployedTargetName(t *testing.T) {
+func TestIsInternalBackend_MatchesDedicatedTargetOnly(t *testing.T) {
 	if isInternalBackend([]string{"vmcp"}) {
-		t.Fatal("isInternalBackend matched the deployed target name; the vmcp.yaml topology changed -- re-check whether the selfLookupTools backstop is still the load-bearing guard")
+		t.Fatal("normal vmcp target must not match the reserved internal target")
 	}
 	if !isInternalBackend([]string{internalBackendName}) {
-		t.Error("isInternalBackend must still match the literal backend name")
+		t.Fatal("dedicated internal MCP target must match")
 	}
 }

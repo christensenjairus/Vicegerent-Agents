@@ -19,6 +19,9 @@ CRD_VERSION="$(yq '.stages[].actions[] | select(.name == "agentgateway-crds") | 
   || { echo "ERROR - agentgateway-crds version not found in ${STAGES}" >&2; exit 1; }
 echo "INFO - agentgateway-crds version pinned to ${CRD_VERSION} (from ${STAGES})"
 
+echo "INFO - Testing strict agentgateway CRD field validation"
+python3 scripts/test_validate_agentgateway_crds.py
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
