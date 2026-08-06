@@ -22,7 +22,53 @@ variables:
   LOG_LEVEL: info
   DOCKER_CONFIG: $CI_PROJECT_DIR/.docker
 
-stages: [validate, publish, scan]
+stages: [generate, validate, publish, scan]
+
+generate:host-brew-formulae:
+  stage: generate
+  image: harbor.hahomelabs.com/docker.io/alpine/k8s:1.36.2
+  interruptible: false
+  resource_group: host-brew-generate-$CI_MERGE_REQUEST_IID
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE != "merge_train" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^renovate\//
+      changes:
+        - host/brew/packages.json
+      when: on_success
+    - when: never
+  before_script:
+    - apk add --no-cache ca-certificates curl git python3
+  script:
+    - |
+      test "$CI_MERGE_REQUEST_SOURCE_PROJECT_ID" = "$CI_PROJECT_ID" || {
+        echo "CI cannot push generated formulae to a forked merge request." >&2
+        exit 1
+      }
+    - git fetch --no-tags origin "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+    - git checkout --detach FETCH_HEAD
+    - python3 host/brew/generate.py
+    - python3 -m unittest host.brew.test_generate host.brew.test_reconcile
+    - python3 host/brew/reconcile.py validate
+    - |
+      if test -z "$(git status --porcelain -- Formula host/brew/packages.json)"; then
+        echo "Managed Homebrew formulae already match the Renovate update."
+        exit 0
+      fi
+      unexpected="$(git status --porcelain | cut -c4- | grep -Ev '^(Formula/.+\.rb|host/brew/packages\.json)$' || true)"
+      test -z "$unexpected" || { echo "Generator changed unexpected files:" >&2; printf '%s\n' "$unexpected" >&2; exit 1; }
+      git config user.name "Vicegerent CI"
+      git config user.email "vicegerent-ci@hahomelabs.com"
+      git add Formula host/brew/packages.json
+      git commit -m "chore(brew): generate versioned formulae"
+      git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        "HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}"
+      curl --fail --silent --show-error --request POST \
+        --form "token=${CI_JOB_TOKEN}" \
+        --form "ref=${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}" \
+        --form "variables[GENERATED_CHANGE]=host-brew-formulae" \
+        --form "variables[MR_DIFF_BASE_SHA]=${CI_MERGE_REQUEST_DIFF_BASE_SHA}" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/trigger/pipeline"
 
 validate:pre-commit:
   stage: validate
@@ -51,6 +97,8 @@ validate:pre-commit:
       - .cache/kubeconform/
       - .cache/ci-tools/
   rules:
+    - if: $CI_PIPELINE_SOURCE == "pipeline" && $GENERATED_CHANGE == "host-brew-formulae"
+      when: on_success
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       when: on_success
     - if: $CI_PIPELINE_SOURCE == "web"
@@ -78,7 +126,18 @@ validate:pre-commit:
     - export PATH="$TOOLS_CACHE_DIR:$PATH"
     - pip install "pre-commit==$PRE_COMMIT_VERSION" "detect-secrets==$DETECT_SECRETS_VERSION" --break-system-packages --quiet
   script:
-    - pre-commit run --all-files --show-diff-on-failure
+    - |
+      if test "$CI_PIPELINE_SOURCE" = "merge_request_event" &&
+        test "$CI_MERGE_REQUEST_SOURCE_PROJECT_ID" = "$CI_PROJECT_ID"; then
+        git fetch --no-tags origin "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+        source_head="$(git rev-parse FETCH_HEAD)" || { echo "Cannot resolve fetched MR head." >&2; exit 1; }
+        test -n "$source_head" || { echo "Fetched MR head is empty." >&2; exit 1; }
+        if test "$source_head" != "$CI_COMMIT_SHA"; then
+          echo "Skipping validation for superseded MR head $CI_COMMIT_SHA."
+          exit 0
+        fi
+      fi
+      pre-commit run --all-files --show-diff-on-failure
 
 validate:shim-go-test:
   stage: validate
@@ -169,6 +228,7 @@ validate:image-tag-bump:
         curl --fail --silent --show-error --request POST \
           --form "token=${CI_JOB_TOKEN}" \
           --form "ref=${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}" \
+          --form "variables[GENERATED_CHANGE]=image-tags" \
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/trigger/pipeline"
       fi
 
@@ -177,13 +237,50 @@ validate:tag-bump-head:
   image: harbor.hahomelabs.com/docker.io/alpine/k8s:1.36.2
   interruptible: true
   rules:
-    - if: $CI_PIPELINE_SOURCE == "pipeline"
+    - if: $CI_PIPELINE_SOURCE == "pipeline" && $GENERATED_CHANGE == "image-tags"
       when: on_success
     - when: never
   before_script:
     - apk add --no-cache python3 2>/dev/null || true
   script:
     - python3 scripts/validate-image-tags.py
+
+validate:host-brew-formulae:
+  stage: validate
+  image: harbor.hahomelabs.com/docker.io/alpine/k8s:1.36.2
+  interruptible: true
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "pipeline" && $GENERATED_CHANGE == "host-brew-formulae"
+      when: on_success
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - Formula/**/*
+        - host/brew/**/*
+      when: on_success
+    - when: never
+  before_script:
+    - apk add --no-cache ca-certificates git python3
+  script:
+    - |
+      if test "$CI_PIPELINE_SOURCE" = "merge_request_event" &&
+        test "$CI_MERGE_REQUEST_SOURCE_PROJECT_ID" = "$CI_PROJECT_ID"; then
+        git fetch --no-tags origin "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+        source_head="$(git rev-parse FETCH_HEAD)" || { echo "Cannot resolve fetched MR head." >&2; exit 1; }
+        test -n "$source_head" || { echo "Fetched MR head is empty." >&2; exit 1; }
+        if test "$source_head" != "$CI_COMMIT_SHA"; then
+          echo "Skipping formula verification for superseded MR head $CI_COMMIT_SHA."
+          exit 0
+        fi
+      fi
+    - |
+      base_revision="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$MR_DIFF_BASE_SHA}"
+      test -n "$base_revision" || { echo "MR diff base SHA is required." >&2; exit 1; }
+      git fetch --no-tags origin "$base_revision"
+      python3 host/brew/generate.py --verify --changed-since "$base_revision"
+    - python3 -m unittest host.brew.test_generate host.brew.test_reconcile
+    - python3 host/brew/reconcile.py validate
 
 validate:renovate-config:
   stage: validate

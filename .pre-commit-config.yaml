@@ -47,6 +47,13 @@ repos:
         entry: python3 scripts/validate-policy-runtime-coverage.py
         files: ^(charts/cerbos-policies/policies/.+\.yaml|scripts/test-mcp-policies\.sh|scripts/validate-policy-runtime-coverage\.py)$
         pass_filenames: false
+      - id: validate-host-brew
+        name: managed Homebrew package pins
+        language: system
+        entry: bash -c 'python3 -m unittest host.brew.test_generate host.brew.test_reconcile
+          && python3 host/brew/reconcile.py validate'
+        files: ^(Formula/.+\.rb|host/brew/.+)$
+        pass_filenames: false
       - id: validate-manifests
         name: helm lint + render + kubeconform + cerbos compile
         language: system

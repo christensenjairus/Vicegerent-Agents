@@ -77,7 +77,7 @@ $EDITOR values.yaml          # cluster vars + the agents you want (start with th
 ./vicegerent install
 
 # 6. Bring up the host-side MCP control plane (ToolHive + vMCP)
-./vicegerent setup mcp       # one-time: installs thv/ghostunnel/venv, then configures MCP servers + links the CLI onto PATH
+./vicegerent setup mcp       # one-time: reconciles exact host-tool versions, creates the venv, then configures MCP servers + links the CLI onto PATH
 ./vicegerent start
 
 # 7. Show the agent's dashboard URL + login

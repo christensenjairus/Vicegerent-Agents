@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "tap": {
+    "name": "vicegerent/packages",
+    "url": "git@gitlab.hahomelabs.com:jchristensen/vicegerent-agents.git"
+  },
+  "packages": [
+    {
+      "name": "toolhive",
+      "source": "stacklok/toolhive",
+      "renovateDatasource": "github-releases",
+      "renovateDependency": "stacklok/toolhive",
+      "formula": "vicegerent/packages/thv@0.42.0",
+      "version": "0.42.0",
+      "binary": "thv",
+      "versionArgs": ["version"],
+      "replaces": ["stacklok/tap/thv"],
+      "generator": {
+        "type": "github-release-assets",
+        "tagPrefix": "v",
+        "assets": {
+          "DARWIN_AMD64": "toolhive_{version}_darwin_amd64.tar.gz",
+          "DARWIN_ARM64": "toolhive_{version}_darwin_arm64.tar.gz",
+          "LINUX_AMD64": "toolhive_{version}_linux_amd64.tar.gz",
+          "LINUX_ARM64": "toolhive_{version}_linux_arm64.tar.gz"
+        }
+      }
+    },
+    {
+      "name": "ghostunnel",
+      "source": "ghostunnel/ghostunnel",
+      "renovateDatasource": "github-releases",
+      "renovateDependency": "ghostunnel/ghostunnel",
+      "formula": "vicegerent/packages/ghostunnel@1.11.2",
+      "version": "1.11.2",
+      "binary": "ghostunnel",
+      "versionArgs": ["--version"],
+      "replaces": ["ghostunnel"],
+      "generator": {
+        "type": "github-archive",
+        "tagPrefix": "v"
+      }
+    },
+    {
+      "name": "supervisor",
+      "source": "Supervisor/supervisor",
+      "renovateDatasource": "pypi",
+      "renovateDependency": "supervisor",
+      "formula": "vicegerent/packages/supervisor@4.3.0",
+      "version": "4.3.0",
+      "binary": "supervisord",
+      "versionArgs": ["--version"],
+      "replaces": ["supervisor"],
+      "generator": {
+        "type": "pypi-sdist",
+        "project": "supervisor"
+      }
+    },
+    {
+      "name": "rclone",
+      "source": "rclone/rclone",
+      "renovateDatasource": "github-releases",
+      "renovateDependency": "rclone/rclone",
+      "formula": "vicegerent/packages/rclone@1.75.0",
+      "version": "1.75.0",
+      "binary": "rclone",
+      "versionArgs": ["version"],
+      "replaces": ["rclone"],
+      "generator": {
+        "type": "github-archive",
+        "tagPrefix": "v"
+      }
+    },
+    {
+      "name": "terminal-notifier",
+      "source": "julienXX/terminal-notifier",
+      "renovateDatasource": "github-releases",
+      "renovateDependency": "julienXX/terminal-notifier",
+      "formula": "vicegerent/packages/terminal-notifier@2.0.0",
+      "version": "2.0.0",
+      "binary": "terminal-notifier",
+      "versionArgs": ["-help"],
+      "replaces": ["terminal-notifier"],
+      "xcodeFirstLaunch": true,
+      "generator": {
+        "type": "github-archive",
+        "tagPrefix": ""
+      }
+    }
+  ]
+}
