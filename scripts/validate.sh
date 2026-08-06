@@ -317,6 +317,9 @@ python3 scripts/validate-mcp-parallel-tool-calls.py
 echo "INFO - Asserting Codex has the baked LSP MCP runtime"
 python3 scripts/validate-codex-lsp.py
 
+echo "INFO - Asserting Claude Code loads the baked language servers"
+python3 scripts/validate-claude-lsp.py
+
 echo "INFO - Asserting rendered provider reasoning overrides match configured efforts"
 python3 images/hermes/patches/tests/test_provider_reasoning_overrides.py --chart-dir charts/agent --values values.defaults.yaml
 

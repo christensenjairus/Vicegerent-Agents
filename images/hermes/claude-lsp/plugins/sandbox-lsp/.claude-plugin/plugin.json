@@ -1,0 +1,8 @@
+{
+  "name": "sandbox-lsp",
+  "description": "Language servers baked into the Hermes image, wired to Claude Code",
+  "version": "1.0.0",
+  "author": {
+    "name": "vicegerent"
+  }
+}

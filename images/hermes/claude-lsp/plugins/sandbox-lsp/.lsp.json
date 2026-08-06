@@ -1,0 +1,96 @@
+{
+  "pyright": {
+    "command": "pyright-langserver",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".py": "python",
+      ".pyi": "python"
+    }
+  },
+  "bash": {
+    "command": "bash-language-server",
+    "args": ["start"],
+    "extensionToLanguage": {
+      ".sh": "shellscript",
+      ".bash": "shellscript"
+    }
+  },
+  "yaml": {
+    "command": "yaml-language-server",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".yaml": "yaml",
+      ".yml": "yaml"
+    },
+    "initializationOptions": {
+      "yaml": {
+        "schemaStore": {
+          "enable": false
+        }
+      }
+    },
+    "settings": {
+      "yaml": {
+        "schemaStore": {
+          "enable": false
+        }
+      }
+    }
+  },
+  "gopls": {
+    "command": "gopls",
+    "args": ["serve"],
+    "extensionToLanguage": {
+      ".go": "go"
+    }
+  },
+  "terraform": {
+    "command": "terraform-ls",
+    "args": ["serve"],
+    "extensionToLanguage": {
+      ".tf": "terraform",
+      ".tfvars": "terraform"
+    }
+  },
+  "dockerfile": {
+    "command": "docker-langserver",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".dockerfile": "dockerfile"
+    }
+  },
+  "typescript": {
+    "command": "/opt/vicegerent/claude-lsp/bin/typescript-lsp",
+    "extensionToLanguage": {
+      ".ts": "typescript",
+      ".mts": "typescript",
+      ".cts": "typescript",
+      ".tsx": "typescriptreact",
+      ".js": "javascript",
+      ".mjs": "javascript",
+      ".cjs": "javascript",
+      ".jsx": "javascriptreact"
+    }
+  },
+  "svelte": {
+    "command": "svelteserver",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".svelte": "svelte"
+    }
+  },
+  "vue": {
+    "command": "vue-language-server",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".vue": "vue"
+    }
+  },
+  "php": {
+    "command": "intelephense",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".php": "php"
+    }
+  }
+}
