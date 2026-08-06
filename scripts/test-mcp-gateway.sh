@@ -10,7 +10,8 @@
 # With no keyword, enumerate the reachable tools per backend. With a keyword,
 # search find_tool for matching tools (e.g. 'kubernetes', 'context', 'notion').
 #
-# Override the bearer token agentgateway expects (default "hermes"):
+# Override the unauthenticated placeholder API key sent to agentgateway (default "agent");
+# the gateway route does not validate this value.
 #   API_KEY=myval bash scripts/test-mcp-gateway.sh
 set -uo pipefail
 
@@ -18,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/cli-ui.sh
 source "$SCRIPT_DIR/lib/cli-ui.sh"
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
-API_KEY="${API_KEY:-hermes}"
+API_KEY="${API_KEY:-agent}"
 SERVERS_CONFIG="${SERVERS_CONFIG:-$SCRIPT_DIR/../host/mcp/toolhive-servers.json}"
 # Optional free-form keyword: search find_tool for matching tools instead of
 # enumerating every backend (e.g. 'kubernetes', 'context', 'notion').

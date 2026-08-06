@@ -18,8 +18,8 @@
 #   kubectl -n agentgateway-system port-forward svc/agentgateway-proxy 8080:80
 #   bash scripts/test-mcp-policies.sh
 #
-# Override gateway URL or API key:
-#   GATEWAY_URL=http://localhost:8080 MY_KEY=hermes bash scripts/test-mcp-policies.sh
+# Override the gateway URL or unauthenticated placeholder API key:
+#   GATEWAY_URL=http://localhost:8080 MY_KEY=agent bash scripts/test-mcp-policies.sh
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,7 +35,7 @@ if command -v kubectl >/dev/null 2>&1; then
 fi
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
-API_KEY="${MY_KEY:-hermes}"
+API_KEY="${MY_KEY:-agent}"
 # Random secret name so the test is self-describing in k8s audit logs. `od`
 # reads a fixed byte count, avoiding the SIGPIPE that `tr | head` produces
 # under pipefail (which used to append the fallback xxxxxxxx to valid output).

@@ -31,7 +31,7 @@ policy:
     createdBy: your-username
 # One chart release per agent, up to ten. Dashboard NodePorts use 30119-30128 in list order.
 agents:
-  - name: my-first-agent
+  - name: my-first-agent  # pick a name for your agent
     obsidian:
       vaultPath: /workspace/knowledge-vault
     git:

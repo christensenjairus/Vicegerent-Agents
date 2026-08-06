@@ -13,6 +13,8 @@ from typing import Never
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
+OPERATOR_NAME = "bot-jchristensen"
+OPERATOR_PROFILES = (REPO / "examples/personal.yaml", REPO / "examples/work.yaml")
 
 
 def die(message: str) -> Never:
@@ -89,6 +91,54 @@ def render_restart_job_name(agent_overrides: dict | None = None) -> str:
     return jobs[0]["metadata"]["name"]
 
 
+def validate_release_named_resources(documents: list[dict], release_name: str) -> dict:
+    sandboxes = [document for document in documents if document.get("kind") == "Sandbox"]
+    if len(sandboxes) != 1:
+        die(f"expected exactly one Sandbox for {release_name}, found {len(sandboxes)}")
+    sandbox = sandboxes[0]
+
+    expected_claims = {
+        f"data-{release_name}",
+        f"gitrepos-{release_name}",
+        f"models-{release_name}",
+    }
+    rendered_claims = {
+        document["metadata"]["name"]
+        for document in documents
+        if document.get("kind") == "PersistentVolumeClaim"
+    }
+    if rendered_claims != expected_claims:
+        die(
+            f"PVC names must derive from the {release_name} Helm release: "
+            f"expected {sorted(expected_claims)}, got {sorted(rendered_claims)}"
+        )
+
+    pod_spec = sandbox["spec"]["podTemplate"]["spec"]
+    volumes = {volume["name"]: volume for volume in pod_spec["volumes"]}
+    mounted_claims = {
+        volumes[name]["persistentVolumeClaim"]["claimName"]
+        for name in ("data", "gitrepos", "models")
+    }
+    if mounted_claims != expected_claims:
+        die(
+            f"Sandbox volumes must mount the {release_name} release's PVCs: "
+            f"expected {sorted(expected_claims)}, got {sorted(mounted_claims)}"
+        )
+
+    container = pod_spec["containers"][0]
+    env_secrets = {
+        item["secretRef"]["name"]
+        for item in container.get("envFrom", [])
+        if "secretRef" in item
+    }
+    if f"{release_name}-secrets" not in env_secrets:
+        die(f"Sandbox credentials must use the {release_name}-secrets Secret")
+    if volumes["ssh-key"]["secret"]["secretName"] != f"{release_name}-ssh-key":
+        die(f"Sandbox SSH identity must use the {release_name}-ssh-key Secret")
+
+    return sandbox
+
+
 def validate_ssh_secret_migration() -> None:
     guide = (REPO / "docs/backup-and-restore.md").read_text(encoding="utf-8")
     start_marker = (
@@ -147,36 +197,159 @@ def validate_ssh_secret_migration() -> None:
         die("SSH Secret migration must reject a source with no private key")
 
 
+def validate_platform_naming_contracts() -> None:
+    expected_image = "harbor.hahomelabs.com/vicegerent/agent"
+    defaults = yaml.safe_load(
+        (REPO / "values.defaults.yaml").read_text(encoding="utf-8")
+    )
+    if defaults["agentDefaults"]["image"]["repository"] != expected_image:
+        die("the default sandbox image repository must use the generic agent identity")
+    example = yaml.safe_load(
+        (REPO / "values.example.yaml").read_text(encoding="utf-8")
+    )
+    example_name = example["agents"][0]["name"]
+    if example_name in {"agent", "hermes", OPERATOR_NAME}:
+        die(
+            "values.example.yaml must demonstrate an operator-chosen release name "
+            "distinct from platform, upstream, and committed operator identities"
+        )
+
+    chart = yaml.safe_load(
+        (REPO / "charts/agent/Chart.yaml").read_text(encoding="utf-8")
+    )
+    if chart.get("name") != "agent":
+        die("the sandbox Helm chart must use the generic agent identity")
+    if not (REPO / "images/agent").is_dir() or (REPO / "images/hermes").exists():
+        die("the derived sandbox image must live only under images/agent")
+    image_makefile = (REPO / "images/agent/Makefile").read_text(encoding="utf-8")
+    if f"IMAGE := {expected_image}" not in image_makefile:
+        die("the agent image Makefile must publish the generic image repository")
+    dockerfile = (REPO / "images/agent/Dockerfile").read_text(encoding="utf-8")
+    if "FROM nousresearch/hermes-agent:" not in dockerfile:
+        die("the generic agent image must retain the upstream Hermes base image")
+
+    stages = yaml.safe_load(
+        (REPO / "stages/stages.yaml").read_text(encoding="utf-8")
+    )
+    agents_stage = next(
+        (stage for stage in stages["stages"] if stage["name"] == "agents"), None
+    )
+    agent_actions = [
+        action
+        for action in (agents_stage or {}).get("actions", [])
+        if action.get("name") == "agent"
+    ]
+    if len(agent_actions) != 1 or not (
+        agent_actions[0].get("type") == "local"
+        and agent_actions[0].get("namespace") == "agent-sandbox"
+    ):
+        die("the agents stage must install the generic agent chart")
+
+    renovate = json.loads((REPO / "renovate.json").read_text(encoding="utf-8"))
+    image_rules = [
+        rule
+        for rule in renovate["packageRules"]
+        if expected_image in rule.get("matchPackageNames", [])
+    ]
+    expected_versioning = (
+        "regex:^v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)"
+        "-rev(?<build>\\d+)$"
+    )
+    if len(image_rules) != 1 or image_rules[0].get("versioning") != expected_versioning:
+        die("Renovate must track numeric revN builds of the generic agent image")
+
+    gitlab_ci = (REPO / ".gitlab-ci.yml").read_text(encoding="utf-8")
+    if "make -C images/agent release" not in gitlab_ci:
+        die("GitLab CI must build the generic agent image directory")
+
+    active_sources = [
+        REPO / ".gitlab-ci.yml",
+        REPO / "renovate.json",
+        REPO / "values.defaults.yaml",
+        REPO / "values.example.yaml",
+        *(REPO / "examples").glob("*.yaml"),
+        *(REPO / "charts").rglob("*"),
+        *(REPO / "scripts").rglob("*"),
+        *(REPO / "stages").rglob("*"),
+        *(REPO / "host").rglob("*"),
+        *(REPO / "images/agent").rglob("*"),
+    ]
+    # Search active implementation/configuration only. Documentation intentionally
+    # retains rollback names, while the exact upstream Hermes contracts are not retired.
+    retired_identifiers = (
+        "images/hermes",
+        "vicegerent/hermes-agent",
+        "/opt/hermes-ssh",
+        "hermes-ssh-key",
+        "hermes_agent_ed25519",
+        ":-hermes}",
+        "HERMES_DASHBOARD_NAMESPACE",
+        "HERMES_DASHBOARD_NODEPORT",
+        "HERMES_DASHBOARD_SERVICE",
+        "HERMES_SKILLS_DIR",
+        "HERMES_IMAGE",
+    )
+    for source in active_sources:
+        if not source.is_file() or source == Path(__file__):
+            continue
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if OPERATOR_NAME in text and source not in OPERATOR_PROFILES:
+            die(
+                f"active generic source {source.relative_to(REPO)} uses the committed "
+                "operator identity"
+            )
+        for identifier in retired_identifiers:
+            if identifier in text:
+                die(f"active platform source {source.relative_to(REPO)} uses {identifier}")
+
+    gateway_test = (REPO / "scripts/test-mcp-gateway.sh").read_text(
+        encoding="utf-8"
+    )
+    policy_test = (REPO / "scripts/test-mcp-policies.sh").read_text(encoding="utf-8")
+    redaction_placeholder = "".join(("<", "masked", ">"))
+    if redaction_placeholder in gateway_test or redaction_placeholder in policy_test:
+        die("MCP probes must not contain a literal redaction placeholder")
+    if 'API_KEY="${API_KEY:-agent}"' not in gateway_test:
+        die("the MCP gateway probe must use the generic agent placeholder token")
+    if 'API_KEY="${MY_KEY:-agent}"' not in policy_test:
+        die("the MCP policy probe must use the generic agent placeholder token")
+
+
 def main() -> None:
+    validate_platform_naming_contracts()
     baseline_restart_job = render_restart_job_name()
     changed_config_restart_job = render_restart_job_name({"tuning": {"maxTurns": 101}})
     if baseline_restart_job == changed_config_restart_job:
         die("agent config changes must create a new restart Job so the gateway reloads them")
 
-    operator_name = "bot-jchristensen"
-    for profile in (REPO / "examples/personal.yaml", REPO / "examples/work.yaml"):
+    for profile in OPERATOR_PROFILES:
         configured = yaml.safe_load(profile.read_text(encoding="utf-8"))
         release_name = configured["agents"][0]["name"]
-        if release_name != operator_name:
+        if release_name != OPERATOR_NAME:
             die(
                 f"{profile.relative_to(REPO)} must name the operator's agent "
-                f"'{operator_name}'"
+                f"'{OPERATOR_NAME}'"
             )
-        sandbox = render_sandbox(profile, release_name)
-        if sandbox["metadata"]["name"] != operator_name:
+        documents = render_documents(values_file=profile, release_name=release_name)
+        sandbox = validate_release_named_resources(documents, release_name)
+        if sandbox["metadata"]["name"] != OPERATOR_NAME:
             die(f"{profile.relative_to(REPO)} must render the operator's Sandbox")
         pod_template = sandbox["spec"]["podTemplate"]
         if (
             pod_template["metadata"]["labels"].get("vicegerent.io/dashboard")
-            != operator_name
+            != OPERATOR_NAME
         ):
             die(f"{profile.relative_to(REPO)} must label the operator's pod")
         container = pod_template["spec"]["containers"][0]
-        if container["name"] != operator_name:
+        if container["name"] != OPERATOR_NAME:
             die(f"{profile.relative_to(REPO)} must render the operator's container")
 
     alternate_name = "alternate-agent"
-    alternate = render_sandbox(release_name=alternate_name)
+    alternate_documents = render_documents(release_name=alternate_name)
+    alternate = validate_release_named_resources(alternate_documents, alternate_name)
     alternate_template = alternate["spec"]["podTemplate"]
     alternate_container = alternate_template["spec"]["containers"][0]
     if not (
@@ -206,10 +379,21 @@ def main() -> None:
     env = {item["name"]: item.get("value") for item in agent["env"]}
     if env.get("OPENCODE_EXPERIMENTAL_LSP_TOOL") != "1":
         die("OpenCode's LSP tool must be enabled in the agent runtime")
+    if not (
+        env.get("HERMES_HOME") == "/opt/data"
+        and env.get("HERMES_DASHBOARD") == "1"
+        and env.get("HERMES_DASHBOARD_HOST") == "0.0.0.0"
+    ):
+        die("the agent runtime must preserve Hermes's upstream environment contract")
     if "-i /opt/agent-ssh/agent_ed25519 " not in env.get("GIT_SSH_COMMAND", ""):
         die("GIT_SSH_COMMAND must use the generic agent SSH key path")
 
     volume_mounts = {item["name"]: item for item in agent["volumeMounts"]}
+    if not (
+        volume_mounts["models"]["mountPath"].startswith("/opt/data/.hermes/")
+        and volume_mounts["approval-policy"]["mountPath"].startswith("/opt/hermes/")
+    ):
+        die("the agent runtime must preserve Hermes's upstream filesystem contract")
     if volume_mounts["ssh-key"]["mountPath"] != "/opt/agent-ssh":
         die("the agent SSH key Secret must mount at /opt/agent-ssh")
     volumes = {item["name"]: item for item in pod_spec["volumes"]}
