@@ -1,5 +1,5 @@
 # renovate: datasource=pypi depName=fastmcp
-ARG FASTMCP_VERSION=3.4.4
+ARG FASTMCP_VERSION=3.4.6
 FROM python:3.14-slim
 ARG FASTMCP_VERSION
 RUN pip install --no-cache-dir "fastmcp==${FASTMCP_VERSION}"

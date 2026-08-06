@@ -423,7 +423,7 @@
       "enabled": false,
       "companion_of": "aws",
       "type": "registry",
-      "registry": "harbor.hahomelabs.com/vicegerent/aws-profiles-mcp:v0.2.0",
+      "registry": "harbor.hahomelabs.com/vicegerent/aws-profiles-mcp:v0.2.1",
       "transport": "stdio",
       "network": {
         "none": true
