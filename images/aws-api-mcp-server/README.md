@@ -22,7 +22,7 @@ This is a genuine upstream bug (an async handler doing sync blocking work). The 
 
 ```sh
 make image                      # native build
-make release PLATFORM=linux/arm64 TAG=v0.1.0   # build + push to Harbor
+make release PLATFORM=linux/arm64 TAG=<release-tag>   # build + push to Harbor
 ```
 
 ## On base-image bumps

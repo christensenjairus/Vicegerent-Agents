@@ -46,7 +46,7 @@ Prerequisites:
 - `yq` v4
 - `jq`
 - `git`
-- `openssl` 3 — the secrets scripts need `req -addext`, which macOS's stock LibreSSL lacks (`brew install openssl@3`, then put it ahead of `/usr/bin` on `PATH`)
+- A Homebrew-provided OpenSSL release with `req -addext` support — macOS's stock LibreSSL lacks it. Put its `bin` directory ahead of `/usr/bin` on `PATH`.
 - SSH access to your git host — see "Configuring for your machine" above
 
 Create the cluster (creates the Kind cluster on its docker network, removes kind's auto-installed local-path-provisioner and `standard` StorageClass, installs Cilium as the CNI, and patches CoreDNS to resolve `host.docker.internal`):

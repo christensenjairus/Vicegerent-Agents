@@ -14,7 +14,7 @@ Built on a machine with internet (your laptop), pushed to Harbor; the egress-loc
 docker login harbor.hahomelabs.com
 make image PLATFORM=linux/arm64      # Kind on Apple Silicon
 make push
-# or: make release PLATFORM=linux/arm64 TAG=v0.2.0
+# or: make release PLATFORM=linux/arm64 TAG=<release-tag>
 ```
 
 `FASTMCP_VERSION` (Dockerfile ARG) is Renovate-tracked (pypi); the image ref in `toolhive-servers.json` is Renovate-tracked (docker).

@@ -166,7 +166,7 @@
     },
     {
       "name": "jira",
-      "description": "Jira issue tracking \u2014 issues, JQL search, transitions, and comments (read+write, no deletes).",
+      "description": "Jira issue tracking \u2014 direct issue reads plus scoped workflow writes (read+write, no deletes).",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/sooperset/mcp-atlassian:0.23.0",
@@ -185,8 +185,7 @@
         {"name": "jira_api_token", "target": "JIRA_API_TOKEN"}
       ],
       "tools": [
-        "jira_get_issue", "jira_search", "jira_search_fields", "jira_get_project_issues",
-        "jira_get_transitions", "jira_get_link_types",
+        "jira_get_issue", "jira_get_project_issues", "jira_get_transitions",
         "jira_create_issue", "jira_update_issue", "jira_add_comment", "jira_transition_issue",
         "jira_create_issue_link", "jira_link_to_epic"
       ]

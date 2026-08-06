@@ -100,6 +100,16 @@ class WorkloadLogProcessTests(unittest.TestCase):
         )
 
 
+class VmcpEnvironmentTests(unittest.TestCase):
+    def test_localhost_compatibility_bypass_is_scoped_to_gateway_vmcp(self) -> None:
+        gateway = vicegerent_mcp.vmcp_environment("/test/bin", allow_non_loopback_hosts=True)
+        operator = vicegerent_mcp.vmcp_environment("/test/bin")
+
+        self.assertEqual(gateway["MCPGODEBUG"], "disablelocalhostprotection=1")
+        self.assertNotIn("MCPGODEBUG", operator)
+        self.assertEqual(operator, {"PATH": "/test/bin", "HOME": str(Path.home())})
+
+
 class OperatorVmcpTests(unittest.TestCase):
     def _generate_scoped(self, runtime_dir: Path) -> Path:
         init_yaml = """\

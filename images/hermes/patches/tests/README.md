@@ -2,11 +2,11 @@
 
 Run **inside a built hermes-agent image**, not in CI: each test imports the real patched files out of the installed Hermes package, so it needs `/opt/hermes/.venv` and the upstream sources on disk. There is no GitLab CI job for them and there shouldn't be — the CI runners have no Hermes install to test against.
 
-Run them after `make -C images/hermes image` and before pushing a rebuilt tag:
+Run them after `make -C images/hermes image` and before pushing a rebuilt artifact. Set `HERMES_IMAGE` to the image produced by that build:
 
 ```sh
 docker run --rm -v "$PWD/images/hermes/patches/tests:/tests" \
-  harbor.hahomelabs.com/vicegerent/hermes-agent:<tag> \
+  "$HERMES_IMAGE" \
   /opt/hermes/.venv/bin/python /tests/test_0040_custom_provider_no_think_field.py
 ```
 

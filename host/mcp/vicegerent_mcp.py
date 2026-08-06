@@ -328,6 +328,19 @@ def vmcp_target(config: dict[str, Any]) -> str:
     return f"{host}:{vmcp_port(config)}"
 
 
+def vmcp_environment(path_env: str, *, allow_non_loopback_hosts: bool = False) -> dict[str, str]:
+    """Return the environment for one ToolHive vMCP listener.
+
+    ToolHive's SDK compatibility bypass is needed only for the scoped listener
+    reached through ghostunnel from agentgateway. The opt-in operator listener
+    is host-local and retains the SDK's localhost-host protection.
+    """
+    env = {"PATH": path_env, "HOME": str(Path.home())}
+    if allow_non_loopback_hosts:
+        env["MCPGODEBUG"] = "disablelocalhostprotection=1"
+    return env
+
+
 def default_listen() -> str:
     return os.environ.get("LISTEN", DEFAULT_LISTEN)
 
@@ -2123,11 +2136,7 @@ def start_stack(
     # already authenticated end-to-end by ghostunnel's mTLS tunnel. ToolHive does
     # not wire a supported flag for this (pkg/vmcp/server/dns_rebinding_regression_test.go
     # pins the SDK default), so fall back to the SDK's own compatibility escape hatch.
-    vmcp_env = {
-        "PATH": path_env,
-        "HOME": str(Path.home()),
-        "MCPGODEBUG": "disablelocalhostprotection=1",
-    }
+    vmcp_env = vmcp_environment(path_env, allow_non_loopback_hosts=True)
 
     operator_vmcp_command = ""
     operator_vmcp_env: dict[str, str] = {}
@@ -2138,7 +2147,7 @@ def start_stack(
             f"{_supervisord_arg(thv_bin)} vmcp serve "
             f"--config {_supervisord_arg(operator_vmcp_cfg)} --port {operator_port}{optimizer_flag}"
         )
-        operator_vmcp_env = vmcp_env
+        operator_vmcp_env = vmcp_environment(path_env)
 
     effective_ghostshell = ghostshell or DEFAULT_GHOSTSHELL
     target = vmcp_target(config)

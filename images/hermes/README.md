@@ -4,7 +4,7 @@ A thin derivation of the upstream [`nousresearch/hermes-agent`](https://hub.dock
 
 ## Why a derived image
 
-The stock image ships the Hermes runtime but **not** the pieces this platform relies on. Verified against the upstream arm64 image (`v2026.8.3`):
+The stock image ships the Hermes runtime but **not** the pieces this platform relies on. Verified against the upstream arm64 image configured in the Dockerfile:
 
 | Needed | In stock image? |
 | --- | --- |
@@ -29,7 +29,7 @@ make push
 # or: make release PLATFORM=linux/arm64
 ```
 
-`make help` lists targets. `TAG` is `<upstream-version>-rev<N>` (e.g. `v2026.8.3-rev1`): keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
+`make help` lists targets. `TAG` is `<upstream-version>-rev<N>`: keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
 
 ## Base pin
 
