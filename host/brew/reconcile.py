@@ -32,7 +32,7 @@ class Package:
     version_args: tuple[str, ...]
     replaces: tuple[str, ...]
     required: bool = True
-    xcode_first_launch: bool = False
+    force_bottle: bool = False
 
     @property
     def short_formula(self) -> str:
@@ -63,8 +63,13 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> Manifest:
     for raw in data.get("packages", []):
         formula = raw["formula"]
         version = raw["version"]
-        if not formula.endswith(f"@{version}"):
+        if formula.startswith(f"{tap.name}/") and not formula.endswith(f"@{version}"):
             raise ValueError(f"{formula} must be version-qualified as @${version}".replace("$", ""))
+        if not (
+            formula.startswith(f"{tap.name}/")
+            or re.fullmatch(r"homebrew/core/[a-z0-9][a-z0-9-]*", formula)
+        ):
+            raise ValueError(f"unsupported formula source: {formula}")
         packages.append(Package(
             name=raw["name"],
             formula=formula,
@@ -73,7 +78,7 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> Manifest:
             version_args=tuple(raw["versionArgs"]),
             replaces=tuple(raw.get("replaces", [])),
             required=raw.get("required", True),
-            xcode_first_launch=raw.get("xcodeFirstLaunch", False),
+            force_bottle=raw.get("forceBottle", False),
         ))
     if not packages:
         raise ValueError("host package manifest has no packages")
@@ -167,6 +172,19 @@ def package_status(
     if package.short_formula not in pinned_names:
         return PackageStatus(package, False, observed, "formula is not pinned")
 
+    installed_replacements = [
+        formula for formula in package.replaces
+        if (result := brew.run("list", "--versions", formula)).returncode == 0
+        and result.stdout.strip()
+    ]
+    if installed_replacements:
+        return PackageStatus(
+            package,
+            False,
+            observed,
+            "replacement is still installed: " + ", ".join(installed_replacements),
+        )
+
     return PackageStatus(package, True, observed, "exact version installed, linked, and pinned")
 
 
@@ -176,25 +194,6 @@ class ReconcileError(RuntimeError):
 
 class MigrationError(ReconcileError):
     pass
-
-
-def ensure_xcode_first_launch(
-    *,
-    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-) -> None:
-    try:
-        status = run(
-            ["xcodebuild", "-checkFirstLaunchStatus"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise ReconcileError("xcodebuild is required to initialize Xcode") from exc
-    if status.returncode == 0:
-        return
-    print("Initializing Xcode system components and license acceptance...")
-    run(["xcodebuild", "-runFirstLaunch"], text=True, check=True)
 
 
 def _probe_expected_version(
@@ -221,9 +220,8 @@ def reconcile_package(
 ) -> None:
     installed = brew.run("list", "--versions", package.formula)
     if installed.returncode != 0:
-        if package.xcode_first_launch:
-            ensure_xcode_first_launch()
-        brew.run("install", package.formula, check=True)
+        install_args = ("--force-bottle",) if package.force_bottle else ()
+        brew.run("install", *install_args, package.formula, check=True)
 
     prefix_result = brew.run("--prefix", package.formula)
     if prefix_result.returncode != 0 or not prefix_result.stdout.strip():
@@ -251,7 +249,15 @@ def reconcile_package(
         detail = "rollback failed" if rollback_failed else "previous links restored"
         raise MigrationError(f"failed to activate {package.formula}; {detail}") from exc
 
+    pinned_names: set[str] = set()
+    if installed_replacements:
+        pinned = brew.run("list", "--pinned")
+        if pinned.returncode != 0:
+            raise ReconcileError("cannot list pinned Homebrew formulae")
+        pinned_names = set(pinned.stdout.split())
     for formula in installed_replacements:
+        if formula.rsplit("/", 1)[-1] in pinned_names:
+            brew.run("unpin", formula, check=True)
         brew.run("uninstall", "--ignore-dependencies", formula, check=True)
 
 
@@ -286,7 +292,11 @@ def _formula_class_name(short_formula: str) -> str:
 
 def validate_formulae(manifest: Manifest, repo_root: Path) -> int:
     errors: list[str] = []
+    validated = 0
     for package in manifest.packages:
+        if package.formula.startswith("homebrew/core/"):
+            continue
+        validated += 1
         formula_path = repo_root / "Formula" / f"{package.short_formula}.rb"
         if not formula_path.is_file():
             errors.append(f"missing {formula_path.relative_to(repo_root)}")
@@ -309,7 +319,7 @@ def validate_formulae(manifest: Manifest, repo_root: Path) -> int:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)
         return 1
-    print(f"OK - {len(manifest.packages)} host package formulae match the exact-version manifest")
+    print(f"OK - {validated} host package formulae match the exact-version manifest")
     return 0
 
 

@@ -8,7 +8,6 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest import mock
 
 MODULE_PATH = Path(__file__).with_name("reconcile.py")
 spec = importlib.util.spec_from_file_location("host_brew_reconcile", MODULE_PATH)
@@ -19,26 +18,39 @@ spec.loader.exec_module(reconcile)
 
 
 class FakeBrew:
-    def __init__(self, responses):
+    def __init__(self, responses, *, pinned=()):
         self.responses = responses
         self.commands = []
+        self.pinned = set(pinned)
 
     def run(self, *args, check=False):
         self.commands.append(args)
+        if args[0] == "unpin":
+            self.pinned.discard(args[1])
         response = self.responses.get(args, (0, "", ""))
-        result = subprocess.CompletedProcess(args, response[0], response[1], response[2])
+        if args[0] == "uninstall" and args[-1] in self.pinned:
+            response = (1, "", f"{args[-1]} is pinned")
+        stdout = None if check else response[1]
+        stderr = None if check else response[2]
+        result = subprocess.CompletedProcess(args, response[0], stdout, stderr)
         if check and result.returncode:
             raise subprocess.CalledProcessError(result.returncode, args, result.stdout, result.stderr)
         return result
 
 
 class ManifestTests(unittest.TestCase):
-    def test_terminal_notifier_is_required_and_initializes_xcode(self):
+    def test_terminal_notifier_is_required_and_uses_homebrew_core(self):
         manifest = reconcile.load_manifest()
         package = next(package for package in manifest.packages if package.name == "terminal-notifier")
 
         self.assertTrue(package.required)
-        self.assertTrue(getattr(package, "xcode_first_launch", False))
+        self.assertEqual(package.formula, "homebrew/core/terminal-notifier")
+        self.assertEqual(
+            package.replaces,
+            ("vicegerent/packages/terminal-notifier@2.0.0",),
+        )
+        self.assertTrue(getattr(package, "force_bottle", False))
+        self.assertFalse(hasattr(package, "xcode_first_launch"))
 
     def test_manifest_requires_exact_version_in_formula_name(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -80,8 +92,48 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(manifest.tap.name, "vicegerent/packages")
             self.assertEqual(manifest.packages[0].short_formula, "thv@0.42.0")
 
+    def test_manifest_rejects_unsupported_formula_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "packages.json"
+            path.write_text(json.dumps({
+                "schemaVersion": 1,
+                "tap": {"name": "vicegerent/packages", "url": "git@example/repo.git"},
+                "packages": [{
+                    "name": "terminal-notifier",
+                    "formula": "untrusted/packages/terminal-notifier",
+                    "version": "2.0.0",
+                    "binary": "terminal-notifier",
+                    "versionArgs": ["-help"],
+                }]
+            }))
+
+            with self.assertRaisesRegex(ValueError, "unsupported formula source"):
+                reconcile.load_manifest(path)
+
 
 class FormulaValidationTests(unittest.TestCase):
+    def test_homebrew_core_formula_does_not_require_a_repository_formula(self):
+        package = reconcile.Package(
+            name="terminal-notifier",
+            formula="homebrew/core/terminal-notifier",
+            version="2.0.0",
+            binary="terminal-notifier",
+            version_args=("-help",),
+            replaces=(),
+        )
+        manifest = reconcile.Manifest(
+            tap=reconcile.Tap("vicegerent/packages", "git@example/repo.git"),
+            packages=(package,),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = reconcile.validate_formulae(manifest, Path(tmp))
+
+        self.assertEqual(result, 0)
+        self.assertEqual(stderr.getvalue(), "")
+
     def test_rejects_go_ldflags_with_x_value_joined_to_flag(self):
         package = reconcile.Package(
             name="rclone",
@@ -152,6 +204,24 @@ class StatusTests(unittest.TestCase):
 
         self.assertTrue(status.ok)
         self.assertEqual(status.observed_version, "0.42.0")
+
+    def test_status_rejects_an_installed_replacement(self):
+        brew = self.brew()
+        brew.responses[("list", "--versions", "stacklok/tap/thv")] = (
+            0, "thv 0.43.0\n", "",
+        )
+
+        status = reconcile.package_status(
+            self.package,
+            brew,
+            which=lambda _: self.prefix + "/bin/thv",
+            exists=lambda _: True,
+            resolve=self.resolve_desired,
+            probe=lambda _: subprocess.CompletedProcess([], 0, "ToolHive v0.42.0\n", ""),
+        )
+
+        self.assertFalse(status.ok)
+        self.assertIn("replacement is still installed", status.detail)
 
     def test_status_rejects_binary_owned_by_floating_formula(self):
         status = reconcile.package_status(
@@ -245,37 +315,6 @@ class TapTests(unittest.TestCase):
         ])
 
 
-class XcodeTests(unittest.TestCase):
-    def test_first_launch_runs_when_status_check_reports_pending(self):
-        calls = []
-
-        def run(command, **kwargs):
-            calls.append((tuple(command), kwargs.get("check", False)))
-            return subprocess.CompletedProcess(command, 1 if "-checkFirstLaunchStatus" in command else 0, "", "")
-
-        ensure = getattr(reconcile, "ensure_xcode_first_launch", None)
-        assert ensure is not None
-        ensure(run=run)
-
-        self.assertEqual(calls, [
-            (("xcodebuild", "-checkFirstLaunchStatus"), False),
-            (("xcodebuild", "-runFirstLaunch"), True),
-        ])
-
-    def test_first_launch_is_skipped_when_xcode_is_ready(self):
-        calls = []
-
-        def run(command, **kwargs):
-            calls.append((tuple(command), kwargs.get("check", False)))
-            return subprocess.CompletedProcess(command, 0, "", "")
-
-        ensure = getattr(reconcile, "ensure_xcode_first_launch", None)
-        assert ensure is not None
-        ensure(run=run)
-
-        self.assertEqual(calls, [(("xcodebuild", "-checkFirstLaunchStatus"), False)])
-
-
 class ApplyTests(unittest.TestCase):
     def setUp(self):
         self.package = reconcile.Package(
@@ -309,38 +348,67 @@ class ApplyTests(unittest.TestCase):
             ("unlink", "stacklok/tap/thv"),
             ("link", "--force", self.package.formula),
             ("pin", self.package.formula),
+            ("list", "--pinned"),
             ("uninstall", "--ignore-dependencies", "stacklok/tap/thv"),
         ])
 
-    def test_reconcile_initializes_xcode_before_install_when_requested(self):
-        package = reconcile.Package(
-            name="terminal-notifier",
-            formula="vicegerent/packages/terminal-notifier@2.0.0",
-            version="2.0.0",
-            binary="terminal-notifier",
-            version_args=("-help",),
-            replaces=("terminal-notifier",),
-            xcode_first_launch=True,
-        )
-        prefix = "/opt/homebrew/opt/terminal-notifier@2.0.0"
+    def test_reconcile_installs_homebrew_core_terminal_notifier_without_xcode(self):
+        manifest = reconcile.load_manifest()
+        package = next(package for package in manifest.packages if package.name == "terminal-notifier")
+        prefix = "/opt/homebrew/opt/terminal-notifier"
+        replacement = "vicegerent/packages/terminal-notifier@2.0.0"
         brew = FakeBrew({
             ("list", "--versions", package.formula): (1, "", "missing"),
             ("--prefix", package.formula): (0, prefix + "\n", ""),
+            (
+                "list", "--versions", replacement,
+            ): (0, "terminal-notifier@2.0.0 2.0.0\n", ""),
+            ("list", "--pinned"): (0, "terminal-notifier@2.0.0\n", ""),
+        }, pinned=(replacement,))
+
+        reconcile.reconcile_package(
+            package,
+            brew,
+            probe=lambda _: subprocess.CompletedProcess([], 0, "terminal-notifier 2.0.0\n", ""),
+        )
+
+        self.assertEqual(brew.commands, [
+            ("list", "--versions", "homebrew/core/terminal-notifier"),
+            ("install", "--force-bottle", "homebrew/core/terminal-notifier"),
+            ("--prefix", "homebrew/core/terminal-notifier"),
+            ("list", "--versions", replacement),
+            ("unlink", replacement),
+            ("link", "--force", "homebrew/core/terminal-notifier"),
+            ("pin", "homebrew/core/terminal-notifier"),
+            ("list", "--pinned"),
+            ("unpin", replacement),
+            ("uninstall", "--ignore-dependencies", replacement),
+        ])
+
+    def test_reconcile_rejects_wrong_installed_homebrew_core_version(self):
+        manifest = reconcile.load_manifest()
+        package = next(package for package in manifest.packages if package.name == "terminal-notifier")
+        prefix = "/opt/homebrew/opt/terminal-notifier"
+        brew = FakeBrew({
+            (
+                "list", "--versions", "homebrew/core/terminal-notifier",
+            ): (0, "terminal-notifier 2.1.0\n", ""),
+            ("--prefix", "homebrew/core/terminal-notifier"): (0, prefix + "\n", ""),
         })
-        initialized = []
 
-        def initialize():
-            self.assertEqual(brew.commands, [("list", "--versions", package.formula)])
-            initialized.append(True)
-
-        with mock.patch.object(reconcile, "ensure_xcode_first_launch", initialize):
+        with self.assertRaisesRegex(reconcile.ReconcileError, "expected 2.0.0"):
             reconcile.reconcile_package(
                 package,
                 brew,
-                probe=lambda _: subprocess.CompletedProcess([], 0, "terminal-notifier 2.0.0\n", ""),
+                probe=lambda _: subprocess.CompletedProcess(
+                    [], 0, "terminal-notifier 2.1.0\n", "",
+                ),
             )
 
-        self.assertEqual(initialized, [True])
+        self.assertEqual(brew.commands, [
+            ("list", "--versions", "homebrew/core/terminal-notifier"),
+            ("--prefix", "homebrew/core/terminal-notifier"),
+        ])
 
     def test_reconcile_does_not_unlink_working_formula_when_new_probe_fails(self):
         prefix = "/opt/homebrew/opt/thv@0.42.0"
