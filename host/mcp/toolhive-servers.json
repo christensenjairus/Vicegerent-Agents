@@ -7,7 +7,7 @@
       "description": "Read-only Kubernetes access \u2014 inspect resources, pods, logs, and Helm releases across the local kind cluster and, via an exec-plugin kubeconfig, a real EKS cluster.",
       "enabled": false,
       "type": "registry",
-      "registry": "harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server:v0.2.0",
+      "registry": "harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server:v0.2.1",
       "transport": "stdio",
       "server_args": ["--read-only","--toolsets=config,core,helm"],
       "kind_cluster": "vicegerent",
