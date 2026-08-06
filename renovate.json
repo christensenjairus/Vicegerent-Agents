@@ -51,6 +51,12 @@
       "groupName": "gitlab ci images"
     },
     {
+      "description": "The hermes-agent base image pins uv's exclude-newer to 14 days as a supply-chain guard; a version fresher than that is unresolvable at build time, so hold PRs until they'd actually build.",
+      "matchManagers": ["pip_requirements"],
+      "matchFileNames": ["images/hermes/requirements.txt"],
+      "minimumReleaseAge": "14 days"
+    },
+    {
       "matchDatasources": ["docker"],
       "matchPackageNames": [
         "cr.agentgateway.dev/controller",

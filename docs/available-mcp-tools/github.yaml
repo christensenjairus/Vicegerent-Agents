@@ -4,10 +4,10 @@
 # GENERATED — do not edit by hand.
 # Regenerate: scripts/probe-mcp-tools.py github --format yaml -o <this-file>
 group: vicegerent
-tool_count: 73
+tool_count: 74
 servers:
   github:
-    tool_count: 73
+    tool_count: 74
     tools:
       actions_get:
         description: "Get details about specific GitHub Actions resources. Use this tool to get details about individual workflows, workflow runs, jobs, and artifacts by their unique IDs."
@@ -200,7 +200,7 @@ servers:
             required: true
             description: "Repository name"
       assign_copilot_to_issue:
-        description: "Assign Copilot to a specific issue in a GitHub repository. This tool can help with the following outcomes: - a Pull Request created with source code changes to resolve the issue More information can be found at: - https://docs.github.com/en/copilot/using-github-copilot/using-copilot-coding-agent-to-work-on-tasks/about-assigning-tasks-to-copilot"
+        description: "Assign Copilot to a specific issue in a GitHub repository. This tool can help with the following outcomes: - a Pull Request created with source code changes to resolve the issue More information can be found at: - https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent"
         arguments:
           base_ref:
             type: "string"
@@ -218,6 +218,42 @@ servers:
             type: "string"
             required: true
             description: "Repository owner"
+          repo:
+            type: "string"
+            required: true
+            description: "Repository name"
+      assign_copilot_to_issue_with_intent:
+        description: "Assign Copilot to a specific issue in a GitHub repository. Prefer this tool over assign_copilot_to_issue when available. This tool can help with the following outcomes: - a Pull Request created with source code changes to resolve the issue More information can be found at: - https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent"
+        arguments:
+          base_ref:
+            type: "string"
+            required: false
+            description: "Git reference (e.g., branch) that the agent will start its work from. If not specified, defaults to the repository's default branch. Ignored when is_suggestion is true"
+          confidence:
+            type: "string"
+            required: true
+            description: "How confident you are in this choice. 'HIGH' for clear signal or explicit user request, 'MEDIUM' for reasonable inference with some ambiguity, 'LOW' for best guess with limited signal."
+            enum: ["LOW", "MEDIUM", "HIGH"]
+          custom_instructions:
+            type: "string"
+            required: false
+            description: "Optional custom instructions to guide the agent beyond the issue body. Ignored when is_suggestion is true"
+          is_suggestion:
+            type: "boolean"
+            required: true
+            description: "If true, records a pending Copilot assignment intent rather than launching the agent. Approval later supplies the launch context; base_ref and custom_instructions are ignored in this case."
+          issue_number:
+            type: "number"
+            required: true
+            description: "Issue number"
+          owner:
+            type: "string"
+            required: true
+            description: "Repository owner"
+          rationale:
+            type: "string"
+            required: true
+            description: "One concise sentence explaining what specifically about the issue led to choosing Copilot. State the concrete signal (e.g. 'Well-scoped task with clear acceptance criteria')."
           repo:
             type: "string"
             required: true
@@ -518,6 +554,10 @@ servers:
       get_file_contents:
         description: "Get the contents of a file or directory from a GitHub repository"
         arguments:
+          fields:
+            type: "array"
+            required: false
+            description: "Subset of fields to return for each entry when the path is a directory. If omitted, all fields are returned. Ignored when the path is a single file. Use this to reduce response size when listing directories and you only need specific fields, e.g. just 'name' and 'type'."
           owner:
             type: "string"
             required: true
@@ -865,6 +905,10 @@ servers:
             type: "string"
             required: false
             description: "Author username or email address to filter commits by"
+          fields:
+            type: "array"
+            required: false
+            description: "Subset of fields to return for each commit. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields, e.g. just 'sha' and 'html_url'."
           owner:
             type: "string"
             required: true
@@ -1077,6 +1121,10 @@ servers:
             type: "array"
             required: false
             description: "Filter by custom issue field values. Each entry takes a field_name and a value; the server looks up the field and coerces the value to its type (single-select option name, text, number, or YYYY-MM-DD date)."
+          fields:
+            type: "array"
+            required: false
+            description: "Subset of fields to return for each issue. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields; omitting 'body' and 'field_values' in particular drops the largest per-result data."
           labels:
             type: "array"
             required: false
@@ -1152,6 +1200,10 @@ servers:
             required: false
             description: "Sort direction"
             enum: ["asc", "desc"]
+          fields:
+            type: "array"
+            required: false
+            description: "Subset of fields to return for each pull request. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields; omitting 'body' in particular drops the largest per-result data."
           head:
             type: "string"
             required: false
@@ -1185,6 +1237,10 @@ servers:
       list_releases:
         description: "List releases in a GitHub repository"
         arguments:
+          fields:
+            type: "array"
+            required: false
+            description: "Subset of fields to return for each release. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields; omitting 'body' in particular drops the largest per-release data."
           owner:
             type: "string"
             required: true
@@ -1443,7 +1499,7 @@ servers:
             required: false
             description: "Filter/query string. For list_projects: filter by title text and state (e.g. \"roadmap is:open\"). For list_project_items: advanced filtering using GitHub's project filtering syntax."
       projects_write:
-        description: "Create and manage GitHub Projects: create projects, add/update/delete items, create status updates, and add iteration fields."
+        description: "Create and manage GitHub Projects: create projects, add/update/delete items, bulk-update many items at once, create status updates, and add iteration fields."
         arguments:
           body:
             type: "string"
@@ -1474,6 +1530,10 @@ servers:
             required: false
             description: "The item's type, either issue or pull_request. Required for 'add_project_item' method."
             enum: ["issue", "pull_request"]
+          items:
+            type: "array"
+            required: false
+            description: "The items to update with the top-level 'updated_field'. Required for 'update_project_items'; prefer it over calling 'update_project_item' in a loop. Each entry must match exactly one reference variant: 'node_id', numeric 'item_id', or 'item_owner' + 'item_repo' + 'issue_number'. Limit: 50 items per call."
           iteration_duration:
             type: "number"
             required: false
@@ -1486,7 +1546,7 @@ servers:
             type: "string"
             required: true
             description: "The method to execute"
-            enum: ["add_project_item", "update_project_item", "delete_project_item", "create_project_status_update", "create_project", "create_iteration_field"]
+            enum: ["add_project_item", "update_project_item", "update_project_items", "delete_project_item", "create_project_status_update", "create_project", "create_iteration_field"]
           owner:
             type: "string"
             required: true
@@ -1524,7 +1584,7 @@ servers:
           updated_field:
             type: "object"
             required: false
-            description: "Object describing the field to update and its new value. Required for 'update_project_item'. Two shapes are accepted: (1) by ID \u2014 {\"id\": 123456, \"value\": \"...\"}; (2) by name \u2014 {\"name\": \"Status\", \"value\": \"In Progress\"}. For single-select fields, option-name resolution requires the by-name shape; on the by-ID shape, pass the option ID. Set value to null to clear the field."
+            description: "The field/value to apply, using {\"id\": 123, \"value\": ...} or {\"name\": \"Status\", \"value\": ...}; null clears the field. Required for 'update_project_item' and 'update_project_items', where one top-level field/value applies to every item in a batch. For 'update_project_item' SINGLE_SELECT fields, the name form accepts option names; the ID form expects an option ID."
       pull_request_read:
         description: "Get information on a specific pull request in GitHub repository."
         arguments:
@@ -1635,6 +1695,10 @@ servers:
       search_code:
         description: "Fast and precise code search across ALL GitHub repositories using GitHub's native search engine. Best for finding exact symbols, functions, classes, or specific code patterns."
         arguments:
+          fields:
+            type: "array"
+            required: false
+            description: "Subset of fields to return for each code search result. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields; omitting 'repository' and 'text_matches' in particular drops the largest per-result data."
           order:
             type: "string"
             required: false
@@ -1684,6 +1748,10 @@ servers:
       search_issues:
         description: "Search for issues in GitHub repositories using issues search syntax already scoped to is:issue"
         arguments:
+          fields:
+            type: "array"
+            required: false
+            description: "Subset of fields to return for each issue result. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields; omitting 'body', 'reactions', and 'labels' in particular drops the largest per-result data."
           order:
             type: "string"
             required: false
@@ -1717,6 +1785,10 @@ servers:
       search_pull_requests:
         description: "Search for pull requests in GitHub repositories using issues search syntax already scoped to is:pr"
         arguments:
+          fields:
+            type: "array"
+            required: false
+            description: "Subset of fields to return for each pull request result. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields; omitting 'body', 'reactions', and 'labels' in particular drops the largest per-result data."
           order:
             type: "string"
             required: false
