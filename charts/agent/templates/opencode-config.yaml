@@ -12,14 +12,11 @@ data:
       "$schema": "https://opencode.ai/config.json",
       "model": "{{ if .Values.providers.openai.enabled }}openai/{{ .Values.harnesses.openCode }}{{ else if .Values.providers.deepseek.enabled }}deepseek/{{ .Values.providers.deepseek.model }}{{ else if .Values.providers.zai.enabled }}zhipuai/{{ .Values.providers.zai.model }}{{ else }}anthropic/{{ .Values.providers.anthropic.model }}{{ end }}",
       "permission": {
-        "edit": "allow",
-        "bash": "allow",
+        "*": "allow",
         "webfetch": "deny",
-        "external_directory": {
-          "/tmp/*": "allow",
-          "/workspace/*": "allow"
-        }
+        "websearch": "deny"
       },
+      "lsp": true,
       "mcp": {
         "mnemosyne": {
           "type": "local",

@@ -58,6 +58,11 @@ def render_sandbox() -> dict:
 
 def main() -> None:
     pod_spec = render_sandbox()["spec"]["podTemplate"]["spec"]
+    agent = pod_spec["containers"][0]
+    env = {item["name"]: item.get("value") for item in agent["env"]}
+    if env.get("OPENCODE_EXPERIMENTAL_LSP_TOOL") != "1":
+        die("OpenCode's LSP tool must be enabled in the agent runtime")
+
     if pod_spec.get("hostUsers") is not False:
         die("Sandbox pods must use a private user namespace")
     if (

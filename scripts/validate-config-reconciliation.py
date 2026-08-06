@@ -432,6 +432,7 @@ def test_opencode_replaces_routing_and_preserves_user_options() -> None:
                 "provider": {"retired": {"options": {"baseURL": "old"}}},
                 "mcp": {"retired": {"url": "https://old.invalid/mcp"}},
                 "permission": {"bash": "ask", "orphan-tool": "allow"},
+                "lsp": False,
                 "autoupdate": False,
                 "compaction": {"prune": True},
             }
@@ -444,7 +445,12 @@ def test_opencode_replaces_routing_and_preserves_user_options() -> None:
                     "openai": {"options": {"baseURL": "http://gateway/openai/v1"}}
                 },
                 "mcp": {"vmcp": {"url": "http://gateway/mcp/vmcp"}},
-                "permission": {"bash": "allow", "webfetch": "deny"},
+                "permission": {
+                    "*": "allow",
+                    "webfetch": "deny",
+                    "websearch": "deny",
+                },
+                "lsp": True,
             }
         ),
     )
@@ -453,7 +459,12 @@ def test_opencode_replaces_routing_and_preserves_user_options() -> None:
     assert result["model"] == "openai/user-model"
     assert set(result["provider"]) == {"openai"}
     assert set(result["mcp"]) == {"vmcp"}
-    assert result["permission"] == {"bash": "allow", "webfetch": "deny"}
+    assert result["permission"] == {
+        "*": "allow",
+        "webfetch": "deny",
+        "websearch": "deny",
+    }
+    assert result["lsp"] is True
     assert result["autoupdate"] is False
     assert result["compaction"] == {"prune": True}
 
