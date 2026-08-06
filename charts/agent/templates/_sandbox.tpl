@@ -467,6 +467,8 @@ spec:
               value: /opt/data/.claude
             - name: OPENCODE_CONFIG
               value: /opt/data/.config/opencode/opencode.json
+            - name: OPENCODE_EXPERIMENTAL_LSP_TOOL
+              value: '1'
             # Same tree as ~/.agents/skills; without this every shared skill warns.
             - name: OPENCODE_DISABLE_CLAUDE_CODE_SKILLS
               value: '1'

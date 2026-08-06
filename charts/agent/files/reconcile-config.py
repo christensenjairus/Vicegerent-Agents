@@ -273,7 +273,7 @@ def reconcile_opencode(
     existing: dict[str, Any], desired: dict[str, Any]
 ) -> dict[str, Any]:
     result = deep_merge(desired, existing)
-    for path in (("$schema",), ("provider",), ("mcp",), ("permission",)):
+    for path in (("$schema",), ("provider",), ("mcp",), ("permission",), ("lsp",)):
         replace_path(result, desired, path)
     return result
 
