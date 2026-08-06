@@ -76,15 +76,14 @@
       "source": "julienXX/terminal-notifier",
       "renovateDatasource": "github-releases",
       "renovateDependency": "julienXX/terminal-notifier",
-      "formula": "vicegerent/packages/terminal-notifier@2.0.0",
+      "formula": "homebrew/core/terminal-notifier",
       "version": "2.0.0",
       "binary": "terminal-notifier",
       "versionArgs": ["-help"],
-      "replaces": ["terminal-notifier"],
-      "xcodeFirstLaunch": true,
+      "forceBottle": true,
+      "replaces": ["vicegerent/packages/terminal-notifier@2.0.0"],
       "generator": {
-        "type": "github-archive",
-        "tagPrefix": ""
+        "type": "homebrew-core"
       }
     }
   ]

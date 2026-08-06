@@ -235,6 +235,43 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(changed, [])
         self.assertEqual(fetcher.requested, [])
 
+    def test_homebrew_core_formula_is_not_generated(self):
+        package = {
+            "name": "terminal-notifier",
+            "source": "julienXX/terminal-notifier",
+            "renovateDatasource": "github-releases",
+            "renovateDependency": "julienXX/terminal-notifier",
+            "formula": "homebrew/core/terminal-notifier",
+            "version": "2.0.0",
+            "generator": {"type": "homebrew-core"},
+        }
+        tmp, root, manifest_path = self._repo(package, "unused")
+        self.addCleanup(tmp.cleanup)
+        fetcher = FakeFetcher()
+
+        changed = generate.generate_updates(manifest_path, root, fetcher=fetcher)
+
+        self.assertEqual(changed, [])
+        self.assertEqual(fetcher.requested, [])
+        self.assertEqual(list((root / "Formula").iterdir()), [])
+
+    def test_homebrew_core_formula_must_match_package_name(self):
+        package = {
+            "name": "terminal-notifier",
+            "source": "julienXX/terminal-notifier",
+            "formula": "homebrew/core/other-formula",
+            "version": "2.0.0",
+            "generator": {"type": "homebrew-core"},
+        }
+        tmp, root, manifest_path = self._repo(package, "unused")
+        self.addCleanup(tmp.cleanup)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "must be homebrew/core/terminal-notifier",
+        ):
+            generate.generate_updates(manifest_path, root, fetcher=FakeFetcher())
+
     def test_rejects_unsafe_formula_path(self):
         package = {
             "name": "rclone",
@@ -285,6 +322,10 @@ class GenerateTests(unittest.TestCase):
             "packages": [
                 {"formula": "vicegerent/packages/rclone@1.76.0"},
                 {"formula": "vicegerent/packages/thv@0.43.0"},
+                {
+                    "formula": "homebrew/core/terminal-notifier",
+                    "generator": {"type": "homebrew-core"},
+                },
             ]
         }
         generate.validate_formula_change_scope(
@@ -297,12 +338,19 @@ class GenerateTests(unittest.TestCase):
                 manifest,
                 ["Formula/rclone@1.76.0.rb", "Formula/rogue@1.0.0.rb"],
             )
+        with self.assertRaisesRegex(ValueError, "Formula/terminal-notifier.rb"):
+            generate.validate_formula_change_scope(
+                manifest,
+                ["Formula/terminal-notifier.rb"],
+            )
 
     def test_checked_in_templates_reproduce_current_formulae(self):
         root = Path(__file__).resolve().parents[2]
         manifest = json.loads((root / "host/brew/packages.json").read_text())
         for package in manifest["packages"]:
             with self.subTest(package=package["name"]):
+                if package["generator"]["type"] == "homebrew-core":
+                    continue
                 short_formula = package["formula"].rsplit("/", 1)[1]
                 formula = (root / "Formula" / f"{short_formula}.rb").read_text()
                 rendered = (root / "host/brew/templates" / f"{package['name']}.rb.in").read_text()

@@ -33,13 +33,13 @@
       "groupName": "mcp-cerbos-shim go modules"
     },
     {
-      "description": "Surface managed Homebrew releases for explicit approval; CI generates the immutable formula and checksums, while macOS installation remains a review gate.",
+      "description": "Surface managed Homebrew releases for explicit approval; CI generates repository formulae and checksums, while macOS installation remains a review gate.",
       "matchManagers": ["custom.regex"],
       "matchFileNames": ["host/brew/packages.json"],
       "dependencyDashboardApproval": true,
       "rangeStrategy": "replace",
       "prBodyNotes": [
-        "This dependency is a managed Homebrew package. CI will generate and commit the immutable version-qualified formula and checksums; complete the macOS installation check before merging."
+        "This dependency is a managed Homebrew package. CI will generate repository-owned formulae and checksums when applicable; complete the macOS installation check before merging."
       ]
     },
     {
