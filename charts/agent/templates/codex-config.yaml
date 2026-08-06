@@ -52,6 +52,10 @@ data:
     url = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp"
     tool_timeout_sec = 90
     supports_parallel_tool_calls = true
+    [mcp_servers.lsp]
+    command = "node"
+    args = ["/opt/vicegerent/codex-lsp/cli.js", "mcp"]
+    tool_timeout_sec = 90
     # Pre-trust PVC-seeded workdirs so codex never blocks on directory trust.
     [projects."/workspace"]
     trust_level = "trusted"

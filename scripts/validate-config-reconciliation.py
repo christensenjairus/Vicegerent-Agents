@@ -387,6 +387,11 @@ wire_api = "responses"
 url = "http://gateway/mcp/vmcp"
 supports_parallel_tool_calls = true
 
+[mcp_servers.lsp]
+command = "node"
+args = ["/opt/vicegerent/codex-lsp/cli.js", "mcp"]
+tool_timeout_sec = 90
+
 [projects."/workspace"]
 trust_level = "trusted"
 
@@ -406,7 +411,12 @@ respect_system_proxy = true
         "vmcp": {
             "url": "http://gateway/mcp/vmcp",
             "supports_parallel_tool_calls": True,
-        }
+        },
+        "lsp": {
+            "command": "node",
+            "args": ["/opt/vicegerent/codex-lsp/cli.js", "mcp"],
+            "tool_timeout_sec": 90,
+        },
     }
     assert result["projects"]["/workspace"] == {
         "trust_level": "trusted",

@@ -39,7 +39,7 @@ make push
 
 - mnemosyne + MiniCPM `MiniCPM5-1B-Q4_K_M.gguf` (bake outside `/opt/data`; the data PVC shadows `/opt/data` at runtime, so first-boot seeding is an init-container concern, not a Dockerfile one).
 - hermes-lcm context engine — extracted from its pinned GitHub release into Hermes' bundled `plugins/context_engine/lcm/` (resolved from the installed package, not a hardcoded path). Loaded by the dedicated context-engine discovery, not the general `~/.hermes/plugins` system, so `hermes plugins install` does not place it; selected via `context.engine: lcm` in the agent config. Pure stdlib, no PyPI deps.
-- LSP servers via `npm -g` (node + npm are in the base).
+- LSP servers via `npm -g` (node + npm are in the base), plus the pinned `codex-lsp` MCP runtime at `/opt/vicegerent/codex-lsp`. Codex starts it automatically as its `lsp` MCP server; it launches only the language server needed for the requested file.
 - `terragrunt` via pinned GitHub release asset, for repos whose pre-commit or CI uses `terragrunt hcl format` against `.tf`/`.hcl` files.
 - Terraform CLI via its pinned HashiCorp release, for local repository operations such as `fmt`, `validate`, and `test`; cloud API access remains subject to the sandbox's credentials and egress controls.
 - Repository-native linting and formatting tools: pinned `shfmt`, `hadolint`, and `golangci-lint` release binaries; pinned `ruff`, `pyrefly`, and `ansible-lint` Python packages; and `fd`, `rsync`, `sqlite3`, and `tree` for efficient inspection and safe working-copy operations.
