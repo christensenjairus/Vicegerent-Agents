@@ -35,7 +35,7 @@ agents:
     obsidian:
       vaultPath: /workspace/knowledge-vault
     git:
-      userName: your-git-username
+      userName: your-name
       userEmail: you@example.com
     # Defaults enable anthropic + openai; this agent is anthropic-only.
     providers:

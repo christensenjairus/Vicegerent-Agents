@@ -31,7 +31,7 @@ agents:
     obsidian:
       vaultPath: /workspace/knowledge-vault
     git:
-      userName: jchristensen
+      userName: Jairus Christensen
       userEmail: christensenjairus@gmail.com
     timezone: America/Denver
     providers:
