@@ -152,7 +152,7 @@ func TestCached_EveryReviewedLookupToolIsCacheable(t *testing.T) {
 		gitlabGetProjectTool,
 		jiraGetIssueTool,
 		"pagerduty_get_incident",
-		"pagerduty_gov_get_incident",
+		"pagerduty_secondary_get_incident",
 	}
 	for _, tool := range tools {
 		t.Run(tool, func(t *testing.T) {
@@ -294,7 +294,7 @@ func TestCacheTTLFor(t *testing.T) {
 		{name: "GitLab MR source branch can resolve a later MR", tool: gitlabGetMergeRequestTool, args: map[string]any{"project_id": "148", "source_branch": "feature"}, want: DefaultCacheTTL},
 		{name: "GitLab source branch wins when both selectors are present", tool: gitlabGetMergeRequestTool, args: map[string]any{"project_id": "148", "merge_request_iid": "754", "source_branch": "feature"}, want: DefaultCacheTTL},
 		{name: "PagerDuty incident service is mutable", tool: "pagerduty_get_incident", args: map[string]any{"incident_id": "P123"}, want: DefaultCacheTTL},
-		{name: "PagerDuty gov incident service is mutable", tool: "pagerduty_gov_get_incident", args: map[string]any{"incident_id": "P123"}, want: DefaultCacheTTL},
+		{name: "PagerDuty gov incident service is mutable", tool: "pagerduty_secondary_get_incident", args: map[string]any{"incident_id": "P123"}, want: DefaultCacheTTL},
 	}
 	reviewed := make(map[string]struct{}, len(tests))
 	for _, tc := range tests {

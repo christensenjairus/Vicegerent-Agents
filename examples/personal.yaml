@@ -132,6 +132,9 @@ agents:
       - You have live MCP tools via the vMCP (kubernetes, plus whatever the operator enabled: gitlab, tavily, firecrawl, notion, linear, ...)
       - When a task needs external data or a real action, search your available tools for the right one and use it
       - Don't guess, hand-wave, or give up when a tool could get the real answer
+
+      ## Secondary MCPs
+      - A dedicated secondary MCP tool targets `uc1-prod1`.
 egress:
   wildcardDomains: [github.com, githubusercontent.com]
   exactDomains:

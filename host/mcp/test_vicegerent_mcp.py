@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 
 MODULE_PATH = Path(__file__).with_name("vicegerent_mcp.py")
@@ -82,6 +82,76 @@ class StoreHiddenSecretTests(unittest.TestCase):
 
         self.assertIsNone(result)
         run.assert_not_called()
+
+
+class ConfigureTests(unittest.TestCase):
+    def test_every_configured_secret_has_a_visible_label(self) -> None:
+        config_path = MODULE_PATH.with_name("toolhive-servers.json")
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        unnamed = []
+        secret_prompts = []
+        for server in config["servers"]:
+            for secret in server.get("secrets", []):
+                label = secret.get("prompt")
+                if not label:
+                    unnamed.append(f"{server['name']}.{secret['name']}")
+                else:
+                    secret_prompts.append(label)
+            for param in server.get("params", []):
+                if param.get("secret") and not param.get("prompt"):
+                    unnamed.append(f"{server['name']}.{param['name']}")
+
+        self.assertEqual(unnamed, [])
+        self.assertEqual(len(secret_prompts), len(set(secret_prompts)))
+
+    def test_labels_each_configured_secret(self) -> None:
+        config = {
+            "group": "vicegerent",
+            "servers": [{
+                "name": "grafana_secondary",
+                "secrets": [
+                    {"name": "grafana_secondary_url", "prompt": "Secondary Grafana URL"},
+                    {
+                        "name": "grafana_secondary_service_account_token",
+                        "prompt": "Secondary Grafana service account token",
+                    },
+                ],
+            }],
+        }
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp, "load_servers_config", return_value=config),
+            patch.object(vicegerent_mcp, "load_server_state", return_value={}),
+            patch.object(vicegerent_mcp, "load_server_params", return_value={}),
+            patch.object(vicegerent_mcp, "list_workloads", return_value={}),
+            patch.object(vicegerent_mcp, "_prompt_yn", return_value=True) as prompt_yn,
+            patch.object(vicegerent_mcp, "thv", return_value=completed),
+            patch.object(vicegerent_mcp, "_store_hidden_secret", return_value=0) as store,
+            patch.object(vicegerent_mcp, "save_server_state"),
+            patch.object(vicegerent_mcp, "save_server_params"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            result = vicegerent_mcp.configure(Path(directory))
+
+        self.assertEqual(result, 0)
+        prompt_yn.assert_has_calls([
+            call("   Secondary Grafana URL is already configured — replace it?", default=False),
+            call(
+                "   Secondary Grafana service account token is already configured — replace it?",
+                default=False,
+            ),
+        ])
+        self.assertEqual(
+            store.call_args_list,
+            [
+                call("grafana_secondary_url", "Secondary Grafana URL"),
+                call(
+                    "grafana_secondary_service_account_token",
+                    "Secondary Grafana service account token",
+                ),
+            ],
+        )
 
 
 class WorkloadLogProcessTests(unittest.TestCase):

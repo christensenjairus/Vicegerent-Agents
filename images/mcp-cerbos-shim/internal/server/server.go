@@ -102,7 +102,7 @@ const (
 // pagerdutyManageIncidentsTools/pagerdutyAddNoteTools/pagerdutyIncidentResource
 // identify the PagerDuty write calls the service-resolution gate applies to,
 // one entry per backend this shim fronts (toolhive-servers.json: pagerduty,
-// pagerduty_gov). Unlike the Linear gates above, neither tool's own args
+// pagerduty_secondary). Unlike the Linear gates above, neither tool's own args
 // carry ANYTHING that identifies the incident's owning service directly --
 // only an opaque incident_id/incident_ids. The gate resolves each targeted
 // incident to its service via a live get_incident lookup and hands the
@@ -121,12 +121,12 @@ const (
 // instead of the intended per-call, service-scoping-tied check).
 var (
 	pagerdutyManageIncidentsTools = map[string]string{
-		"pagerduty_manage_incidents":     "pagerduty_get_incident",
-		"pagerduty_gov_manage_incidents": "pagerduty_gov_get_incident",
+		"pagerduty_manage_incidents":           "pagerduty_get_incident",
+		"pagerduty_secondary_manage_incidents": "pagerduty_secondary_get_incident",
 	}
 	pagerdutyAddNoteTools = map[string]string{
-		"pagerduty_add_note_to_incident":     "pagerduty_get_incident",
-		"pagerduty_gov_add_note_to_incident": "pagerduty_gov_get_incident",
+		"pagerduty_add_note_to_incident":           "pagerduty_get_incident",
+		"pagerduty_secondary_add_note_to_incident": "pagerduty_secondary_get_incident",
 	}
 )
 
@@ -193,7 +193,7 @@ var jiraAssigneeGatedTools = map[string]bool{
 // alertmanagerSilenceResource and alertmanagerDeleteSilenceTools identify the
 // Alertmanager write calls the silence-owner resolution gate applies to:
 // deleteSilence, one entry per backend this shim fronts (toolhive-servers.json:
-// alertmanager, alertmanager_gov). Unlike the Linear/PagerDuty gates above,
+// alertmanager, alertmanager_secondary). Unlike the Linear/PagerDuty gates above,
 // deleteSilence's own args carry only an opaque silenceId -- nothing that
 // identifies the silence's real creator directly. The gate resolves the
 // target silence's REAL createdBy via a live getSilences lookup and hands it
@@ -210,8 +210,8 @@ var jiraAssigneeGatedTools = map[string]bool{
 // unmapped in Cerbos for both backends, same recursion-safety reason
 // pagerduty_*_get_incident/notion_notion-fetch/linear_get_issue are unmapped.
 var alertmanagerDeleteSilenceTools = map[string]string{
-	"alertmanager_deleteSilence":     "alertmanager_getSilences",
-	"alertmanager_gov_deleteSilence": "alertmanager_gov_getSilences",
+	"alertmanager_deleteSilence":           "alertmanager_getSilences",
+	"alertmanager_secondary_deleteSilence": "alertmanager_secondary_getSilences",
 }
 
 const alertmanagerSilenceResource = "alertmanager_silence"

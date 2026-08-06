@@ -8,6 +8,6 @@ kubectl  # kubernetes backend
 gh       # github backend
 glab     # gitlab backend
 aws      # aws backend
-amtool   # alertmanager / alertmanager_gov backend
-pd       # pagerduty / pagerduty_gov backend
+amtool   # alertmanager / alertmanager_secondary backend
+pd       # pagerduty / pagerduty_secondary backend
 jira     # jira backend

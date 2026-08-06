@@ -41,7 +41,7 @@
       "type": "npx",
       "package": "@zereight/mcp-gitlab@2.1.46",
       "env": {"USE_PIPELINE": "true"},
-      "secrets": [{"name": "gitlab_token", "target": "GITLAB_PERSONAL_ACCESS_TOKEN"}],
+      "secrets": [{"name": "gitlab_token", "prompt": "GitLab personal access token", "target": "GITLAB_PERSONAL_ACCESS_TOKEN"}],
       "network": {
         "host_from_param": "api_url"
       },
@@ -84,7 +84,7 @@
       "env": {
         "GITHUB_TOOLSETS": "all"
       },
-      "secrets": [{"name": "github_token", "target": "GITHUB_PERSONAL_ACCESS_TOKEN"}],
+      "secrets": [{"name": "github_token", "prompt": "GitHub personal access token", "target": "GITHUB_PERSONAL_ACCESS_TOKEN"}],
       "network": {
         "allow_hosts": ["github.com", "api.github.com"]
       },
@@ -106,7 +106,7 @@
       "network": {
         "allow_hosts": ["api.tavily.com"]
       },
-      "secrets": [{"name": "tavily_api_key", "target": "TAVILY_API_KEY"}],
+      "secrets": [{"name": "tavily_api_key", "prompt": "Tavily API key", "target": "TAVILY_API_KEY"}],
       "tools": ["tavily_search", "tavily_extract", "tavily_crawl", "tavily_map", "tavily_research"]
     },
     {
@@ -118,7 +118,7 @@
       "network": {
         "allow_hosts": ["api.firecrawl.dev"]
       },
-      "secrets": [{"name": "firecrawl_api_key", "target": "FIRECRAWL_API_KEY"}],
+      "secrets": [{"name": "firecrawl_api_key", "prompt": "Firecrawl API key", "target": "FIRECRAWL_API_KEY"}],
       "tools": [
         "firecrawl_scrape", "firecrawl_map", "firecrawl_search", "firecrawl_search_feedback",
         "firecrawl_feedback", "firecrawl_crawl", "firecrawl_check_crawl_status", "firecrawl_extract",
@@ -181,9 +181,9 @@
         "TOOLSETS": "all"
       },
       "secrets": [
-        {"name": "jira_url", "target": "JIRA_URL"},
-        {"name": "jira_username", "target": "JIRA_USERNAME"},
-        {"name": "jira_api_token", "target": "JIRA_API_TOKEN"}
+        {"name": "jira_url", "prompt": "Jira URL", "target": "JIRA_URL"},
+        {"name": "jira_username", "prompt": "Jira username", "target": "JIRA_USERNAME"},
+        {"name": "jira_api_token", "prompt": "Jira API token", "target": "JIRA_API_TOKEN"}
       ],
       "tools": [
         "jira_get_issue", "jira_get_project_issues", "jira_get_transitions",
@@ -212,20 +212,20 @@
         "list_loki_label_values"
       ],
       "secrets": [
-        {"name": "grafana_url", "target": "GRAFANA_URL"},
-        {"name": "grafana_service_account_token", "target": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
+        {"name": "grafana_url", "prompt": "Grafana URL", "target": "GRAFANA_URL"},
+        {"name": "grafana_service_account_token", "prompt": "Grafana service account token", "target": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
       ]
     },
     {
-      "name": "grafana_gov",
-      "description": "Grafana observability (gov-cloud instance) \u2014 same as 'grafana', pointed at its own instance via separate secrets.",
+      "name": "grafana_secondary",
+      "description": "Secondary Grafana observability instance — same as 'grafana', pointed at its own instance via separate secrets.",
       "enabled": false,
       "type": "registry",
       "registry": "docker.io/grafana/mcp-grafana:1.0.0",
       "transport": "stdio",
       "server_args": ["--transport", "stdio", "--disable-write", "--disable-proxied"],
       "network": {
-        "host_from_secret": "grafana_gov_url"
+        "host_from_secret": "grafana_secondary_url"
       },
       "tools": [
         "search_dashboards", "search_folders", "list_datasources", "get_datasource",
@@ -237,8 +237,8 @@
         "list_loki_label_values"
       ],
       "secrets": [
-        {"name": "grafana_gov_url", "target": "GRAFANA_URL"},
-        {"name": "grafana_gov_service_account_token", "target": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
+        {"name": "grafana_secondary_url", "prompt": "Secondary Grafana URL", "target": "GRAFANA_URL"},
+        {"name": "grafana_secondary_service_account_token", "prompt": "Secondary Grafana service account token", "target": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
       ]
     },
     {
@@ -268,8 +268,8 @@
       ]
     },
     {
-      "name": "alertmanager_gov",
-      "description": "Prometheus Alertmanager (gov-cloud instance) \u2014 same as 'alertmanager', pointed at its own instance via a separate secret.",
+      "name": "alertmanager_secondary",
+      "description": "Secondary Prometheus Alertmanager instance — same as 'alertmanager', pointed at its own instance via a separate secret.",
       "enabled": false,
       "type": "npx",
       "package": "mcp-alertmanager@2.1.1",
@@ -279,7 +279,7 @@
       "params": [
         {
           "name": "url",
-          "prompt": "Alertmanager (gov) API URL (e.g. https://alertmanager-gov.example.com)",
+          "prompt": "Secondary Alertmanager API URL (e.g. https://alertmanager-secondary.example.com)",
           "apply": "server_arg",
           "template": "--url={value}",
           "required": true,
@@ -316,11 +316,11 @@
         "get_incident_metrics_all", "get_incident_metrics_by_service", "get_incident_metrics_by_team",
         "get_responder_metrics", "get_responder_load_metrics"
       ],
-      "secrets": [{"name": "pagerduty_user_api_key", "target": "PAGERDUTY_USER_API_KEY"}]
+      "secrets": [{"name": "pagerduty_user_api_key", "prompt": "PagerDuty user API key", "target": "PAGERDUTY_USER_API_KEY"}]
     },
     {
-      "name": "pagerduty_gov",
-      "description": "PagerDuty (gov-cloud instance) \u2014 same as 'pagerduty', authenticated against its own account via a separate secret.",
+      "name": "pagerduty_secondary",
+      "description": "Secondary PagerDuty instance — same as 'pagerduty', authenticated against its own account via a separate secret.",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/stacklok/dockyard/uvx/pagerduty-mcp:1.1.0",
@@ -341,7 +341,7 @@
         "get_incident_metrics_all", "get_incident_metrics_by_service", "get_incident_metrics_by_team",
         "get_responder_metrics", "get_responder_load_metrics"
       ],
-      "secrets": [{"name": "pagerduty_gov_user_api_key", "target": "PAGERDUTY_USER_API_KEY"}]
+      "secrets": [{"name": "pagerduty_secondary_user_api_key", "prompt": "Secondary PagerDuty user API key", "target": "PAGERDUTY_USER_API_KEY"}]
     },
     {
       "name": "elastic",
