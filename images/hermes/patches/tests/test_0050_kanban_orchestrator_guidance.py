@@ -29,6 +29,11 @@ assert "kanban_show()` first" not in orchestrator_guidance
 assert "Kanban task execution protocol" not in orchestrator_guidance
 assert "kanban_create" in orchestrator_guidance
 assert "unknown assignee" in orchestrator_guidance
+assert "Route, don't implement." not in orchestrator_guidance
+assert "Handle ordinary interactive work and routine coding tasks directly." in orchestrator_guidance
+assert "does not override applicable coding-agent or delegation guidance" in orchestrator_guidance
+assert "genuinely large tasks, explicit delegation requests, or independent review" in orchestrator_guidance
+assert "Kanban is appropriate when the user requests it" in orchestrator_guidance
 assert "Kanban task execution protocol" in worker_guidance
 
 

@@ -1,5 +1,5 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/hermes-agent
-TAG   ?= v2026.8.3-rev10
+TAG   ?= v2026.8.3-rev11
 REF   := $(IMAGE):$(TAG)
 
 DOCKER    ?= docker
