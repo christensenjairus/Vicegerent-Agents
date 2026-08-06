@@ -27,7 +27,7 @@ stages:
         type: helm
         repo: https://helm.cilium.io
         chart: cilium
-        version: 1.19.6
+        version: 1.20.0
         namespace: kube-system
         values: cilium.yaml
   - name: crds
@@ -102,7 +102,7 @@ stages:
       - name: agents-sandbox-controller
         type: helm-git
         gitRepo: https://github.com/kubernetes-sigs/agent-sandbox
-        ref: v0.5.3
+        ref: v0.5.4
         chartPath: helm
         namespace: agent-sandbox-system
         crds: true
