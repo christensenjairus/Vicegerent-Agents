@@ -1,6 +1,6 @@
 {
-  "name": "vicegerent-hermes-npm",
-  "description": "Global npm CLIs baked into the egress-locked Hermes sandbox image.",
+  "name": "vicegerent-agent-npm",
+  "description": "Global npm CLIs baked into the egress-locked agent sandbox image.",
   "private": true,
   "dependencies": {
     "@types/node": "25.7.0",

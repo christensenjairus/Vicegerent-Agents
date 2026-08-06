@@ -38,7 +38,7 @@ func TestDeployedWebCrawlMapping_MappedToolsReachCerbos(t *testing.T) {
 			// allow=false: the shim must forward a well-formed resource to Cerbos
 			// and honor its deny (turning it into a PERMISSION_DENIED error).
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -70,7 +70,7 @@ func TestDeployedWebCrawlMapping_ExternalURLWithinCapsPasses(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("tavily_tavily_crawl",
 			map[string]any{"url": "https://example.com", "limit": 50.0, "max_depth": 2.0})))
@@ -95,7 +95,7 @@ func TestDeployedWebCrawlMapping_FirecrawlMaxDiscoveryDepthWired(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("firecrawl_firecrawl_crawl",
 			map[string]any{"url": "https://example.com", "maxDiscoveryDepth": 10.0})))
@@ -123,7 +123,7 @@ func TestDeployedWebCrawlMapping_UnmappedToolsPass(t *testing.T) {
 	for _, tool := range []string{"tavily_tavily_search"} {
 		t.Run(tool, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tool,
 					map[string]any{"url": "http://169.254.169.254/latest/meta-data/"})))
@@ -163,7 +163,7 @@ func TestDeployedWebFetchMapping_MappedToolsReachCerbos(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.tool, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -195,7 +195,7 @@ func TestDeployedWebFetchMapping_ExternalURLPasses(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("firecrawl_firecrawl_scrape",
 			map[string]any{"url": "https://example.com"})))
@@ -231,7 +231,7 @@ func TestDeployedWebMonitorMapping_MappedToolsReachCerbos(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.tool, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -263,7 +263,7 @@ func TestDeployedWebMonitorMapping_ExternalTargetPasses(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("firecrawl_firecrawl_monitor_create",
 			map[string]any{"page": "https://example.com"})))

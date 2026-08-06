@@ -5,8 +5,8 @@ description: OpenSearch datasource reads are denied (by uid or name); other data
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   opensearch_by_uid:
@@ -36,11 +36,11 @@ resources:
 tests:
   - name: reading the OpenSearch datasource by uid is denied for every action
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [opensearch_by_uid]
       actions: [read, query, listResources]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: opensearch_by_uid
         actions:
           read: EFFECT_DENY
@@ -48,26 +48,26 @@ tests:
           listResources: EFFECT_DENY
   - name: reading the OpenSearch datasource by name is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [opensearch_by_name]
       actions: [read]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: opensearch_by_name
         actions:
           read: EFFECT_DENY
   - name: reads against a non-OpenSearch datasource are allowed (guardrail is scoped)
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [prometheus_ds, unidentified_ds]
       actions: [read, query]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: prometheus_ds
         actions:
           read: EFFECT_ALLOW
           query: EFFECT_ALLOW
-      - principal: hermes
+      - principal: agent
         resource: unidentified_ds
         actions:
           read: EFFECT_ALLOW

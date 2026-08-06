@@ -300,7 +300,7 @@ spec:
             capabilities:
               drop: [ALL]
         # Win the startup race: block until egress-proxy, agentgateway (via proxy),
-        # and the vMCP route are all reachable before hermes starts, so a cold cluster
+        # and the vMCP route are all reachable before the agent runtime starts, so a cold cluster
         # doesn't require a pod restart to recover.
         - name: wait-deps
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
@@ -482,7 +482,7 @@ spec:
             - name: PYTHONDONTWRITEBYTECODE
               value: '1'
             - name: GIT_SSH_COMMAND
-              value: ssh -i /opt/hermes-ssh/hermes_agent_ed25519 -o StrictHostKeyChecking=accept-new
+              value: ssh -i /opt/agent-ssh/agent_ed25519 -o StrictHostKeyChecking=accept-new
                 -o UserKnownHostsFile=/opt/data/.ssh/known_hosts
             # Must be "none" — Hermes's has_usable_secret() placeholder allowlist, not
             # "unused" — else canonical anthropic/openai-api falsely register as
@@ -546,7 +546,7 @@ spec:
             - name: gitrepos
               mountPath: /workspace
             - name: ssh-key
-              mountPath: /opt/hermes-ssh
+              mountPath: /opt/agent-ssh
               readOnly: true
             - name: config
               mountPath: /reload/hermes-config

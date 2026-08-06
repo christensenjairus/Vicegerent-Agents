@@ -17,7 +17,7 @@ import sys
 import time
 
 REPO = pathlib.Path(__file__).resolve().parents[4]
-SCRIPT = str(REPO / "images" / "hermes" / "skills-scripts" / "snapshot-skills.sh")
+SCRIPT = str(REPO / "images" / "agent" / "skills-scripts" / "snapshot-skills.sh")
 
 ROOT = pathlib.Path("/tmp/snap-retention-test")
 SKILLS = ROOT / "skills"
@@ -36,7 +36,7 @@ def env(**extra):
     e = {
         **os.environ,
         "HOME": "/opt/data",
-        "HERMES_SKILLS_DIR": str(SKILLS),
+        "AGENT_SKILLS_DIR": str(SKILLS),
         "SKILLS_SNAPSHOT_GITDIR": str(GITDIR),
     }
     e.update(extra)

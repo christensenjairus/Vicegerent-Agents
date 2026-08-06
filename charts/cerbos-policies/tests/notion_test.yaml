@@ -7,8 +7,8 @@ description: notion-update-page calls with command=replace_content or allow_dele
 options:
   now: '2026-07-06T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   update_properties_call:
@@ -62,88 +62,88 @@ resources:
 tests:
   - name: non-destructive update commands are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - update_properties_call
         - update_content_call
         - insert_content_call
       actions: [update]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_properties_call
         actions: {update: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: update_content_call
         actions: {update: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: insert_content_call
         actions: {update: EFFECT_ALLOW}
   - name: replace_content is denied regardless of allowDeletingContent
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [replace_content_call, replace_content_with_deletion_call]
       actions: [update]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: replace_content_call
         actions: {update: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: replace_content_with_deletion_call
         actions: {update: EFFECT_DENY}
   - name: allowDeletingContent=true is denied even on a non-replace command
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [update_properties_with_deletion_flag_call]
       actions: [update]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_properties_with_deletion_flag_call
         actions: {update: EFFECT_DENY}
   - name: create-pages with the Scratchpad parent is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [create_pages_in_scratchpad_call]
       actions: [create]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_pages_in_scratchpad_call
         actions: {create: EFFECT_ALLOW}
   - name: create-pages with any other parent, wrong parent kind, or omitted parent
       is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_pages_wrong_parent_call
         - create_pages_wrong_kind_call
         - create_pages_omitted_parent_call
       actions: [create]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_pages_wrong_parent_call
         actions: {create: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_pages_wrong_kind_call
         actions: {create: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_pages_omitted_parent_call
         actions: {create: EFFECT_DENY}
   - name: update/comment on a page the shim resolved as operator-authored (or couldn't
       resolve, so no mismatch attr is set) is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [update_own_page_call]
       actions: [update, comment]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_own_page_call
         actions: {update: EFFECT_ALLOW, comment: EFFECT_ALLOW}
   - name: update/comment on a page the shim resolved as NOT operator-authored is denied
       regardless of which action is checked
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [not_own_page_call]
       actions: [update, comment]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: not_own_page_call
         actions: {update: EFFECT_DENY, comment: EFFECT_DENY}

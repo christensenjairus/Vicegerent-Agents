@@ -42,7 +42,7 @@ func TestDeployedGithubMapping_MappedToolsReachCerbos(t *testing.T) {
 			// the repo-allowlist path reaching Cerbos, not the author gate, which
 			// has its own dedicated tests in github_pr_author_deployed_test.go.
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+			s := New(m, e, d, AuditPrincipal(),
 				WithGithubPRAuthor(&fakeUpstream{text: githubPRResultOwnAuthor}))
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
@@ -79,7 +79,7 @@ func TestDeployedGithubMapping_AllowedRepoPasses(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("github_pull_request_read",
 			map[string]any{"owner": "christensenjairus", "repo": "vicegerent-agents", "method": "get", "pullNumber": 1})))
@@ -133,7 +133,7 @@ func TestDeployedGithubMapping_RemovedToolsAreUnmapped(t *testing.T) {
 	for _, tool := range removed {
 		t.Run(tool, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tool,
 					map[string]any{"owner": "christensenjairus", "repo": "vicegerent-agents"})))
@@ -181,7 +181,7 @@ func TestDeployedGithubMapping_PullRequestsAlwaysForceDraft(t *testing.T) {
 			// upstream, so its own lookup succeeds) -- this test cares about the
 			// force-draft mapping reaching Cerbos, not the author gate itself.
 			d := &stubDecider{allow: true}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+			s := New(m, e, d, AuditPrincipal(),
 				WithGithubPRAuthor(&fakeUpstream{text: githubPRResultOwnAuthor}))
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
@@ -215,7 +215,7 @@ func TestDeployedGithubMapping_PullRequestDraftForceDoesNotBypassRepoAllowlist(t
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("github_create_pull_request",
 			map[string]any{"owner": "someoneelse", "repo": "some-repo", "title": "t", "head": "h", "base": "main"})))
@@ -239,7 +239,7 @@ func TestDeployedGithubMapping_GetMeIsUnmappedAndPasses(t *testing.T) {
 	// get_me identifies the caller, not a repo — it carries no owner/repo and
 	// must not be mapped; confirms the guardrail doesn't over-block.
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("github_get_me", map[string]any{})))
 	if err != nil {
@@ -284,7 +284,7 @@ func TestDeployedGithubMapping_ReviewersAttrWiredOnCreateAndUpdate(t *testing.T)
 			// upstream, so its own lookup succeeds) -- this test cares about the
 			// reviewers-attr mapping reaching Cerbos, not the author gate itself.
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+			s := New(m, e, d, AuditPrincipal(),
 				WithGithubPRAuthor(&fakeUpstream{text: githubPRResultOwnAuthor}))
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))

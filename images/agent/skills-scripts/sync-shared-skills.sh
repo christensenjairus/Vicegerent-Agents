@@ -5,17 +5,17 @@
 # the farm into one symlink hides every categorized skill from claude.
 set -uo pipefail
 
-hermes_skills="${HERMES_SKILLS_DIR:-/opt/data/skills}"
+canonical_skills="${AGENT_SKILLS_DIR:-/opt/data/skills}"
 agents_root="${AGENTS_SKILLS_ROOT:-/opt/data/.agents/skills}"
 claude_farm="${CLAUDE_SKILLS_FARM:-/opt/data/.claude/skills}"
 # Directory name doubles as the category Hermes reports for adopted skills.
-adopt_dir="${hermes_skills}/${ADOPT_CATEGORY:-harness-authored}"
+adopt_dir="${canonical_skills}/${ADOPT_CATEGORY:-harness-authored}"
 
-[ -d "${hermes_skills}" ] || exit 0
+[ -d "${canonical_skills}" ] || exit 0
 
 mkdir -p "$(dirname "${agents_root}")"
 if [ ! -e "${agents_root}" ] || [ -L "${agents_root}" ]; then
-  ln -sfn "${hermes_skills}" "${agents_root}"
+  ln -sfn "${canonical_skills}" "${agents_root}"
 fi
 
 mkdir -p "${claude_farm}"
@@ -52,7 +52,7 @@ for link in "${claude_farm}"/*; do
   target="$(readlink -f "${link}" 2>/dev/null || true)"
   keep=no
   case "${target}" in
-    "${hermes_skills}"/*) [ -f "${target}/SKILL.md" ] && keep=yes ;;
+    "${canonical_skills}"/*) [ -f "${target}/SKILL.md" ] && keep=yes ;;
   esac
   [ "${keep}" = yes ] || rm -f "${link}"
 done
@@ -73,8 +73,8 @@ while IFS= read -r skill_md; do
   fi
   [ "$(readlink "${link}" 2>/dev/null || true)" = "${skill_dir}" ] && continue
   ln -sfn "${skill_dir}" "${link}" && linked=$((linked + 1))
-done < <(find "${hermes_skills}" \
-  \( -type d \( -path "${hermes_skills}/.*" -o -name references \
+done < <(find "${canonical_skills}" \
+  \( -type d \( -path "${canonical_skills}/.*" -o -name references \
                 -o -name templates -o -name assets -o -name scripts \) -prune \) -o \
   \( -path "${adopt_dir}/*" -prune \) -o \
   -mindepth 2 -name SKILL.md -print 2>/dev/null)
@@ -82,6 +82,6 @@ done < <(find "${hermes_skills}" \
 # stdout must be JSON: this also runs as a post_tool_call hook.
 echo "sync-shared-skills: ${linked} published, ${adopted} adopted, ${skipped} name(s) left to their owner" >&2
 if [ -n "${collisions}" ]; then
-  echo "sync-shared-skills: shadowed by a non-Hermes skill of the same name:${collisions}" >&2
+  echo "sync-shared-skills: shadowed by an externally owned skill of the same name:${collisions}" >&2
 fi
 echo '{}'

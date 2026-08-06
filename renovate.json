@@ -51,9 +51,9 @@
       "groupName": "gitlab ci images"
     },
     {
-      "description": "The hermes-agent base image pins uv's exclude-newer to 14 days as a supply-chain guard; a version fresher than that is unresolvable at build time, so hold PRs until they'd actually build.",
+      "description": "The agent image pins uv's exclude-newer to 14 days as a supply-chain guard; a version fresher than that is unresolvable at build time, so hold PRs until they'd actually build.",
       "matchManagers": ["pip_requirements"],
-      "matchFileNames": ["images/hermes/requirements.txt"],
+      "matchFileNames": ["images/agent/requirements.txt"],
       "minimumReleaseAge": "14 days"
     },
     {
@@ -70,14 +70,14 @@
       "description": "Only locally rebuilt <upstream-version>-rev<N> tags are valid. The numeric build group excludes bare upstream tags and orders rev10 after rev2.",
       "matchDatasources": ["docker"],
       "matchPackageNames": [
-        "harbor.hahomelabs.com/vicegerent/hermes-agent"
+        "harbor.hahomelabs.com/vicegerent/agent"
       ],
       "versioning": "regex:^v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-rev(?<build>\\d+)$"
     }
   ],
   "customManagers": [
     {
-      "description": "hermes-agent image tag in the root values.defaults.yaml agentDefaults map (no sibling Chart.yaml, so tracked here rather than by the helm-values manager).",
+      "description": "Agent image tag in the root values.defaults.yaml agentDefaults map (no sibling Chart.yaml, so tracked here rather than by the helm-values manager).",
       "customType": "regex",
       "managerFilePatterns": [
         "/^values\\.defaults\\.ya?ml$/"

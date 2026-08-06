@@ -333,13 +333,13 @@ image:publish:aws-profiles-mcp:
   script:
     - make -C images/aws-profiles-mcp release
 
-image:publish:hermes:
+image:publish:agent:
   extends: .image-publish
   rules:
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes: [images/hermes/**/*]
+      changes: [images/agent/**/*]
   script:
-    - make -C images/hermes release
+    - make -C images/agent release
 
 image:publish:kubernetes-mcp-server:
   extends: .image-publish
@@ -372,7 +372,7 @@ image:republish:all:
       for image_dir in \
         images/aws-api-mcp-server \
         images/aws-profiles-mcp \
-        images/hermes \
+        images/agent \
         images/kubernetes-mcp-server \
         images/mcp-cerbos-shim; do
         make -C "$image_dir" release

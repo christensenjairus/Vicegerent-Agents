@@ -12,7 +12,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = "/opt/vicegerent/claude-lsp"
-PLUGIN_TREE = REPO / "images/hermes/claude-lsp"
+PLUGIN_TREE = REPO / "images/agent/claude-lsp"
 MARKETPLACE = "vicegerent"
 PLUGIN = "sandbox-lsp"
 QUALIFIED = f"{PLUGIN}@{MARKETPLACE}"
@@ -136,7 +136,7 @@ def check_plugin_tree() -> None:
 
 
 def check_dockerfile() -> None:
-    dockerfile = (REPO / "images/hermes/Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (REPO / "images/agent/Dockerfile").read_text(encoding="utf-8")
     required = (
         f"COPY claude-lsp/ {PLUGIN_ROOT}/",
         f"chmod +x {PLUGIN_ROOT}/bin/typescript-lsp",
@@ -144,7 +144,7 @@ def check_dockerfile() -> None:
     )
     missing = [value for value in required if value not in dockerfile]
     if missing:
-        fail(f"Hermes image must bake and validate the Claude LSP plugin: {', '.join(missing)}")
+        fail(f"Agent image must bake and validate the Claude LSP plugin: {', '.join(missing)}")
 
 
 def main() -> None:

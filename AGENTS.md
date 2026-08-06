@@ -33,16 +33,16 @@ Vicegerent is a credential-isolated, egress-locked, harness-agnostic agent platf
 
 - Use fully qualified image references with explicit, non-`latest` tags. Do not deploy a frozen digest or set `imagePullPolicy`/`pullPolicy: Always`; deployed images use immutable tags with `IfNotPresent`.
 - Any build-context change under `images/<name>/` requires a tag bump in the same merge request, including tests and build scripts. Update the image's `Makefile` `TAG` and every deployed reference found by search.
-- `hermes-agent` rebuilds retain the upstream version and increment the `-revN` suffix; reset to `-rev1` after an upstream version bump. Renovate models `revN` as a numeric build with explicit regex versioning; do not replace it with `loose`, which treats the suffix as a prerelease.
-- Changes to upstream Hermes behavior belong in a numbered patch under `images/hermes/patches/`, registered in `order.txt`, with regression tests. Test patches against a disposable copy of the installed Hermes tree and verify idempotency; never mutate the running installation while validating a patch.
+- `agent` image rebuilds retain the upstream Hermes version and increment the `-revN` suffix; reset to `-rev1` after an upstream version bump. Renovate models `revN` as a numeric build with explicit regex versioning; do not replace it with `loose`, which treats the suffix as a prerelease.
+- Changes to upstream Hermes behavior belong in a numbered patch under `images/agent/patches/`, registered in `order.txt`, with regression tests. Test patches against a disposable copy of the installed Hermes tree and verify idempotency; never mutate the running installation while validating a patch.
 
 ## Security and Policy
 
 - Default to non-root, unprivileged containers, `automountServiceAccountToken: false` where possible, least-privilege RBAC, and fail-closed authorization. Never commit secrets. Setup scripts apply Kubernetes Secrets; ToolHive manages host MCP secrets.
 - Keep GitHub and GitLab Cerbos policies in lockstep. Mirror rule changes in `charts/cerbos-policies/policies/resource_{github,gitlab}.yaml`, or document a genuine tool-surface or workflow difference in the counterpart policy's header.
 - Tool selection belongs in ToolHive vMCP aggregation. Argument-level authorization and forced argument rewrites belong in the mcp-cerbos-shim mapping plus Cerbos policies. Do not use a backend's native flags to approximate tool selection. See `images/mcp-cerbos-shim/README.md` for the authorization architecture and current resource rules.
-- Preserve the client-side protected-branch guard across `main`, `master`, and `production`. Changes under `images/hermes/git-guard/` must keep its tests green and the branch list aligned with the GitHub and GitLab Cerbos policies. Treat forge-side branch protection as the security boundary.
-- Name the real model provider in rendered Hermes configuration; never use `custom` or `local` for a routed provider. Add prices only through `images/hermes/patches/0043-model-pricing.py`, and keep `scripts/validate-model-pricing.py` green.
+- Preserve the client-side protected-branch guard across `main`, `master`, and `production`. Changes under `images/agent/git-guard/` must keep its tests green and the branch list aligned with the GitHub and GitLab Cerbos policies. Treat forge-side branch protection as the security boundary.
+- Name the real model provider in rendered Hermes configuration; never use `custom` or `local` for a routed provider. Add prices only through `images/agent/patches/0043-model-pricing.py`, and keep `scripts/validate-model-pricing.py` green.
 - Cilium egress requires both a connection rule (`toEndpoints` or `toFQDNs`) and a DNS rule for every hostname. Prefer exact `matchName` entries, and preserve the agent Sandbox's `ndots:1` setting for exact in-cluster FQDNs.
 
 ## Storage and Secrets

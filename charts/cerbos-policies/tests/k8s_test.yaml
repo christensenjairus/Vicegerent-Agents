@@ -4,8 +4,8 @@ description: Secrets are denied for every tool; non-secret reads are allowed.
 options:
   now: '2026-06-25T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   secret_in_kube_system:
@@ -46,38 +46,38 @@ resources:
 tests:
   - name: getResource on a Secret is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [secret_in_kube_system]
       actions: [getResource, describeResource]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: secret_in_kube_system
         actions:
           getResource: EFFECT_DENY
           describeResource: EFFECT_DENY
   - name: listResources of secrets is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [secret_via_list]
       actions: [listResources]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: secret_via_list
         actions:
           listResources: EFFECT_DENY
   - name: reads on non-secret kinds are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [pod_in_default, configmap_in_default]
       actions: [getResource, listResources, getPodsLogs]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: pod_in_default
         actions:
           getResource: EFFECT_ALLOW
           listResources: EFFECT_ALLOW
           getPodsLogs: EFFECT_ALLOW
-      - principal: hermes
+      - principal: agent
         resource: configmap_in_default
         actions:
           getResource: EFFECT_ALLOW
@@ -85,7 +85,7 @@ tests:
           getPodsLogs: EFFECT_ALLOW
   - name: arbitrary non-secret kind and tool are allowed (no per-kind allowlist)
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [crd_in_default]
       actions:
         - getResource
@@ -95,7 +95,7 @@ tests:
         - getNodeMetrics
         - getPodMetrics
     expected:
-      - principal: hermes
+      - principal: agent
         resource: crd_in_default
         actions:
           getResource: EFFECT_ALLOW
@@ -106,11 +106,11 @@ tests:
           getPodMetrics: EFFECT_ALLOW
   - name: a kind-bearing call with no resolvable kind is denied (fail closed)
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [no_kind]
       actions: [getResource, listResources, describeResource]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: no_kind
         actions:
           getResource: EFFECT_DENY

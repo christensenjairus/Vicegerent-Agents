@@ -8,7 +8,7 @@
 #   <name>-secrets                 password, signing-secret, public-key,
 #                                  SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
 #                                  SLACK_ALLOWED_USERS, SLACK_HOME_CHANNEL (Slack optional)
-#   <name>-ssh-key                 hermes_agent_ed25519  (ed25519 private key)
+#   <name>-ssh-key                 agent_ed25519  (ed25519 private key)
 #
 # Generated material (dashboard auth, SSH key) is generated once and
 # reused on re-run; Slack values are taken from the environment or prompted for.
@@ -47,9 +47,7 @@ AGENT="$(echo "$AGENT" | tr '[:upper:]' '[:lower:]')"
 ITEM="${AGENT}-secrets"
 ITEM_SSH="${AGENT}-ssh-key"  # pragma: allowlist secret
 
-# Fixed key name: the sandbox mounts this Secret at /opt/hermes-ssh/<name> and
-# GIT_SSH_COMMAND in the chart references hermes_agent_ed25519.
-SSH_KEY_FILE="hermes_agent_ed25519"
+SSH_KEY_FILE="agent_ed25519"
 
 # shellcheck source=../lib/cli-ui.sh
 source "$SCRIPT_DIR/../lib/cli-ui.sh"

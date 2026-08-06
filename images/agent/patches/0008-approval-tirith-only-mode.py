@@ -49,7 +49,7 @@ Uncancellable description substrings::
 Immutability
 ------------
 The silence list is read from /opt/hermes/approval-policy.yaml, which is
-mounted read-only from the hermes-approval-policy ConfigMap (NOT from
+mounted read-only from the agent-approval-policy ConfigMap (NOT from
 the writable PVC-backed config.yaml). The agent cannot modify this file
 at runtime. To change the list: edit approval-policy.yaml in git, redeploy
 the ConfigMap, restart the pod.
@@ -87,7 +87,7 @@ REPLACEMENT = (
     "\n"
     "    # Pattern silence list: drop non-tirith warnings whose descriptions\n"
     "    # match operator-configured substrings read from the immutable\n"
-    "    # /opt/hermes/approval-policy.yaml (hermes-approval-policy ConfigMap).\n"
+    "    # /opt/hermes/approval-policy.yaml (agent-approval-policy ConfigMap).\n"
     "    # Tirith findings are never filtered.  Uncancellable patterns that\n"
     "    # guard the approval gate itself cannot be silenced.\n"
     "    def _read_pattern_silence():\n"

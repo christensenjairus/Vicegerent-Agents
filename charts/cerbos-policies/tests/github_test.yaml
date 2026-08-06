@@ -7,8 +7,8 @@ description: GitHub calls targeting a repo outside the allowlist are denied; cal
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   moveworks_emu_moveworks:
@@ -271,7 +271,7 @@ resources:
 tests:
   - name: calls confined to an allowed repo are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - moveworks_emu_moveworks
         - moveworks_emu_k8s_manifests
@@ -282,45 +282,45 @@ tests:
         - mixed_case_allowed_repo
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: mixed_case_allowed_repo
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: moveworks_emu_moveworks
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: moveworks_emu_k8s_manifests
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: moveworks_emu_sec
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: jchristensen_movester_moveworks
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: jchristensen_movester_k8s_manifests
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: vicegerent_agents
         actions: {access: EFFECT_ALLOW}
   - name: calls targeting a repo outside the allowlist are denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [other_repo, same_repo_wrong_owner, missing_attrs]
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: other_repo
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: same_repo_wrong_owner
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: missing_attrs
         actions: {access: EFFECT_DENY}
   - name: writes targeting a protected branch are denied even on an allowed repo
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - push_to_main
         - create_or_update_file_on_master
@@ -328,52 +328,52 @@ tests:
         - push_to_main_disallowed_repo
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: push_to_main
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_or_update_file_on_master
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_branch_named_production
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: push_to_main_disallowed_repo
         actions: {access: EFFECT_DENY}
   - name: writes to a non-protected branch, and calls that carry no branch, are allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [push_to_feature_branch, create_pull_request_against_main]
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: push_to_feature_branch
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_pull_request_against_main
         actions: {access: EFFECT_ALLOW}
   - name: setting reviewers on a pull request is denied; no reviewers set is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_pr_with_reviewers
         - update_pr_with_reviewers
         - create_pr_no_reviewers
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_pr_with_reviewers
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_pr_with_reviewers
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_pr_no_reviewers
         actions: {access: EFFECT_ALLOW}
   - name: PRs into a restricted owner must come from an allowed fork; unrestricted
       owners are unaffected
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_pr_moveworks_bare_head
         - create_pr_moveworks_fork_qualified
@@ -381,22 +381,22 @@ tests:
         - create_pr_non_restricted_owner_bare_head
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_pr_moveworks_bare_head
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_pr_moveworks_fork_qualified
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_pr_moveworks_wrong_fork_owner
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_pr_non_restricted_owner_bare_head
         actions: {access: EFFECT_ALLOW}
   - name: PR title format is enforced against moveworks-emu/moveworks and moveworks-emu/k8s-manifests;
       the change-ticket link is required only for k8s-manifests
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_moveworks_good_title
         - create_moveworks_bad_title
@@ -413,62 +413,62 @@ tests:
         - list_pull_requests_k8s_manifests
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_moveworks_good_title
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_moveworks_bad_title
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_moveworks_bad_title
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_k8s_manifests_good_title_and_body
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_k8s_manifests_bad_title
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_k8s_manifests_missing_body_link
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_k8s_manifests_no_body_at_all
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_k8s_manifests_untouched_title_body
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: update_k8s_manifests_sets_bad_title
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_k8s_manifests_sets_bad_body
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_k8s_manifests_sets_good_body
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_other_repo_bad_title_and_body
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: list_pull_requests_k8s_manifests
         actions: {access: EFFECT_ALLOW}
   - name: writes are only allowed on a PR the shim resolved as authored by this machine's
       own GitHub user (githubUsername is jchristensen_movester, matching test-values.yaml);
       calls with no prAuthor attr at all (reads, create_pull_request) are unaffected
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - update_pr_own_author
         - update_pr_other_author
         - read_tool_no_author_attr
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_pr_own_author
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: update_pr_other_author
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: read_tool_no_author_attr
         actions: {access: EFFECT_ALLOW}

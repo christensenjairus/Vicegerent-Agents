@@ -136,7 +136,7 @@ func TestDeployedGrafanaMapping_OpenSearchReachesCerbos(t *testing.T) {
 			// allow=false: the shim must forward a well-formed resource to Cerbos
 			// and honor its deny (turning it into a PERMISSION_DENIED error).
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
@@ -173,7 +173,7 @@ func TestDeployedGrafanaMapping_NonOpenSearchPasses(t *testing.T) {
 	}
 	// A prometheus datasource uid: mapped, reaches Cerbos, allowed.
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("grafana_query_prometheus",
 			map[string]any{"datasourceUid": "prom-abc123", "expr": "up"})))
@@ -197,7 +197,7 @@ func TestDeployedGrafanaMapping_UnmappedGrafanaToolPasses(t *testing.T) {
 	// A scoped read tool that names no datasource is unmapped -> passes without
 	// a Cerbos call. Confirms the guardrail doesn't over-block the allowed tools.
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("grafana_search_dashboards",
 			map[string]any{"query": "prod"})))
@@ -223,7 +223,7 @@ func TestDeployedGrafanaMapping_CheckDatasourcesHealthPasses(t *testing.T) {
 	// it only reveals up/down status rather than a datasource's actual data,
 	// so it's deliberately unmapped rather than mapped-but-wrong.
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("grafana_check_datasources_health",
 			map[string]any{"uids": []any{"fess5o6x6evb4b"}})))

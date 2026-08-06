@@ -97,7 +97,7 @@ func newNotionAuthorServer(t *testing.T, d *stubDecider, authorUp upstream.ToolC
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+	return New(m, e, d, AuditPrincipal(),
 		WithNotionAncestry(&fakeUpstream{text: fetchUnderScratchpad}, []string{testScratchpadID}),
 		WithNotionPageAuthor(authorUp, "operator-user-id"))
 }
@@ -202,7 +202,7 @@ func TestDeployedNotionMapping_UnconfiguredAuthorGateFailsClosed(t *testing.T) {
 	// Only the ancestry gate is wired -- production's main.go always wires
 	// the author gate too, so reaching here unconfigured means a broken
 	// deploy, not a license to allow an unscoped page edit.
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+	s := New(m, e, d, AuditPrincipal(),
 		WithNotionAncestry(&fakeUpstream{text: fetchUnderScratchpad}, []string{testScratchpadID}))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("notion_notion-update-page",

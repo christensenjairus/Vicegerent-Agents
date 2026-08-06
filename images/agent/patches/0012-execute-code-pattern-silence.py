@@ -88,7 +88,7 @@ REPLACEMENT = (
     "        return {\"approved\": True, \"message\": None}\n"
     "\n"
     "    # Pattern silence list: let operator-configured substrings in\n"
-    "    # /opt/hermes/approval-policy.yaml (hermes-approval-policy ConfigMap,\n"
+    "    # /opt/hermes/approval-policy.yaml (agent-approval-policy ConfigMap,\n"
     "    # immutable at runtime) silence the whole-script execute_code gate,\n"
     "    # same mechanism patch 0008 wires into check_all_command_guards.\n"
     "    # Vicegerent patch: execute_code has its own separate approval gate\n"

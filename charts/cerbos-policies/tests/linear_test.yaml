@@ -25,8 +25,8 @@ description: >-
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   devops_team_uuid:
@@ -120,7 +120,7 @@ tests:
   - name: save_issue confined to DEVOPS (uuid, name, or key), or with no team supplied,
       is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - devops_team_uuid
         - devops_team_name
@@ -128,58 +128,58 @@ tests:
         - no_team_supplied
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: devops_team_uuid
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: devops_team_name
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: devops_team_key
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: no_team_supplied
         actions: {access: EFFECT_ALLOW}
   - name: save_issue targeting another team is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [other_team]
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: other_team
         actions: {access: EFFECT_DENY}
   - name: save_project addTeams confined to DEVOPS, or with no addTeams/setTeams supplied,
       is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [project_addteams_devops_only, project_no_teams_args]
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: project_addteams_devops_only
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: project_no_teams_args
         actions: {access: EFFECT_ALLOW}
   - name: save_project addTeams/setTeams containing any non-DEVOPS team is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - project_addteams_devops_and_other
         - project_setteams_other_only
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: project_addteams_devops_and_other
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: project_setteams_other_only
         actions: {access: EFFECT_DENY}
   - name: force-self-assignee -- create requires an allowed assignee (or "me"), ordinary
       update untouched, reassignment still scoped
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - create_with_no_assignee
         - create_with_allowed_assignee
@@ -189,22 +189,22 @@ tests:
         - update_with_disallowed_assignee
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: create_with_no_assignee
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: create_with_allowed_assignee
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_with_me_assignee
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: create_with_disallowed_assignee
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_with_no_assignee
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: update_with_disallowed_assignee
         actions: {access: EFFECT_DENY}
   - name: a live-verified unassigned issue (assigneeVerified=true, assignee empty
@@ -213,16 +213,16 @@ tests:
       where the gate never resolved an assignee at all; a verified issue with an allowed
       assignee is unaffected
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - update_verified_unassigned
         - update_verified_with_allowed_assignee
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_verified_unassigned
         actions: {access: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: update_verified_with_allowed_assignee
         actions: {access: EFFECT_ALLOW}
   - name: assignee-scope denials carry situation-accurate messages -- an explicitly
@@ -231,13 +231,13 @@ tests:
       (assigneeVerified=true, e.g. a comment on someone else's issue) says the issue
       is already assigned outside that scope
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - update_with_disallowed_assignee
         - update_verified_disallowed_assignee
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: update_with_disallowed_assignee
         actions: {access: EFFECT_DENY}
         outputs:
@@ -246,7 +246,7 @@ tests:
               - src: resource.linear_team.vdefault#deny-assignee-outside-allowed
                 val: This agent may only assign Linear issues to an allowed user.
                   The requested assignee is outside that scope.
-      - principal: hermes
+      - principal: agent
         resource: update_verified_disallowed_assignee
         actions: {access: EFFECT_DENY}
         outputs:
@@ -259,19 +259,19 @@ tests:
   - name: create_issue_label confined to DEVOPS, or workspace-scoped (no teamId),
       is allowed; targeting another team is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - label_devops_team
         - label_no_team_supplied
         - label_other_team
       actions: [access]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: label_devops_team
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: label_no_team_supplied
         actions: {access: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: label_other_team
         actions: {access: EFFECT_DENY}

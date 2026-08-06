@@ -2,6 +2,7 @@
 
 | Failure | Procedure |
 |---|---|
+| An agent is being renamed | [Rename an agent and keep its volumes and secrets](#rename-an-agent-and-keep-its-volumes-and-secrets) |
 | An agent lost files or has a corrupted repository | [Restore one agent's volumes](#restore-one-agents-volumes) |
 | An install deleted or damaged cluster objects | [Restore objects without touching volumes](#restore-objects-without-touching-volumes) |
 | The cluster is unrecoverable | [Restore the whole cluster](#restore-the-whole-cluster) |
@@ -60,7 +61,7 @@ PVC annotations such as `velero.io/backup-name` and `velero.io/restore-name` are
 
 ```bash
 BACKUP=velero-vicegerent-daily-20260725101005
-AGENT=hermes
+AGENT=bot-jchristensen
 
 kubectl -n agent-sandbox get pvc "models-$AGENT" -o jsonpath='{.metadata.uid}{"\n"}'
 kubectl -n velero get datauploads -l "velero.io/backup-name=$BACKUP" \
@@ -122,12 +123,204 @@ velero backup logs "$BACKUP" | grep -i 'level=warning'
 
 Expect one completed `DataUpload` per included volume and a Data Movement entry for each. Review every warning: discovery warnings for API endpoints that do not support backup may be harmless, but failed item operations or data movement are not.
 
+## Rename an agent and keep its volumes and secrets
+
+Run this procedure separately on the personal and work machines. They have independent `kind-vicegerent` clusters, so both agents can use `bot-jchristensen` without a Kubernetes or Helm name collision. The commands assume the deployed name is currently `hermes`; change `OLD_AGENT` if either machine differs.
+
+Do not edit `values.yaml` or run `./vicegerent install` until the target PVCs and Secrets exist. Installing the new name first creates empty target claims, and a CSI clone source cannot be added to an existing PVC.
+
+Set the names, confirm the old release owns the expected state, and uninstall it to stop all writers. The chart's `helm.sh/resource-policy: keep` annotation retains all three old PVCs, while the two setup-managed Secrets are not part of the Helm release.
+
+```bash
+set -euo pipefail
+
+NS=agent-sandbox
+OLD_AGENT=hermes
+NEW_AGENT=bot-jchristensen
+BACKUP="pre-rename-${OLD_AGENT}-to-${NEW_AGENT}-$(date +%Y%m%d%H%M)"
+
+test "$OLD_AGENT" != "$NEW_AGENT"
+test "$(yq -r '.agents[0].name' values.yaml)" = "$OLD_AGENT"
+helm --kube-context kind-vicegerent status "$OLD_AGENT" -n "$NS"
+kubectl --context kind-vicegerent -n "$NS" get \
+  pvc/data-"$OLD_AGENT" pvc/gitrepos-"$OLD_AGENT" pvc/models-"$OLD_AGENT" \
+  secret/"$OLD_AGENT"-secrets secret/"$OLD_AGENT"-ssh-key
+kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json \
+  | jq -e 'if .data.agent_ed25519 != null or .data.hermes_agent_ed25519 != null then true else error("source Secret lacks an SSH private key") end'
+
+for resource in \
+  pvc/data-"$NEW_AGENT" pvc/gitrepos-"$NEW_AGENT" pvc/models-"$NEW_AGENT" \
+  secret/"$NEW_AGENT"-secrets secret/"$NEW_AGENT"-ssh-key; do
+  if kubectl --context kind-vicegerent -n "$NS" get "$resource" >/dev/null 2>&1; then
+    echo "target already exists: $resource" >&2
+    exit 1
+  fi
+done
+
+helm --kube-context kind-vicegerent uninstall "$OLD_AGENT" -n "$NS" --wait
+```
+
+Take the rollback backup after quiescing the old agent. It contains the `data` and `gitrepos` volume data and both old-name Secret objects. The `models` PVC is deliberately excluded from Velero; the CSI clone below preserves it, but a backup-only recovery reseeds it from the image.
+
+```bash
+velero backup create "$BACKUP" --wait
+test "$(kubectl --context kind-vicegerent -n velero get backup "$BACKUP" -o jsonpath='{.status.phase}')" = Completed
+
+for volume in data gitrepos; do
+  uid="$(kubectl --context kind-vicegerent -n "$NS" get pvc "${volume}-${OLD_AGENT}" -o jsonpath='{.metadata.uid}')"
+  kubectl --context kind-vicegerent -n velero get datauploads \
+    -l "velero.io/backup-name=$BACKUP" -o json \
+    | jq -e --arg uid "$uid" '[.items[] | select(.metadata.labels["velero.io/pvc-uid"] == $uid and .status.phase == "Completed")] | length == 1'
+done
+
+velero backup describe "$BACKUP" --details
+```
+
+Copy the two Secrets to release-named targets without decoding their data into the shell. The general agent Secret keeps its data keys unchanged, while the SSH Secret maps the retired `hermes_agent_ed25519` data key to the new `agent_ed25519` contract. `kubectl create` intentionally fails if either target already exists; inspect and remove a target from an abandoned attempt rather than silently overwriting it.
+
+```bash
+kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-secrets" -o json \
+  | jq -e --arg destination "${NEW_AGENT}-secrets" --arg namespace "$NS" '
+      if ((.data // {}) | length) == 0 then
+        error("source Secret has no data")
+      else
+        {
+          apiVersion: "v1",
+          kind: "Secret",
+          metadata: {name: $destination, namespace: $namespace},
+          type: (.type // "Opaque"),
+          data: .data
+        }
+      end' \
+  | kubectl --context kind-vicegerent create -f -
+
+kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json \
+  | jq -e --arg destination "${NEW_AGENT}-ssh-key" --arg namespace "$NS" '
+      (.data.agent_ed25519 // .data.hermes_agent_ed25519) as $private_key
+      | if $private_key == null then
+          error("source Secret lacks an SSH private key")
+        else
+          {
+            apiVersion: "v1",
+            kind: "Secret",
+            metadata: {name: $destination, namespace: $namespace},
+            type: (.type // "Opaque"),
+            data: {agent_ed25519: $private_key}
+          }
+        end' \
+  | kubectl --context kind-vicegerent create -f -
+```
+
+If an earlier version of this runbook already created the target SSH Secret by copying the retired data key unchanged, normalize that existing Secret in place. The read-back object retains the resource version required by `kubectl replace`, and the private key remains base64-encoded inside the pipeline.
+
+```bash
+kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json \
+  | jq -e '
+      (.data.agent_ed25519 // .data.hermes_agent_ed25519) as $private_key
+      | if $private_key == null then
+          error("target Secret lacks an SSH private key")
+        else
+          .data = {agent_ed25519: $private_key}
+        end' \
+  | kubectl --context kind-vicegerent replace -f -
+```
+
+Create independently provisioned, Helm-owned target PVCs from the quiesced source claims. The labels and annotations let the new release adopt the claims on its first install while preserving the models-volume backup exclusion.
+
+```bash
+for volume in data gitrepos models; do
+  source="${volume}-${OLD_AGENT}"
+  destination="${volume}-${NEW_AGENT}"
+
+  kubectl --context kind-vicegerent -n "$NS" get pvc "$source" -o json \
+    | jq -e --arg destination "$destination" --arg release "$NEW_AGENT" --arg volume "$volume" '
+        . as $source
+        | {
+            apiVersion: "v1",
+            kind: "PersistentVolumeClaim",
+            metadata: {
+              name: $destination,
+              namespace: "agent-sandbox",
+              labels: (
+                {"app.kubernetes.io/managed-by": "Helm"}
+                + (if $volume == "models" then {"velero.io/exclude-from-backup": "true"} else {} end)
+              ),
+              annotations: {
+                "meta.helm.sh/release-name": $release,
+                "meta.helm.sh/release-namespace": "agent-sandbox",
+                "helm.sh/resource-policy": "keep"
+              }
+            },
+            spec: {
+              accessModes: $source.spec.accessModes,
+              storageClassName: $source.spec.storageClassName,
+              volumeMode: ($source.spec.volumeMode // "Filesystem"),
+              resources: {
+                requests: {
+                  storage: ($source.status.capacity.storage // $source.spec.resources.requests.storage)
+                }
+              },
+              dataSource: {
+                kind: "PersistentVolumeClaim",
+                name: $source.metadata.name
+              }
+            }
+          }' \
+    | kubectl --context kind-vicegerent create -f -
+done
+
+kubectl --context kind-vicegerent -n "$NS" wait \
+  --for=jsonpath='{.status.phase}'=Bound \
+  pvc/data-"$NEW_AGENT" pvc/gitrepos-"$NEW_AGENT" pvc/models-"$NEW_AGENT" \
+  --timeout=30m
+```
+
+Only after every target resource exists, change the agent entry in the machine's gitignored `values.yaml` to `name: bot-jchristensen`, install the new release, and verify it.
+
+```bash
+${EDITOR:-vi} values.yaml
+test "$(yq -r '.agents[0].name' values.yaml)" = "$NEW_AGENT"
+./vicegerent install --stage agents
+
+helm --kube-context kind-vicegerent status "$NEW_AGENT" -n "$NS"
+kubectl --context kind-vicegerent -n "$NS" get sandbox "$NEW_AGENT"
+kubectl --context kind-vicegerent -n "$NS" get \
+  pvc/data-"$NEW_AGENT" pvc/gitrepos-"$NEW_AGENT" pvc/models-"$NEW_AGENT" \
+  secret/"$NEW_AGENT"-secrets secret/"$NEW_AGENT"-ssh-key
+
+source_hash="$(kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-secrets" -o json | jq -Sc '.data' | shasum -a 256 | cut -d ' ' -f 1)"
+destination_hash="$(kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-secrets" -o json | jq -Sc '.data' | shasum -a 256 | cut -d ' ' -f 1)"
+test "$source_hash" = "$destination_hash"
+
+source_ssh="$(kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json | jq -er '.data.agent_ed25519 // .data.hermes_agent_ed25519')"
+destination_ssh="$(kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json | jq -er '.data.agent_ed25519')"
+test "$source_ssh" = "$destination_ssh"
+kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json \
+  | jq -e '.data.agent_ed25519 != null and .data.hermes_agent_ed25519 == null'
+```
+
+Verify the dashboard history, repositories, Git access, and any configured Slack connection before cleanup. Keep the `*-hermes` PVCs, old-name Secrets, and the named Velero backup until rollback is no longer needed; CSI cloning creates independent volumes and does not rename or transfer the source claims. To roll back, restore `name: hermes` in `values.yaml` and run the agents stage again.
+
+If an old `data` or `gitrepos` claim is already missing or corrupt, first use [Restore one agent's volumes](#restore-one-agents-volumes) with `AGENT=hermes` and the pre-rename backup, then clone that recovered source claim. If either old-name Secret is missing, restore missing Secret objects before copying them to the new names:
+
+```bash
+RESTORE="restore-${OLD_AGENT}-secrets-$(date +%Y%m%d%H%M)"
+velero restore create "$RESTORE" \
+  --from-backup "$BACKUP" \
+  --include-namespaces "$NS" \
+  --include-resources secrets \
+  --wait
+velero restore describe "$RESTORE" --details
+```
+
+Velero skips existing resources by default, so this Secret restore recreates missing objects without replacing the other Secrets in `agent-sandbox`. Velero does not rename the restored objects; recover the old names first, then run the copy loop above.
+
 ## Restore one agent's volumes
 
 Velero's default existing-resource policy is `none`: it skips an existing PVC rather than overwriting it. `--existing-resource-policy=update` does not repopulate a bound PVC. Delete only the claims being restored.
 
 ```bash
-AGENT=hermes
+AGENT=bot-jchristensen
 BACKUP=velero-vicegerent-daily-20260725101005
 RESTORE="restore-$AGENT-data-$(date +%Y%m%d%H%M)"
 

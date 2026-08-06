@@ -55,9 +55,10 @@ vector:
             pod = to_string(.kubernetes.pod_name) ?? ""
             container = to_string(.kubernetes.container_name) ?? ""
             pod_app_label = to_string(.kubernetes.pod_labels."app.kubernetes.io/name") ?? ""
+            sandbox_agent = to_string(.kubernetes.pod_labels."vicegerent.io/dashboard") ?? ""
             (ns == "kube-system" && pod_app_label == "tetragon" && container == "export-stdout") ||
             (ns == "agentgateway-system" && starts_with(pod, "agentgateway-proxy-") && container == "agentgateway") ||
-            (ns == "agent-sandbox" && container == "hermes") ||
+            (ns == "agent-sandbox" && sandbox_agent != "" && container == sandbox_agent) ||
             (ns == "egress-proxy" && container == "mitmproxy")
       parser:
         type: remap

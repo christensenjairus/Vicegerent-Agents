@@ -2,7 +2,7 @@
 """Behavioral regression test for patch 0040 (custom provider drop
 unconditional ``extra_body.think`` field).
 
-Usage: run this INSIDE a Hermes image/container after the patch has been
+Usage: run this inside the agent image after the Hermes patch has been
 applied (i.e. against the live installed
 plugins/model-providers/custom/__init__.py), or against a scratch copy
 during patch development.

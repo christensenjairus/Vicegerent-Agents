@@ -2,7 +2,7 @@
 """Assert the agent Sandbox owns ~/.gitconfig instead of seeding it imperatively.
 
 The protected-branch guard's global-scope rung depends on manifest facts, not on
-the shell scripts in images/hermes/git-guard/: the ConfigMap must carry
+the shell scripts in images/agent/git-guard/: the ConfigMap must carry
 core.hooksPath, the mount must be readOnly, and nothing may write ~/.gitconfig at
 runtime. Mode bits are deliberately NOT the assertion -- git replaces a config
 file via lockfile+rename (verified: the inode changes), so only the read-only bind

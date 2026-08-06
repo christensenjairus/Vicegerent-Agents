@@ -49,7 +49,7 @@ func newGitlabServer(t *testing.T, d *stubDecider, up upstream.ToolCaller, extra
 	if up != nil {
 		opts = append(opts, WithGitlabMRAuthor(up))
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, opts...)
+	return New(m, e, d, AuditPrincipal(), opts...)
 }
 
 func TestDeployedGitlabMapping_UpdateMergeRequestResolvesAndForwardsAuthor(t *testing.T) {

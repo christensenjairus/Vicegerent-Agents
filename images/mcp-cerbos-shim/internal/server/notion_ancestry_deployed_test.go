@@ -79,7 +79,7 @@ func newNotionServerWithParents(t *testing.T, d *stubDecider, up upstream.ToolCa
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	return New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}},
+	return New(m, e, d, AuditPrincipal(),
 		WithNotionAncestry(up, allowedParentIDs),
 		WithNotionPageAuthor(&permissiveNotionAuthorUpstream{}, "operator-user-id"))
 }

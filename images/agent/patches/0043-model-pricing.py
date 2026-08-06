@@ -282,7 +282,7 @@ def _patch_usage_pricing() -> None:
     entries = "\n".join(_render_usage_entry(p) for p in _PRICES)
     src += (
         f"\n\n# {APPLIED_MARKER}: canonical vicegerent model prices.\n"
-        "# Single source of truth lives in images/hermes/patches/"
+        "# Single source of truth lives in images/agent/patches/"
         "0043-model-pricing.py;\n"
         "# this block and agentburn/prices.py are both generated from it.\n"
         "_OFFICIAL_DOCS_PRICING.update({\n"

@@ -205,7 +205,7 @@ for ((si = 0; si < stage_count; si++)); do
 done
 
 # --- prune stale node images -----------------------------------------------
-# Project images (hermes-agent, mcp-cerbos-shim, etc.) are
+# Project images (agent, mcp-cerbos-shim, etc.) are
 # rebuilt under new tags often (see AGENTS.md's tag-bump rule); the Kind node
 # never garbage-collects the superseded ones on its own, so a long-lived
 # cluster's containerd image store only grows. Best-effort: never fail the

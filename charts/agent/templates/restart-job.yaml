@@ -6,7 +6,7 @@ spec:
       labels:
         app.kubernetes.io/name: {{ include "vicegerent-agent.name" . }}-restart
       annotations:
-        vicegerent.io/hermes-config-checksum: {{ include "vicegerent-agent.renderedConfig" . | sha256sum }}
+        vicegerent.io/agent-config-checksum: {{ include "vicegerent-agent.renderedConfig" . | sha256sum }}
     spec:
       serviceAccountName: {{ include "vicegerent-agent.name" . }}-restart
       restartPolicy: OnFailure

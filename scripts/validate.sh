@@ -321,7 +321,7 @@ echo "INFO - Asserting Claude Code loads the baked language servers"
 python3 scripts/validate-claude-lsp.py
 
 echo "INFO - Asserting rendered provider reasoning overrides match configured efforts"
-python3 images/hermes/patches/tests/test_provider_reasoning_overrides.py --chart-dir charts/agent --values values.defaults.yaml
+python3 images/agent/patches/tests/test_provider_reasoning_overrides.py --chart-dir charts/agent --values values.defaults.yaml
 
 echo "INFO - Asserting harness config ownership reconciliation"
 python3 scripts/validate-config-reconciliation.py

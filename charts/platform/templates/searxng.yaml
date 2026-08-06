@@ -127,7 +127,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: searxng
   ingress:
-    # Hermes reaches searxng via the egress-proxy (scrubbed), not directly.
+    # Agents reach searxng via the egress-proxy (scrubbed), not directly.
     - fromEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: egress-proxy

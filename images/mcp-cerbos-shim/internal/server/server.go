@@ -292,10 +292,18 @@ const callToolMeta = "call_tool"
 // retries rediscovering the boundary by trial and error.
 const denyMessage = "Access denied by security policy. This is an intentional restriction, not a tool error; try a different resource or action."
 
-// Principal is a fixed audit constant (not an authz control; policy denies only by resource).
+// Principal is audit metadata (not an authz control; policy denies only by resource).
 type Principal struct {
 	ID    string
 	Roles []string
+}
+
+// AuditPrincipalID is the fixed identity stamped on every Cerbos request.
+const AuditPrincipalID = "agent"
+
+// AuditPrincipal returns the fixed identity stamped on every Cerbos request.
+func AuditPrincipal() Principal {
+	return Principal{ID: AuditPrincipalID, Roles: []string{"agent"}}
 }
 
 // Server implements pb.ExtMcpServer.

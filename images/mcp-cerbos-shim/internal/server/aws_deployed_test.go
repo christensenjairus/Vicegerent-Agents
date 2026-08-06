@@ -30,7 +30,7 @@ func TestDeployedAwsMapping_SecretReadReachesCerbos(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			d := &stubDecider{allow: false}
-			s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+			s := New(m, e, d, AuditPrincipal())
 			res, err := s.CheckRequest(context.Background(),
 				mcpReq("vmcp", "tools/call", toolCall("aws_call_aws", map[string]any{"cli_command": tc.cmd})))
 			if err != nil {
@@ -67,7 +67,7 @@ func TestDeployedAwsMapping_NonSecretCommandPasses(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("aws_call_aws", map[string]any{"cli_command": "aws s3api list-buckets"})))
 	if err != nil {
@@ -90,7 +90,7 @@ func TestDeployedAwsMapping_SuggestUnmapped(t *testing.T) {
 	// suggest_aws_commands only returns suggestion text; it's deliberately
 	// unmapped -> passes without a Cerbos call.
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("aws_suggest_aws_commands", map[string]any{"query": "how do I read a secret"})))
 	if err != nil {

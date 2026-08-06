@@ -29,7 +29,7 @@ func TestDeployedLinearMapping_CreateIssueReachesCerbos(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_issue",
 			map[string]any{"team": "some-other-team-id", "title": "t"})))
@@ -65,7 +65,7 @@ func TestDeployedLinearMapping_OrdinaryUpdateResolvesCurrentTeam(t *testing.T) {
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: linearIssueResultDevops}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithLinearIssueTeam(up))
+	s := New(m, e, d, AuditPrincipal(), WithLinearIssueTeam(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_issue",
 			map[string]any{"id": "PROJ-1", "title": "t"})))
@@ -96,7 +96,7 @@ func TestDeployedLinearMapping_OrdinaryUpdateGateUnconfiguredFailsClosed(t *test
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}) // no WithLinearIssueTeam
+	s := New(m, e, d, AuditPrincipal()) // no WithLinearIssueTeam
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_issue",
 			map[string]any{"id": "issue-1", "title": "t"})))
@@ -121,7 +121,7 @@ func TestDeployedLinearMapping_OrdinaryUpdateLookupErrorFailsClosed(t *testing.T
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{err: errors.New("upstream timeout")}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithLinearIssueTeam(up))
+	s := New(m, e, d, AuditPrincipal(), WithLinearIssueTeam(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_issue",
 			map[string]any{"id": "issue-1", "title": "t"})))
@@ -150,7 +150,7 @@ func TestDeployedLinearMapping_UpdateReassigningTeamReachesCerbos(t *testing.T) 
 	// only cares that the CALL's own team override reaches Cerbos unchanged,
 	// not about the resolved assignee value.
 	up := &fakeUpstream{text: linearIssueResultDevops}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithLinearIssueTeam(up))
+	s := New(m, e, d, AuditPrincipal(), WithLinearIssueTeam(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_issue",
 			map[string]any{"id": "issue-1", "team": "some-other-team-id"})))
@@ -189,7 +189,7 @@ func TestDeployedLinearMapping_SaveCommentWithoutGateConfiguredFailsClosed(t *te
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}) // no WithLinearIssueTeam
+	s := New(m, e, d, AuditPrincipal()) // no WithLinearIssueTeam
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_comment", map[string]any{"issueId": "issue-1"})))
 	if err != nil {
@@ -217,7 +217,7 @@ func TestDeployedLinearMapping_SaveProjectUpdateResolvesCurrentTeams(t *testing.
 	}
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: `{"teams":[{"id":"6deab0c5-9bda-4f82-b552-41f4aa9e449b","name":"DevOps","key":"DEVOPS"}]}`}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithLinearProjectTeam(up))
+	s := New(m, e, d, AuditPrincipal(), WithLinearProjectTeam(up))
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_project", map[string]any{"id": "proj-1"})))
 	if err != nil {
@@ -251,7 +251,7 @@ func TestDeployedLinearMapping_SaveProjectUpdateGateUnconfiguredFailsClosed(t *t
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}) // no WithLinearProjectTeam
+	s := New(m, e, d, AuditPrincipal()) // no WithLinearProjectTeam
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_project", map[string]any{"id": "proj-1"})))
 	if err != nil {
@@ -272,7 +272,7 @@ func TestDeployedLinearMapping_SaveProjectDeniesNonAllowedTeam(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_save_project",
 			map[string]any{"addTeams": []any{"some-other-team-id"}})))
@@ -307,7 +307,7 @@ func TestDeployedLinearMapping_CreateTeamScopedLabelReachesCerbos(t *testing.T) 
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: false}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_create_issue_label",
 			map[string]any{"name": "bug", "teamId": "some-other-team-id"})))
@@ -335,7 +335,7 @@ func TestDeployedLinearMapping_CreateWorkspaceLabelOmitsTeamId(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	d := &stubDecider{allow: true}
-	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}})
+	s := New(m, e, d, AuditPrincipal())
 	res, err := s.CheckRequest(context.Background(),
 		mcpReq("vmcp", "tools/call", toolCall("linear_create_issue_label", map[string]any{"name": "bug"})))
 	if err != nil {

@@ -10,8 +10,8 @@ description: Tavily/Firecrawl crawl+map calls targeting an internal-only host, o
 options:
   now: '2026-07-02T00:00:00Z'
 principals:
-  hermes:
-    id: hermes
+  agent:
+    id: agent
     roles: [agent]
 resources:
   external_within_caps:
@@ -80,85 +80,85 @@ resources:
 tests:
   - name: an external crawl within every cap is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [external_within_caps, unset_numeric_fields]
       actions: [crawl]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: external_within_caps
         actions: {crawl: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: unset_numeric_fields
         actions: {crawl: EFFECT_ALLOW}
   - name: crawling an internal-only target is denied regardless of how it was detected
       (literal url host, or a select_domains pattern)
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - metadata_ip_target
         - docker_internal_target
         - select_domains_internal_pattern
       actions: [crawl]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: metadata_ip_target
         actions: {crawl: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: docker_internal_target
         actions: {crawl: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: select_domains_internal_pattern
         actions: {crawl: EFFECT_DENY}
   - name: exceeding any single cap (limit, depth, or breadth) is denied
     input:
-      principals: [hermes]
+      principals: [agent]
       resources: [limit_too_high, depth_too_high, breadth_too_high]
       actions: [crawl]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: limit_too_high
         actions: {crawl: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: depth_too_high
         actions: {crawl: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: breadth_too_high
         actions: {crawl: EFFECT_DENY}
   - name: fetching an internal-only target (single url or any element of a urls array)
       is denied; a normal external fetch is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - fetch_external_url
         - fetch_internal_url
         - fetch_internal_urls_array
       actions: [fetch]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: fetch_external_url
         actions: {fetch: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: fetch_internal_url
         actions: {fetch: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: fetch_internal_urls_array
         actions: {fetch: EFFECT_DENY}
   - name: monitoring an internal-only target (top-level page/pages, or a nested body
       url/urls/page/pages) is denied; a normal external monitor target is allowed
     input:
-      principals: [hermes]
+      principals: [agent]
       resources:
         - monitor_external_target
         - monitor_internal_page
         - monitor_internal_nested_body_url
       actions: [monitor]
     expected:
-      - principal: hermes
+      - principal: agent
         resource: monitor_external_target
         actions: {monitor: EFFECT_ALLOW}
-      - principal: hermes
+      - principal: agent
         resource: monitor_internal_page
         actions: {monitor: EFFECT_DENY}
-      - principal: hermes
+      - principal: agent
         resource: monitor_internal_nested_body_url
         actions: {monitor: EFFECT_DENY}

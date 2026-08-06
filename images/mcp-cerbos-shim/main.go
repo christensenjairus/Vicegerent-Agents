@@ -214,10 +214,7 @@ func main() {
 		log.Printf("prompt-injection detection gate disabled (PROMPT_INJECTION_DETECTION unset/not enabled)")
 	}
 
-	srv := server.New(mapping, engine, decider, server.Principal{
-		ID:    "hermes",
-		Roles: []string{"agent"},
-	}, opts...)
+	srv := server.New(mapping, engine, decider, server.AuditPrincipal(), opts...)
 
 	lis, err := net.Listen("tcp", cfg.listenAddr)
 	if err != nil {
