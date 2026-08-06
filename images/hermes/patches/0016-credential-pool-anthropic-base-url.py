@@ -129,18 +129,12 @@ CP_REPLACEMENT = (
 # ===========================================================================
 
 RA_ANCHOR = (
-    "    def _swap_credential(self, entry) -> None:\n"
-    "        runtime_key = getattr(entry, \"runtime_api_key\", None) or getattr(entry, \"access_token\", \"\")\n"
     "        runtime_base = getattr(entry, \"runtime_base_url\", None) or getattr(entry, \"base_url\", None) or self.base_url\n"
-    "\n"
-    "        if self.api_mode == \"anthropic_messages\":\n"
+    "        self._credential_pool_entry_id = getattr(entry, \"id\", None)\n"
 )
 
 RA_REPLACEMENT = (
-    "    def _swap_credential(self, entry) -> None:\n"
-    "        runtime_key = getattr(entry, \"runtime_api_key\", None) or getattr(entry, \"access_token\", \"\")\n"
     "        runtime_base = getattr(entry, \"runtime_base_url\", None) or getattr(entry, \"base_url\", None) or self.base_url\n"
-    "\n"
     "        if self.api_mode == \"anthropic_messages\" and self.provider == \"anthropic\":\n"
     "            # Vicegerent patch 0016: a persisted pool entry may carry a\n"
     "            # stale hardcoded api.anthropic.com base_url seeded before a\n"
@@ -158,7 +152,7 @@ RA_REPLACEMENT = (
     "            except Exception:\n"
     "                pass\n"
     "\n"
-    "        if self.api_mode == \"anthropic_messages\":\n"
+    "        self._credential_pool_entry_id = getattr(entry, \"id\", None)\n"
 )
 
 

@@ -9,12 +9,13 @@
 #   namespace-package directory, which otherwise shadows Hermes' real `tools`
 #   package. Every patch that locates its target via
 #   importlib.util.find_spec("tools.<mod>") -- 0008, 0011, 0012, 0018, 0022,
-#   0023, 0024, 0027 -- would resolve against the wrong `tools` without it.
+#   0023, 0027 -- would resolve against the wrong `tools` without it.
 #
 #   0016 and 0020 must follow 0014 (they import helpers it adds).
 #   0039 must follow 0028 and 0036 (it rewrites their shared call site).
 #
-#   0043 runs LAST. It is the single source of truth for model prices and
+#   0043 runs after every pricing-affecting patch. It is the single source of
+#   truth for model prices and
 #   emits them into BOTH price sinks (agent/usage_pricing.py and
 #   agentburn/prices.py). It imports agent.usage_pricing to compare its table
 #   against upstream's and fails the build on a rate conflict, so it must see
@@ -35,14 +36,11 @@
 0018-check-fn-exception-traceback.py
 0022-mcp-parked-retry-interval-60s.py
 0023-mcp-circuit-breaker-threshold-15.py
-0024-mcp-connection-lost-diagnostics.py
 0025-curator-skill-read-marks-contextvar-isolation.py
 0027-mcp-parked-tools-stay-registered.py
 0028-runtime-footer-effort-field.py
 0030-per-platform-verifier-and-memory-notifications.py
-0031-slack-thread-context-command-detection.py
 0034-agentburn-per-model-cost-attribution.py
-0035-slack-flat-text-table-rendering.py
 0036-slack-runtime-footer-dm-only.py
 0037-jiter-streaming-parse-error-retryable.py
 0039-runtime-footer-cost-field.py
@@ -54,3 +52,7 @@
 0045-hooks-doctor-entrypoint-coverage.py
 0046-rootless-config-migration.py
 0047-model-switch-prompt.py
+0048-terminal-lifecycle-binary-remote-read.py
+0049-shell-hook-approval-refresh.py
+0050-kanban-orchestrator-board-guidance.py
+0051-mcp-parallel-tool-calls.py

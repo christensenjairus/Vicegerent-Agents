@@ -291,12 +291,12 @@ RUN rm -rf /seed/mnemosyne/models/.cache \
 # `rm`. Cache mounts keep the uv/npm download caches out of the image while
 # still speeding up rebuilds.
 # ---------------------------------------------------------------------------
-FROM nousresearch/hermes-agent:v2026.7.20@sha256:f7b35053268f532f98955195c909f15a230470fbcbdacaa9fdecb95707dad04a
+FROM nousresearch/hermes-agent:v2026.8.3@sha256:16788311e2fa3035456bdc1bafb8ec2b1777db64ebf020af9bb7eb73c3712c9e
 
 LABEL org.opencontainers.image.title="vicegerent-hermes-agent" \
       org.opencontainers.image.description="Vicegerent derivation of nousresearch/hermes-agent" \
       org.opencontainers.image.source="https://gitlab.hahomelabs.com/jchristensen/vicegerent-agents" \
-      org.opencontainers.image.base.name="docker.io/nousresearch/hermes-agent:v2026.7.20"
+      org.opencontainers.image.base.name="docker.io/nousresearch/hermes-agent:v2026.8.3"
 
 # requirements.txt tools (pre-commit, detect-secrets, yamlfix) live here but aren't on PATH upstream.
 # ENV covers non-login shells (exec sessions); /etc/profile.d re-prepends it since Debian's /etc/profile
@@ -499,6 +499,15 @@ RUN --mount=type=bind,source=package.json,target=/tmp/npm/package.json \
     && npm install --global --no-fund --no-audit \
         $(node -p "Object.entries(require('./package.json').dependencies).map(([k,v])=>k+'@'+v).join(' ')") \
     && opencode --version
+
+# Claude Code serializes the optimizer's generic call_tool requests. This local
+# stdio adapter keeps the normal vMCP path and adds one bounded concurrent batch.
+COPY vmcp-bridge/vmcp-stdio-bridge.py /usr/local/bin/vmcp-stdio-bridge
+RUN --mount=type=bind,source=vmcp-bridge,target=/tmp/vmcp-bridge \
+    chmod +x /usr/local/bin/vmcp-stdio-bridge \
+    && /opt/hermes/.venv/bin/python -m py_compile /usr/local/bin/vmcp-stdio-bridge \
+    && VMCP_BRIDGE_UNDER_TEST=/usr/local/bin/vmcp-stdio-bridge \
+        /opt/hermes/.venv/bin/python /tmp/vmcp-bridge/test-vmcp-stdio-bridge.py
 
 # Publish Hermes' skills to the other harnesses, and snapshot the tree so content
 # deleted through a published symlink stays recoverable. Baked in rather than

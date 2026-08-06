@@ -15,6 +15,14 @@ WebSearch/web_search and WebFetch are disabled — both are server-side tools th
 Every external capability you need (Kubernetes, GitLab, Notion, monitoring, etc.) is exposed through the single `vmcp` MCP server's tool search, not a fixed list you already know. Before telling the user an action isn't possible, exhaustively search vmcp (vary your query wording) — most capabilities already exist there and just need the right search terms.
 {{- end -}}
 
+{{- define "vicegerent-agent.vmcpParallelToolCalls" -}}
+When several vMCP calls are independent, issue them together in the same assistant response in batches of up to eight so the harness can execute them concurrently for speed and efficiency. Keep dependent calls sequential, and do not assume other MCP servers are safe for concurrent access.
+{{- end -}}
+
+{{- define "vicegerent-agent.claudeVmcpParallelToolCalls" -}}
+For independent vMCP backend operations in Claude Code, put up to eight entries in one `mcp__vmcp__batch_call_tool` call after discovering the target tools. Do not issue several `mcp__vmcp__call_tool` calls for the batch; Claude Code serializes that generic write-capable tool.
+{{- end -}}
+
 {{- /* Shared coding-agent instruction: use .worktrees correctly for any repo with a
       persistent clone under /workspace. Single source of truth for hermes-agent's
       SOUL.md, codex's developer_instructions,
@@ -51,6 +59,8 @@ All pull requests and merge requests are forcibly kept as drafts by the platform
 {{- /* The common prompt shared by Hermes and every standalone coding harness. */ -}}
 {{- define "vicegerent-agent.sharedSystemPrompt" -}}
 {{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
+
+{{ include "vicegerent-agent.vmcpParallelToolCalls" . | trim }}
 
 {{ include "vicegerent-agent.worktreeDiscipline" . | trim }}
 
@@ -319,12 +329,16 @@ mcp_servers:
   agentburn:
     command: /opt/hermes/.venv/bin/agentburn
     args: [mcp]
+    supports_parallel_tool_calls: false
     env:
       HERMES_HOME: /opt/data
   vmcp:
     url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp
     timeout: {{ .Values.tuning.vmcp.timeoutSeconds }}
     connect_timeout: {{ .Values.tuning.vmcp.connectTimeoutSeconds }}
+    supports_parallel_tool_calls: true
+    elicitation:
+      enabled: false
 agent:
   max_turns: {{ .Values.tuning.maxTurns }}
   gateway_timeout: {{ .Values.tuning.gatewayTimeoutSeconds }}
@@ -406,7 +420,7 @@ display:
       long_running_notifications: false
       runtime_footer:
         enabled: true
-        fields: [model, effort, context_pct, cost, duration]
+        fields: [model, effort, context_pct, cost, latency]
       file_mutation_verifier: false
       memory_notifications: "off"
       busy_ack_enabled: false

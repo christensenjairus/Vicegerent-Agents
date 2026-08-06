@@ -93,15 +93,30 @@ def main() -> int:
     )
     state = replace_once(
         state,
-        '''                   billing_mode = COALESCE(?, billing_mode),
-                   system_prompt = NULL
+        '''        def _do(conn):
+            conn.execute(
+                """UPDATE sessions SET
+                   billing_provider = ?,
+                   billing_base_url = ?,
+                   billing_mode = COALESCE(?, billing_mode),
+                   system_prompt = NULL,
+                   system_prompt_hash = NULL
                    WHERE id = ?""",
                 (provider, base_url, billing_mode, session_id),
+            )
 ''',
-        '''                   billing_mode = COALESCE(?, billing_mode),
-                   system_prompt = ?
+        '''        def _do(conn):
+            system_prompt_hash = self._store_system_prompt(conn, system_prompt)
+            conn.execute(
+                """UPDATE sessions SET
+                   billing_provider = ?,
+                   billing_base_url = ?,
+                   billing_mode = COALESCE(?, billing_mode),
+                   system_prompt = NULL,
+                   system_prompt_hash = ?
                    WHERE id = ?""",  # vicegerent-patch-0047
-                (provider, base_url, billing_mode, system_prompt, session_id),
+                (provider, base_url, billing_mode, system_prompt_hash, session_id),
+            )
 ''',
         state_path,
     )
