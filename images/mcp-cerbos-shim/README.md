@@ -40,7 +40,7 @@ On top of that resource-scoping, six gates enforce **real, live ownership** rath
 Consequences:
 - A new tool exposed by the vMCP needs **no** shim/Cerbos change unless it can name a protected resource; otherwise it passes the guardrail. (Whether it's *exposed* is the separate tool-selection choice above.)
 - An unknown/arbitrary Kubernetes kind (e.g. a CRD) passes the guardrail, not denied; the shim blocks Secrets, it does not enumerate readable kinds.
-- The mapped tools are only the ones that can name a protected resource — the ~80 entries in `charts/mcp-cerbos-shim/files/mapping.yaml`, each carrying a comment for why it's mapped and, where it matters, why a sibling tool ISN'T. Everything else passes untouched. Two recurring reasons a tool stays unmapped: it names a resource without reading its data (Elastic's `product_documentation`/`get_entity`/`generate_esql`, AWS's `suggest_aws_commands`, whose output still has to come back through the gated `call_aws`), or its args carry no verifiable signal for this single-resource-per-call model (`grafana_check_datasources_health`'s plural `uids`; `jira_jira_search`'s free-form JQL, which `JIRA_PROJECTS_FILTER` confines server-side instead).
+- The mapped tools are only the ones that can name a protected resource — the ~80 entries in `charts/mcp-cerbos-shim/files/mapping.yaml`, each carrying a comment for why it's mapped and, where it matters, why a sibling tool ISN'T. Everything else passes untouched. Two recurring reasons a tool stays unmapped: it names a resource without reading its data (Elastic's `product_documentation`/`get_entity`/`generate_esql`, AWS's `suggest_aws_commands`, whose output still has to come back through the gated `call_aws`), or its args carry no verifiable signal for this single-resource-per-call model (`grafana_check_datasources_health`'s plural `uids`). Jira's global search and field/link discovery tools are excluded from the vMCP allowlist instead: search can override `JIRA_PROJECTS_FILTER`, and the metadata tools carry no project signal.
 - Where a call's own args can't be trusted to name the resource, the shim resolves it live instead of leaving the call unmapped. A `linear_save_issue`/`save_project` update that omits `team`/`addTeams` gets the real team from a `linear_get_issue`/`linear_get_project` lookup; a Jira/Linear write that carries no assignee gets the ticket's current one. See "Live-Resolved Ownership Gates".
 
 The shim mapping and Cerbos rules exist to *deny* protected resources, not to permit tools. To allow or disallow a tool outright on the sandbox path, change its exposed tool set (ToolHive's `aggregation.tools` today, or an agentgateway per-tool allowlist in a centralized setup) — not the mapping or an `allow` rule here.
@@ -248,11 +248,9 @@ make release               # check + image + push
 make proto                 # regenerate stubs (only when proto/ext_mcp.proto changes)
 ```
 
-`make proto` requires the protoc plugins on PATH:
+`make proto` requires the protoc plugins on PATH. If either is missing, run `make proto` and follow its reported installation command:
 
 ```bash
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 export PATH="$PATH:$(go env GOPATH)/bin"
 ```
 

@@ -192,8 +192,9 @@ backends:
       # project outside ${jiraAllowedProjects}. Tool names are double-prefixed
       # ({workload}_{tool} = jira_ + jira_*). Same body for every tool: capture
       # whichever project/issue-key args it carries (absent args resolve to "").
-      # jira_jira_search is intentionally unmapped — JIRA_PROJECTS_FILTER confines
-      # search server-side, and its free-form jql can't be checked here.
+      # Global search and field/link discovery are not allowlisted: Jira search's
+      # projects_filter argument overrides JIRA_PROJECTS_FILTER, while the two
+      # metadata tools carry no project argument to authorize.
       jira_jira_get_issue: &jira_proj_read
         resourceType: jira_project
         action: read

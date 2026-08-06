@@ -19,5 +19,5 @@ Both pins are tracked by the repo's generic `images/*/Dockerfile` Renovate custo
 
 ```sh
 make image                      # native build
-make release PLATFORM=linux/arm64 TAG=v0.2.0   # build + push to Harbor
+make release PLATFORM=linux/arm64 TAG=<release-tag>   # build + push to Harbor
 ```
