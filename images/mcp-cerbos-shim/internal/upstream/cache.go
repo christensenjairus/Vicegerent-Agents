@@ -65,15 +65,15 @@ const pathIdentityCacheTTL = 10 * time.Minute
 // newly-created silence. Both absences become stale denies in their gates (see
 // PageAuthoredByOperator and SilenceCreatedBy).
 var cacheTTLByTool = map[string]time.Duration{
-	notionFetchTool:              DefaultCacheTTL,
-	linearGetIssueTool:           DefaultCacheTTL,
-	linearGetProjectTool:         DefaultCacheTTL,
-	githubPullRequestReadTool:    pathIdentityCacheTTL,
-	gitlabGetMergeRequestTool:    pathIdentityCacheTTL,
-	gitlabGetProjectTool:         pathIdentityCacheTTL,
-	jiraGetIssueTool:             DefaultCacheTTL,
-	"pagerduty_get_incident":     DefaultCacheTTL,
-	"pagerduty_gov_get_incident": DefaultCacheTTL,
+	notionFetchTool:                    DefaultCacheTTL,
+	linearGetIssueTool:                 DefaultCacheTTL,
+	linearGetProjectTool:               DefaultCacheTTL,
+	githubPullRequestReadTool:          pathIdentityCacheTTL,
+	gitlabGetMergeRequestTool:          pathIdentityCacheTTL,
+	gitlabGetProjectTool:               pathIdentityCacheTTL,
+	jiraGetIssueTool:                   DefaultCacheTTL,
+	"pagerduty_get_incident":           DefaultCacheTTL,
+	"pagerduty_secondary_get_incident": DefaultCacheTTL,
 }
 
 // cacheTTLFor returns the reviewed TTL for one concrete call. Most tools have

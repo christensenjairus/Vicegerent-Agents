@@ -4,8 +4,8 @@
 Owns the full local ToolHive stack that backs the cluster's MCP access:
 
   ToolHive workloads   17 MCP backends (kubernetes, gitlab, github, tavily,
-                       firecrawl, notion, linear, jira, grafana, grafana_gov,
-                       alertmanager, alertmanager_gov, pagerduty, pagerduty_gov,
+                       firecrawl, notion, linear, jira, grafana, grafana_secondary,
+                       alertmanager, alertmanager_secondary, pagerduty, pagerduty_secondary,
                        elastic, aws, aws_profiles) run by `thv run` into
                        the group `vicegerent`.
                        Managed by ToolHive's own daemon (Docker containers),
@@ -842,8 +842,8 @@ def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[
     straight from config. A dynamic hostname is resolved at run time from the
     already-`configure`d value and never hardcoded here, since it's per-operator:
     `host_from_param` reads it out of a `params[]` entry (gitlab's api_url,
-    alertmanager('_gov')'s url); `host_from_secret` reads it out of a top-level
-    `secrets[]` entry instead (jira_url, grafana('_gov')_url) via `thv secret get`
+    alertmanager('_secondary')'s url); `host_from_secret` reads it out of a top-level
+    `secrets[]` entry instead (jira_url, grafana('_secondary')_url) via `thv secret get`
     directly, since those aren't in `params` at all. Either way, raise a clear
     error if the value isn't set yet — same pattern as the existing kubeconfig
     "run `./vicegerent setup mcp`" error.
@@ -1291,7 +1291,7 @@ def _apply_workload(
     network-isolation ingress-proxy port allocator is a shared, global resource,
     and issuing two of those calls at once can race — both pick the same free
     host port, one bind wins and the other's ingress container is left
-    permanently stuck in `Created` (seen with grafana/grafana_gov colliding on
+    permanently stuck in `Created` (seen with grafana/grafana_secondary colliding on
     port 8001). This does mean `thv run`/`thv restart` calls (and any image pull
     they trigger) now run one at a time rather than overlapping — correctness
     over the pull-overlap speedup, since a lost race leaves a workload down
@@ -2698,7 +2698,7 @@ def configure(
             _ui_warn(f"{name} needs a secrets provider. It will be enabled, but its key must be set later.")
         for sec in secrets if have_provider else []:
             sname = sec["name"]
-            secret_prompt = f"{name} credential"
+            secret_prompt = sec.get("prompt") or sname
             exists = thv("secret", "get", sname).returncode == 0
             if exists and not _prompt_yn(f"   {secret_prompt} is already configured — replace it?", default=False):
                 _ui_ok(f"   Keeping existing {secret_prompt}")

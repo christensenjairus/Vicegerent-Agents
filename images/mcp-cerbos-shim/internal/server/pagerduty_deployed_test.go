@@ -305,7 +305,7 @@ func TestDeployedPagerdutyMapping_UnconfiguredServiceGateFailsClosed(t *testing.
 }
 
 func TestDeployedPagerdutyMapping_GovBackendReachesCerbosViaItsOwnGetIncidentTool(t *testing.T) {
-	// pagerduty_gov mirrors pagerduty (toolhive-servers.json) and must get the
+	// pagerduty_secondary mirrors pagerduty (toolhive-servers.json) and must get the
 	// SAME ack/resolve-only + service-allowlist scoping, but via ITS OWN
 	// get_incident tool -- an incident in the gov account doesn't exist in the
 	// commercial one, so querying the wrong tool would fail-closed-deny every
@@ -320,7 +320,7 @@ func TestDeployedPagerdutyMapping_GovBackendReachesCerbosViaItsOwnGetIncidentToo
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceA}
 	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
-		mcpReq("vmcp", "tools/call", toolCall("pagerduty_gov_manage_incidents",
+		mcpReq("vmcp", "tools/call", toolCall("pagerduty_secondary_manage_incidents",
 			map[string]any{
 				"manage_request": map[string]any{
 					"incident_ids": []any{"PT1"},
@@ -334,10 +334,10 @@ func TestDeployedPagerdutyMapping_GovBackendReachesCerbosViaItsOwnGetIncidentToo
 		t.Fatalf("expected pass when Cerbos allows, got deny")
 	}
 	if d.gotType != "pagerduty_incident" {
-		t.Errorf("resourceType = %q, want pagerduty_incident (mapping must resolve pagerduty_gov_manage_incidents)", d.gotType)
+		t.Errorf("resourceType = %q, want pagerduty_incident (mapping must resolve pagerduty_secondary_manage_incidents)", d.gotType)
 	}
-	if up.gotTool != "pagerduty_gov_get_incident" {
-		t.Errorf("get_incident lookup used tool %q, want pagerduty_gov_get_incident (looked up the wrong backend's incident)", up.gotTool)
+	if up.gotTool != "pagerduty_secondary_get_incident" {
+		t.Errorf("get_incident lookup used tool %q, want pagerduty_secondary_get_incident (looked up the wrong backend's incident)", up.gotTool)
 	}
 	gotServiceIds, ok := d.gotAttr["serviceIds"].([]string)
 	if !ok || len(gotServiceIds) != 1 || gotServiceIds[0] != "PSERVICEA" {
@@ -355,7 +355,7 @@ func TestDeployedPagerdutyMapping_GovAddNoteReachesCerbosViaItsOwnGetIncidentToo
 	up := &fakeUpstream{text: pagerdutyIncidentResultServiceB}
 	s := New(m, e, d, Principal{ID: "hermes", Roles: []string{"agent"}}, WithPagerdutyIncidentService(up))
 	res, err := s.CheckRequest(context.Background(),
-		mcpReq("vmcp", "tools/call", toolCall("pagerduty_gov_add_note_to_incident",
+		mcpReq("vmcp", "tools/call", toolCall("pagerduty_secondary_add_note_to_incident",
 			map[string]any{"incident_id": "PT4KHLK", "note": "Investigating"})))
 	if err != nil {
 		t.Fatalf("CheckRequest: %v", err)
@@ -363,8 +363,8 @@ func TestDeployedPagerdutyMapping_GovAddNoteReachesCerbosViaItsOwnGetIncidentToo
 	if !isPass(res) {
 		t.Fatalf("expected pass when Cerbos allows, got deny")
 	}
-	if up.gotTool != "pagerduty_gov_get_incident" {
-		t.Errorf("get_incident lookup used tool %q, want pagerduty_gov_get_incident", up.gotTool)
+	if up.gotTool != "pagerduty_secondary_get_incident" {
+		t.Errorf("get_incident lookup used tool %q, want pagerduty_secondary_get_incident", up.gotTool)
 	}
 	gotServiceIds, ok := d.gotAttr["serviceIds"].([]string)
 	if !ok || len(gotServiceIds) != 1 || gotServiceIds[0] != "PSERVICEB" {

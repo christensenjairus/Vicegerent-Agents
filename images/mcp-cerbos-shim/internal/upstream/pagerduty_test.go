@@ -28,15 +28,15 @@ func TestIncidentServiceID_QueriesTheGivenBackendsGetIncidentTool(t *testing.T) 
 	// get_incident tool, not the (default/commercial) one -- the incident only
 	// exists in the account it actually belongs to.
 	c := &fakeCaller{text: `{"service":{"id":"PSERVICEB","summary":"Gov Service"}}`}
-	got, err := IncidentServiceID(context.Background(), "pagerduty_gov_get_incident", c, "PT2")
+	got, err := IncidentServiceID(context.Background(), "pagerduty_secondary_get_incident", c, "PT2")
 	if err != nil {
 		t.Fatalf("IncidentServiceID: %v", err)
 	}
 	if got != "PSERVICEB" {
 		t.Errorf("IncidentServiceID = %q, want PSERVICEB", got)
 	}
-	if c.gotTool != "pagerduty_gov_get_incident" {
-		t.Errorf("gotTool = %q, want %q", c.gotTool, "pagerduty_gov_get_incident")
+	if c.gotTool != "pagerduty_secondary_get_incident" {
+		t.Errorf("gotTool = %q, want %q", c.gotTool, "pagerduty_secondary_get_incident")
 	}
 }
 

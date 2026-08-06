@@ -66,7 +66,7 @@ func TestDeployedMappingForcedCreatedBy(t *testing.T) {
 			if err := yaml.Unmarshal([]byte(renderDeployedMapping(t, tc.machine)), &m); err != nil {
 				t.Fatalf("parse rendered mapping: %v", err)
 			}
-			for _, tool := range []string{"alertmanager_createSilence", "alertmanager_gov_createSilence"} {
+			for _, tool := range []string{"alertmanager_createSilence", "alertmanager_secondary_createSilence"} {
 				got, ok := m.Backends["vmcp"].Tools[tool]
 				if !ok {
 					t.Fatalf("%s missing from the rendered mapping", tool)

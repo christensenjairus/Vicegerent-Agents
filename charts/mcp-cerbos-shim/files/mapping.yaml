@@ -121,20 +121,20 @@ backends:
       grafana_query_loki_stats: *grafana_ds
       grafana_list_loki_label_names: *grafana_ds
       grafana_list_loki_label_values: *grafana_ds
-      # grafana_gov backend (toolhive-servers.json): same tools, same guardrail --
+      # grafana_secondary backend (toolhive-servers.json): same tools, same guardrail --
       # the OpenSearch-datasource block doesn't depend on which Grafana instance
       # the call is aimed at, so it reuses the *grafana_ds body verbatim.
-      grafana_gov_get_datasource: *grafana_ds
-      grafana_gov_query_prometheus: *grafana_ds
-      grafana_gov_query_prometheus_histogram: *grafana_ds
-      grafana_gov_list_prometheus_metric_metadata: *grafana_ds
-      grafana_gov_list_prometheus_metric_names: *grafana_ds
-      grafana_gov_list_prometheus_label_names: *grafana_ds
-      grafana_gov_list_prometheus_label_values: *grafana_ds
-      grafana_gov_query_loki_logs: *grafana_ds
-      grafana_gov_query_loki_stats: *grafana_ds
-      grafana_gov_list_loki_label_names: *grafana_ds
-      grafana_gov_list_loki_label_values: *grafana_ds
+      grafana_secondary_get_datasource: *grafana_ds
+      grafana_secondary_query_prometheus: *grafana_ds
+      grafana_secondary_query_prometheus_histogram: *grafana_ds
+      grafana_secondary_list_prometheus_metric_metadata: *grafana_ds
+      grafana_secondary_list_prometheus_metric_names: *grafana_ds
+      grafana_secondary_list_prometheus_label_names: *grafana_ds
+      grafana_secondary_list_prometheus_label_values: *grafana_ds
+      grafana_secondary_query_loki_logs: *grafana_ds
+      grafana_secondary_query_loki_stats: *grafana_ds
+      grafana_secondary_list_loki_label_names: *grafana_ds
+      grafana_secondary_list_loki_label_values: *grafana_ds
       # Elastic (Kibana Agent Builder) data-access tools -> elastic; Cerbos
       # denies any call whose target index/datastream matches a denied token
       # (${elasticDeniedIndexPatterns}, resource_elastic.yaml), same
@@ -441,10 +441,10 @@ backends:
         force:
           createdBy: {{ .Values.policy.alertmanager.createdBy | quote }}
 {{- end }}
-      # alertmanager_gov backend (toolhive-servers.json): same duration cap
+      # alertmanager_secondary backend (toolhive-servers.json): same duration cap
       # and forced createdBy, reused verbatim -- neither depends on which
       # Alertmanager instance the silence is created on.
-      alertmanager_gov_createSilence: *alertmanager_create_silence
+      alertmanager_secondary_createSilence: *alertmanager_create_silence
       # Alertmanager silence-deleting tool -> alertmanager_silence/delete;
       # Cerbos denies a delete whose target silence the shim resolves (via a
       # live getSilences lookup, since silenceId itself is an opaque UUID
@@ -464,8 +464,8 @@ backends:
         id: get(args,'silenceId','')
         attr:
           silenceId: get(args,'silenceId','')
-      # alertmanager_gov backend: same ownership check, reused verbatim.
-      alertmanager_gov_deleteSilence: *alertmanager_delete_silence
+      # alertmanager_secondary backend: same ownership check, reused verbatim.
+      alertmanager_secondary_deleteSilence: *alertmanager_delete_silence
       # Unfiltered getAlerts calls return every active alert as unaggregated
       # JSON and exceed the tool-call timeout. Map the existing filterLabel
       # string directly so Cerbos can require a focused query.
@@ -475,9 +475,9 @@ backends:
         id: get(args,'filterLabel','')
         attr:
           filterLabel: get(args,'filterLabel','')
-      # alertmanager_gov backend: same timeout-avoidance reasoning, reused
+      # alertmanager_secondary backend: same timeout-avoidance reasoning, reused
       # verbatim.
-      alertmanager_gov_getAlerts: *alertmanager_get_alerts
+      alertmanager_secondary_getAlerts: *alertmanager_get_alerts
       # PagerDuty manage_incidents -> pagerduty_incident; Cerbos denies any
       # status other than acknowledged/resolved, and denies any call whose
       # manage_request carries a key other than incident_ids/status at all
@@ -512,14 +512,14 @@ backends:
         # nothing to check here beyond the id, so it just restates it.
         attr:
           incidentId: get(args,'incident_id','')
-      # pagerduty_gov backend (toolhive-servers.json): same ack/resolve-only
+      # pagerduty_secondary backend (toolhive-servers.json): same ack/resolve-only
       # and service-allowlist scoping, reused verbatim. server.go's
       # pagerdutyManageIncidentsTools/pagerdutyAddNoteTools maps THIS tool
-      # name to pagerduty_gov's own get_incident tool for the live
+      # name to pagerduty_secondary's own get_incident tool for the live
       # incident->service lookup, not pagerduty's -- an incident only exists
       # in the account it actually belongs to.
-      pagerduty_gov_manage_incidents: *pagerduty_manage
-      pagerduty_gov_add_note_to_incident: *pagerduty_add_note
+      pagerduty_secondary_manage_incidents: *pagerduty_manage
+      pagerduty_secondary_add_note_to_incident: *pagerduty_add_note
       # Notion create-pages -> only allowed with parent.page_id set to the
       # Scratchpad folder; any other parent (a different page, a database/data
       # source, or omitted entirely -- which creates a standalone workspace-level
