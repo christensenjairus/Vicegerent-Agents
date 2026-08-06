@@ -51,6 +51,7 @@ data:
     [mcp_servers.vmcp]
     url = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp"
     tool_timeout_sec = 90
+    supports_parallel_tool_calls = true
     # Pre-trust PVC-seeded workdirs so codex never blocks on directory trust.
     [projects."/workspace"]
     trust_level = "trusted"

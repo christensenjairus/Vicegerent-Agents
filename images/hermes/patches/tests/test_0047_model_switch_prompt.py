@@ -71,8 +71,12 @@ def main() -> int:
     patch = Path(__file__).resolve().parents[1] / "0047-model-switch-prompt.py"
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "hermes"
-        shutil.copytree("/opt/hermes/agent", root / "agent")
-        shutil.copy2("/opt/hermes/hermes_state.py", root / "hermes_state.py")
+        source_root = Path(os.environ.get("HERMES_SOURCE_ROOT", "/opt/hermes"))
+        shutil.copytree(source_root / "agent", root / "agent")
+        shutil.copytree(source_root / "hermes_cli", root / "hermes_cli")
+        shutil.copy2(source_root / "hermes_state.py", root / "hermes_state.py")
+        for dependency in source_root.glob("hermes_state_*.py"):
+            shutil.copy2(dependency, root / dependency.name)
         env = {
             **os.environ,
             "HERMES_ROOT": str(root),

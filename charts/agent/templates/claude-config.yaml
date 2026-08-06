@@ -38,8 +38,15 @@ data:
           "args": ["mcp"]
         },
         "vmcp": {
-          "type": "http",
-          "url": "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp"
+          "type": "stdio",
+          "command": "/usr/local/bin/vmcp-stdio-bridge",
+          "args": ["http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp"],
+          "env": {
+            "HTTP_PROXY": "http://egress-proxy.egress-proxy.svc.cluster.local:8080",
+            "HTTPS_PROXY": "http://egress-proxy.egress-proxy.svc.cluster.local:8080",
+            "http_proxy": "http://egress-proxy.egress-proxy.svc.cluster.local:8080",
+            "https_proxy": "http://egress-proxy.egress-proxy.svc.cluster.local:8080"
+          }
         }
       },
       "projects": {
@@ -56,3 +63,5 @@ data:
     }
   CLAUDE.md: |-
 {{ include "vicegerent-agent.codingHarnessSystemPrompt" . | trim | indent 4 }}
+
+{{ include "vicegerent-agent.claudeVmcpParallelToolCalls" . | trim | indent 4 }}

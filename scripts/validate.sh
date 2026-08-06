@@ -311,6 +311,9 @@ python3 scripts/validate-model-pricing.py
 echo "INFO - Asserting Anthropic and OpenAI model switches stay on Agentgateway"
 python3 scripts/validate-model-switch-routing.py
 
+echo "INFO - Asserting only vMCP opts into parallel tool calls"
+python3 scripts/validate-mcp-parallel-tool-calls.py
+
 echo "INFO - Asserting rendered provider reasoning overrides match configured efforts"
 python3 images/hermes/patches/tests/test_provider_reasoning_overrides.py --chart-dir charts/agent --values values.defaults.yaml
 

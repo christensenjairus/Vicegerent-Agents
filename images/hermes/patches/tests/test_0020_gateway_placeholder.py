@@ -92,14 +92,14 @@ def main() -> int:
                 target.symlink_to(child, target_is_directory=child.is_dir())
 
         env = {**os.environ, "PYTHONPATH": f"{root}:/opt/hermes"}
-        for expected_text in ("pool-entry OpenAI", "already applied"):
+        for _ in range(2):
             proc = subprocess.run(
                 [sys.executable, str(patch)], cwd="/", env=env,
                 capture_output=True, text=True,
             )
-            if proc.returncode or expected_text not in proc.stdout:
+            if proc.returncode or "already applied" not in proc.stdout:
                 raise SystemExit(
-                    f"FAIL: patch run did not report {expected_text!r}\n"
+                    "FAIL: patch is not present and idempotent in the built image\n"
                     f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
                 )
 

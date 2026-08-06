@@ -4,7 +4,7 @@ A thin derivation of the upstream [`nousresearch/hermes-agent`](https://hub.dock
 
 ## Why a derived image
 
-The stock image ships the Hermes runtime but **not** the pieces this platform relies on. Verified against the upstream arm64 image (`v2026.7.20`):
+The stock image ships the Hermes runtime but **not** the pieces this platform relies on. Verified against the upstream arm64 image (`v2026.8.3`):
 
 | Needed | In stock image? |
 | --- | --- |
@@ -29,11 +29,11 @@ make push
 # or: make release PLATFORM=linux/arm64
 ```
 
-`make help` lists targets. `TAG` is `<upstream-version>-rev<N>` (e.g. `v2026.7.20-rev1`): keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
+`make help` lists targets. `TAG` is `<upstream-version>-rev<N>` (e.g. `v2026.8.3-rev1`): keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
 
 ## Base pin
 
-`FROM` is pinned by **tag + digest**. The tag keeps the reference Renovate-trackable (an upstream bump opens an MR); the digest makes the build reproducible. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
+`FROM` is pinned by **tag + digest**: the tag keeps the reference Renovate-trackable and the digest makes the build reproducible. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
 
 ## Bakes
 
@@ -77,6 +77,10 @@ Residual gaps, deliberate: this is a *guardrail against agent mistakes*, not a s
 ## Command approval
 
 The rendered Hermes config uses `approvals.mode: smart`. Commands pass through the hardline block, the operator-managed silence list, Tirith's static scan, and the auxiliary-model assessment in that order. `charts/agent/templates/approval-policy.yaml` owns the silence list and is mounted read-only at `/opt/hermes/approval-policy.yaml`; edit that template and re-run `./vicegerent install` rather than changing a running pod. Do not switch the mode off to remove false positives: `off` skips Tirith as well as the model assessment. Do not set `TERMINAL_ENV=docker`: the sandbox has no Docker socket, so that backend removes the terminal tool instead of isolating it further.
+
+## Claude Code vMCP batching
+
+Claude Code only overlaps MCP tools advertised as read-only, while the optimizer's generic `call_tool` can invoke writes and therefore cannot honestly carry that annotation. `vmcp-bridge/vmcp-stdio-bridge.py` preserves the normal vMCP `find_tool` and `call_tool` surface, correctly marks discovery as read-only, and adds `batch_call_tool` for up to eight independent backend operations. Each inner call still travels separately through agentgateway and the Cerbos shim. Run `vmcp-bridge/test-vmcp-stdio-bridge.py` with the image venv to verify eight-way overlap, result ordering, and the batch-size boundary.
 
 ## Shared skills and recovery
 

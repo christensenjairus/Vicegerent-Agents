@@ -282,6 +282,15 @@ def test_claude_settings_replaces_policy_and_preserves_preferences() -> None:
 
 
 def test_claude_state_replaces_mcp_servers_and_preserves_runtime_state() -> None:
+    desired_vmcp = {
+        "type": "stdio",
+        "command": "/usr/local/bin/vmcp-stdio-bridge",
+        "args": ["http://gateway/mcp/vmcp"],
+        "env": {
+            "HTTP_PROXY": "http://proxy:8080",
+            "HTTPS_PROXY": "http://proxy:8080",
+        },
+    }
     result = reconcile(
         "claude-state",
         "json",
@@ -304,7 +313,7 @@ def test_claude_state_replaces_mcp_servers_and_preserves_runtime_state() -> None
         json.dumps(
             {
                 "mcpServers": {
-                    "vmcp": {"type": "http", "url": "http://gateway/mcp/vmcp"}
+                    "vmcp": desired_vmcp
                 },
                 "projects": {
                     "/workspace": {"hasTrustDialogAccepted": True},
@@ -313,9 +322,7 @@ def test_claude_state_replaces_mcp_servers_and_preserves_runtime_state() -> None
         ),
     )
 
-    assert result["mcpServers"] == {
-        "vmcp": {"type": "http", "url": "http://gateway/mcp/vmcp"}
-    }
+    assert result["mcpServers"] == {"vmcp": desired_vmcp}
     assert result["numStartups"] == 42
     assert result["tipsHistory"] == {"plan-mode": 3}
     assert result["projects"]["/workspace"] == {
@@ -342,6 +349,10 @@ base_url = "https://old.invalid"
 
 [mcp_servers.retired]
 url = "https://old.invalid/mcp"
+
+[mcp_servers.vmcp]
+url = "https://old.invalid/vmcp"
+supports_parallel_tool_calls = false
 
 [projects."/workspace"]
 trust_level = "untrusted"
@@ -374,6 +385,7 @@ wire_api = "responses"
 
 [mcp_servers.vmcp]
 url = "http://gateway/mcp/vmcp"
+supports_parallel_tool_calls = true
 
 [projects."/workspace"]
 trust_level = "trusted"
@@ -390,7 +402,12 @@ respect_system_proxy = true
     assert result["sandbox_mode"] == "danger-full-access"
     assert result["approval_policy"] == "never"
     assert set(result["model_providers"]) == {"vicegerent"}
-    assert set(result["mcp_servers"]) == {"vmcp"}
+    assert result["mcp_servers"] == {
+        "vmcp": {
+            "url": "http://gateway/mcp/vmcp",
+            "supports_parallel_tool_calls": True,
+        }
+    }
     assert result["projects"]["/workspace"] == {
         "trust_level": "trusted",
         "last_session": "keep",
