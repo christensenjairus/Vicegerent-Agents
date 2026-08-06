@@ -18,18 +18,27 @@ def die(message: str) -> None:
     raise SystemExit(1)
 
 
-def render_sandbox() -> dict:
+def render_documents(agent_overrides: dict | None = None) -> list[dict]:
     with tempfile.TemporaryDirectory() as tmp:
         defaults = Path(tmp) / "defaults.yaml"
         machine = Path(tmp) / "machine.yaml"
-        for source, expression, target in (
-            (REPO / "values.defaults.yaml", ".agentDefaults", defaults),
-            (REPO / "values.example.yaml", ".agents[0]", machine),
-        ):
-            result = subprocess.run(
-                ["yq", expression, str(source)], capture_output=True, text=True, check=True
-            )
-            target.write_text(result.stdout, encoding="utf-8")
+        defaults_result = subprocess.run(
+            ["yq", ".agentDefaults", str(REPO / "values.defaults.yaml")],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        defaults.write_text(defaults_result.stdout, encoding="utf-8")
+        agent_result = subprocess.run(
+            ["yq", ".agents[0]", str(REPO / "values.example.yaml")],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        agent = yaml.safe_load(agent_result.stdout) or {}
+        if agent_overrides:
+            agent.update(agent_overrides)
+        machine.write_text(yaml.safe_dump(agent), encoding="utf-8")
         result = subprocess.run(
             [
                 "helm",
@@ -46,17 +55,37 @@ def render_sandbox() -> dict:
         )
         if result.returncode != 0:
             die(f"helm template failed: {result.stderr.strip()[:400]}")
-        sandboxes = [
-            document
-            for document in yaml.safe_load_all(result.stdout)
-            if document and document.get("kind") == "Sandbox"
-        ]
+        return [document for document in yaml.safe_load_all(result.stdout) if document]
+
+
+def render_sandbox() -> dict:
+    sandboxes = [
+        document
+        for document in render_documents()
+        if document.get("kind") == "Sandbox"
+    ]
     if len(sandboxes) != 1:
         die(f"expected exactly one Sandbox, found {len(sandboxes)}")
     return sandboxes[0]
 
 
+def render_restart_job_name(agent_overrides: dict | None = None) -> str:
+    jobs = [
+        document
+        for document in render_documents(agent_overrides)
+        if document.get("kind") == "Job"
+    ]
+    if len(jobs) != 1:
+        die(f"expected exactly one restart Job, found {len(jobs)}")
+    return jobs[0]["metadata"]["name"]
+
+
 def main() -> None:
+    baseline_restart_job = render_restart_job_name()
+    changed_config_restart_job = render_restart_job_name({"tuning": {"maxTurns": 101}})
+    if baseline_restart_job == changed_config_restart_job:
+        die("agent config changes must create a new restart Job so the gateway reloads them")
+
     pod_spec = render_sandbox()["spec"]["podTemplate"]["spec"]
     agent = pod_spec["containers"][0]
     env = {item["name"]: item.get("value") for item in agent["env"]}

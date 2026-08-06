@@ -65,6 +65,8 @@ hooks:
   stale: true
 platform_toolsets:
   slack: [old]
+kanban:
+  dispatch_in_gateway: false
 mcp_servers:
   vmcp: {url: https://old.invalid}
   agentburn: {command: old-agentburn}
@@ -133,6 +135,8 @@ hooks:
   post_tool_call: [{matcher: skill_manage, command: snapshot}]
 platform_toolsets:
   slack: [file]
+kanban:
+  dispatch_in_gateway: true
 mcp_servers:
   vmcp: {url: http://gateway/mcp/vmcp}
   agentburn: {command: /opt/hermes/agentburn}
@@ -188,6 +192,7 @@ auxiliary:
         "post_tool_call": [{"matcher": "skill_manage", "command": "snapshot"}]
     }
     assert result["platform_toolsets"] == {"slack": ["file"]}
+    assert result["kanban"] == {"dispatch_in_gateway": True}
     assert result["mcp_servers"] == {
         "vmcp": {"url": "http://gateway/mcp/vmcp"},
         "agentburn": {"command": "/opt/hermes/agentburn"},

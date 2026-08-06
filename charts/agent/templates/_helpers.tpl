@@ -364,7 +364,7 @@ toolsets:
   - hermes-cli
   - kanban
 kanban:
-  dispatch_in_gateway: false
+  dispatch_in_gateway: true
 delegation:
   provider: {{ $primaryProvider }}
   model: {{ $primaryModel }}
