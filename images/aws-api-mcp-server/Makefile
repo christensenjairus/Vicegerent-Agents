@@ -1,5 +1,5 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/aws-api-mcp-server
-TAG   ?= v0.1.0
+TAG   ?= v0.1.1
 REF   := $(IMAGE):$(TAG)
 
 DOCKER    ?= docker

@@ -56,7 +56,7 @@ RUN TFLS_VER="${TERRAFORM_LS_VERSION#v}" \
 
 # terragrunt for formatting HCL/Terraform files in repos that use it.
 # renovate: datasource=github-releases depName=gruntwork-io/terragrunt
-ARG TERRAGRUNT_VERSION=v1.1.1
+ARG TERRAGRUNT_VERSION=v1.1.2
 RUN curl -fsSL -o /usr/local/bin/terragrunt \
         "https://github.com/gruntwork-io/terragrunt/releases/download/${TERRAGRUNT_VERSION}/terragrunt_linux_${TARGETARCH}" \
     && chmod +x /usr/local/bin/terragrunt
@@ -94,7 +94,7 @@ ARG SHFMT_VERSION=v3.13.1
 # renovate: datasource=github-releases depName=sharkdp/fd
 ARG FD_VERSION=v10.4.2
 # renovate: datasource=github-releases depName=hadolint/hadolint
-ARG HADOLINT_VERSION=v2.14.0
+ARG HADOLINT_VERSION=v2.15.1
 # renovate: datasource=github-releases depName=golangci/golangci-lint
 ARG GOLANGCI_LINT_VERSION=v2.12.2
 RUN case "${TARGETARCH}" in \
@@ -225,7 +225,7 @@ RUN case "${TARGETARCH}" in \
 
 # Bake rtk for rtk-hermes; arch triples differ between arm64 and amd64 release assets.
 # renovate: datasource=github-releases depName=rtk-ai/rtk
-ARG RTK_VERSION=v0.44.0
+ARG RTK_VERSION=v0.44.2
 RUN case "${TARGETARCH}" in \
         arm64) RTK_TRIPLE=aarch64-unknown-linux-gnu ;; \
         amd64) RTK_TRIPLE=x86_64-unknown-linux-musl ;; \
@@ -240,7 +240,7 @@ RUN case "${TARGETARCH}" in \
 # Offline Mnemosyne + STT model seed for the egress-locked sandbox; preserve HF cache layout.
 FROM python:3.14-slim AS mnemosyne-models
 # renovate: datasource=pypi depName=huggingface-hub
-ARG HUGGINGFACE_HUB_VERSION=1.24.0
+ARG HUGGINGFACE_HUB_VERSION=1.26.1
 RUN pip install --no-cache-dir "huggingface-hub==${HUGGINGFACE_HUB_VERSION}"
 RUN python - <<'PY'
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -486,7 +486,7 @@ RUN LCM_DEST="$(/opt/hermes/.venv/bin/python -c 'import plugins.context_engine a
 # moves, so it sits below everything that changes less often. The cache mount
 # keeps uv's download cache out of the image while still making rebuilds fast.
 RUN --mount=type=bind,source=requirements.txt,target=/tmp/requirements.txt \
-    --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,id=vicegerent-hermes-uv-v1,target=/root/.cache/uv,sharing=locked \
     uv pip install --python /opt/hermes/.venv/bin/python -r /tmp/requirements.txt
 
 # Global npm CLIs used by Hermes/coding agents; package.json is the Renovate-tracked source.
