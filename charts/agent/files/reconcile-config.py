@@ -219,6 +219,23 @@ def reconcile_claude_settings(
     return result
 
 
+def reconcile_claude_marketplaces(
+    existing: dict[str, Any], desired: dict[str, Any]
+) -> dict[str, Any]:
+    """Own the sandbox marketplace entries; leave user-added ones untouched."""
+    result = deep_merge(desired, existing)
+    for name in desired:
+        replace_path(result, desired, (name,))
+    return result
+
+
+def reconcile_claude_plugins(
+    existing: dict[str, Any], desired: dict[str, Any]
+) -> dict[str, Any]:
+    """Seed plugin install records without reclaiming ones Claude Code owns."""
+    return deep_merge(desired, existing)
+
+
 def reconcile_claude_state(
     existing: dict[str, Any], desired: dict[str, Any]
 ) -> dict[str, Any]:
@@ -342,6 +359,10 @@ def main(argv: list[str]) -> int:
         result = reconcile_claude_settings(existing, desired)
     elif kind == "claude-state":
         result = reconcile_claude_state(existing, desired)
+    elif kind == "claude-marketplaces":
+        result = reconcile_claude_marketplaces(existing, desired)
+    elif kind == "claude-plugins":
+        result = reconcile_claude_plugins(existing, desired)
     elif kind == "codex":
         result = reconcile_codex(existing, desired)
     elif kind == "opencode":

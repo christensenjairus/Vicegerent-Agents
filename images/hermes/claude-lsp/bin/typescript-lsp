@@ -1,0 +1,8 @@
+#!/bin/sh
+# TypeScript 7 ships no tsserver.js, so typescript-language-server cannot drive
+# it. The native compiler binary speaks LSP itself; resolve it through the
+# package's own helper so this works on every image architecture.
+set -eu
+
+exec "$(node -e 'import(process.argv[1]).then((m) => console.log(m.default()))' \
+    /usr/local/lib/node_modules/typescript/lib/getExePath.js)" --lsp -stdio

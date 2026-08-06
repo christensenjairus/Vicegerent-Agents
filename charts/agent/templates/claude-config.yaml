@@ -18,6 +18,17 @@ data:
       },
       "model": "{{ .Values.harnesses.claudeCode }}",
       "enableAllProjectMcpServers": true,
+      "extraKnownMarketplaces": {
+        "vicegerent": {
+          "source": {
+            "source": "directory",
+            "path": "/opt/vicegerent/claude-lsp"
+          }
+        }
+      },
+      "enabledPlugins": {
+        "sandbox-lsp@vicegerent": true
+      },
       "permissions": {
         "allow": ["mcp__mnemosyne", "mcp__vmcp"],
         "deny": ["WebSearch", "WebFetch"],
@@ -59,6 +70,29 @@ data:
         "/opt/hermes": {
           "hasTrustDialogAccepted": true
         }
+      }
+    }
+  plugins-known-marketplaces.json: |-
+    {
+      "vicegerent": {
+        "source": {
+          "source": "directory",
+          "path": "/opt/vicegerent/claude-lsp"
+        },
+        "installLocation": "/opt/vicegerent/claude-lsp"
+      }
+    }
+  plugins-installed.json: |-
+    {
+      "version": 2,
+      "plugins": {
+        "sandbox-lsp@vicegerent": [
+          {
+            "scope": "user",
+            "installPath": "/opt/vicegerent/claude-lsp/plugins/sandbox-lsp",
+            "version": "1.0.0"
+          }
+        ]
       }
     }
   CLAUDE.md: |-

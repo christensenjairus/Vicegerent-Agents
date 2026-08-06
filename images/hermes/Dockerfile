@@ -514,6 +514,20 @@ RUN --mount=type=cache,target=/root/.cache/codex-lsp \
     && node /opt/vicegerent/codex-lsp/cli.js mcp </dev/null \
     && rm -rf /tmp/codex-lsp
 
+# Claude Code reads LSP wiring only from plugins, so the image's language servers
+# reach it through a sandbox-local marketplace rather than settings.json. The
+# agent chart points extraKnownMarketplaces at this directory; it stays read-only
+# at runtime because Claude Code caches plugin state under CLAUDE_CONFIG_DIR.
+COPY claude-lsp/ /opt/vicegerent/claude-lsp/
+RUN chmod +x /opt/vicegerent/claude-lsp/bin/typescript-lsp \
+    && sh -n /opt/vicegerent/claude-lsp/bin/typescript-lsp \
+    && claude plugin validate /opt/vicegerent/claude-lsp \
+    && node -e "for (const [n, s] of Object.entries(require('/opt/vicegerent/claude-lsp/plugins/sandbox-lsp/.lsp.json'))) { \
+        const bin = s.command.startsWith('/') ? s.command : require('child_process').execFileSync('sh', ['-c', 'command -v ' + s.command]).toString().trim(); \
+        require('fs').accessSync(bin, require('fs').constants.X_OK); \
+        console.log('lsp ok: ' + n + ' -> ' + bin); \
+    }"
+
 # Claude Code serializes the optimizer's generic call_tool requests. This local
 # stdio adapter keeps the normal vMCP path and adds one bounded concurrent batch.
 COPY vmcp-bridge/vmcp-stdio-bridge.py /usr/local/bin/vmcp-stdio-bridge

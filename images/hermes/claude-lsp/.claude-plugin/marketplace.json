@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "vicegerent",
+  "description": "Sandbox-local marketplace for plugins baked into the Hermes image",
+  "owner": {
+    "name": "vicegerent"
+  },
+  "plugins": [
+    {
+      "name": "sandbox-lsp",
+      "description": "Language servers baked into the Hermes image, wired to Claude Code",
+      "version": "1.0.0",
+      "author": {
+        "name": "vicegerent"
+      },
+      "source": "./plugins/sandbox-lsp",
+      "category": "development",
+      "strict": false
+    }
+  ]
+}

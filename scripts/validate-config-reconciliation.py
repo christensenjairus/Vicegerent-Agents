@@ -281,6 +281,81 @@ def test_claude_settings_replaces_policy_and_preserves_preferences() -> None:
     assert result["alwaysThinkingEnabled"] is True
 
 
+def test_claude_marketplaces_replaces_owned_entries_and_keeps_user_entries() -> None:
+    result = reconcile(
+        "claude-marketplaces",
+        "json",
+        json.dumps(
+            {
+                "vicegerent": {
+                    "source": {"source": "github", "repo": "attacker/plugins"},
+                    "installLocation": "/tmp/hijack",
+                },
+                "user-marketplace": {"source": {"source": "directory", "path": "/workspace/mine"}},
+            }
+        ),
+        json.dumps(
+            {
+                "vicegerent": {
+                    "source": {"source": "directory", "path": "/opt/vicegerent/claude-lsp"},
+                    "installLocation": "/opt/vicegerent/claude-lsp",
+                }
+            }
+        ),
+    )
+
+    assert result["vicegerent"] == {
+        "source": {"source": "directory", "path": "/opt/vicegerent/claude-lsp"},
+        "installLocation": "/opt/vicegerent/claude-lsp",
+    }
+    assert result["user-marketplace"] == {
+        "source": {"source": "directory", "path": "/workspace/mine"}
+    }
+
+
+def test_claude_plugins_seeds_records_without_reclaiming_owned_ones() -> None:
+    claude_owned = [
+        {
+            "scope": "user",
+            "installPath": "/opt/data/.claude/plugins/cache/vicegerent/sandbox-lsp",
+            "version": "1.0.0",
+        }
+    ]
+    result = reconcile(
+        "claude-plugins",
+        "json",
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "sandbox-lsp@vicegerent": claude_owned,
+                    "user-plugin@user-marketplace": [{"scope": "user", "version": "0.1.0"}],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "sandbox-lsp@vicegerent": [
+                        {
+                            "scope": "user",
+                            "installPath": "/opt/vicegerent/claude-lsp/plugins/sandbox-lsp",
+                            "version": "1.0.0",
+                        }
+                    ]
+                },
+            }
+        ),
+    )
+
+    assert result["version"] == 2
+    assert result["plugins"]["sandbox-lsp@vicegerent"] == claude_owned
+    assert result["plugins"]["user-plugin@user-marketplace"] == [
+        {"scope": "user", "version": "0.1.0"}
+    ]
+
+
 def test_claude_state_replaces_mcp_servers_and_preserves_runtime_state() -> None:
     desired_vmcp = {
         "type": "stdio",
@@ -484,6 +559,8 @@ def test_empty_existing_files_are_treated_as_unseeded() -> None:
         ("hermes", "yaml", "providers: {}\nmodel: {}\n"),
         ("claude-settings", "json", "{}"),
         ("claude-state", "json", "{}"),
+        ("claude-marketplaces", "json", "{}"),
+        ("claude-plugins", "json", '{"version": 2, "plugins": {}}'),
         ("codex", "toml", 'model = "default"\n'),
         ("opencode", "json", "{}"),
     )
@@ -499,6 +576,8 @@ def test_chart_invokes_reconciler_for_every_writable_config() -> None:
         "reconcile_config codex toml /opt/data/.codex/config.toml /reload/codex-config/config.toml",
         "reconcile_config claude-settings json /opt/data/.claude/settings.json /reload/claude-config/settings.json",
         "reconcile_config claude-state json /opt/data/.claude/.claude.json /reload/claude-config/claude.json",
+        "reconcile_config claude-marketplaces json /opt/data/.claude/plugins/known_marketplaces.json /reload/claude-config/plugins-known-marketplaces.json",
+        "reconcile_config claude-plugins json /opt/data/.claude/plugins/installed_plugins.json /reload/claude-config/plugins-installed.json",
         "reconcile_config opencode json /opt/data/.config/opencode/opencode.json /reload/opencode-config/opencode.json",
     }
     for call in expected_calls:
@@ -514,6 +593,8 @@ def test_chart_invokes_reconciler_for_every_writable_config() -> None:
 def main() -> int:
     test_hermes_replaces_owned_sections_and_preserves_user_settings()
     test_claude_settings_replaces_policy_and_preserves_preferences()
+    test_claude_marketplaces_replaces_owned_entries_and_keeps_user_entries()
+    test_claude_plugins_seeds_records_without_reclaiming_owned_ones()
     test_claude_state_replaces_mcp_servers_and_preserves_runtime_state()
     test_codex_replaces_runtime_policy_and_preserves_tui_state()
     test_opencode_replaces_routing_and_preserves_user_options()

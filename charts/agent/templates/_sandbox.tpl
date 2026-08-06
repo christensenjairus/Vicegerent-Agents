@@ -198,6 +198,9 @@ spec:
               reconcile_config codex toml /opt/data/.codex/config.toml /reload/codex-config/config.toml
               reconcile_config claude-settings json /opt/data/.claude/settings.json /reload/claude-config/settings.json
               reconcile_config claude-state json /opt/data/.claude/.claude.json /reload/claude-config/claude.json
+              mkdir -p /opt/data/.claude/plugins
+              reconcile_config claude-marketplaces json /opt/data/.claude/plugins/known_marketplaces.json /reload/claude-config/plugins-known-marketplaces.json
+              reconcile_config claude-plugins json /opt/data/.claude/plugins/installed_plugins.json /reload/claude-config/plugins-installed.json
               cp -f /reload/claude-config/CLAUDE.md /opt/data/.claude/CLAUDE.md
               reconcile_config opencode json /opt/data/.config/opencode/opencode.json /reload/opencode-config/opencode.json
               # OpenCode's documented global-rules location (opencode.ai/docs/rules); see
