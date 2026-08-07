@@ -30,6 +30,12 @@ repos:
         args: [--baseline, .secrets.baseline]
   - repo: local
     hooks:
+      - id: test-vicegerent-ssh
+        name: vicegerent ssh tmux session tests
+        language: system
+        entry: scripts/test-vicegerent-ssh.sh
+        files: ^(vicegerent|scripts/test-vicegerent-ssh\.sh)$
+        pass_filenames: false
       - id: test-markdown-soft-wrap
         name: Markdown soft-wrap tests
         language: system

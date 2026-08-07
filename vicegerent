@@ -38,7 +38,412 @@ mcp_py() {
 
 restore_terminal() {
   [[ -t 1 ]] || return 0
-  printf '\033[<u\033[?2004l\033[?1000l\033[?1002l\033[?1003l\033[?1004l\033[?1006l\033[?2026l\033[?1049l\033[?1l\033>\033c'
+  printf '\033[<u\033[?2004l\033[?1000l\033[?1002l\033[?1003l\033[?1004l\033[?1006l\033[?2026l\033[?1049l\033[?1l\033>'
+}
+
+# These run inside the agent container. `vicegerent ssh` sends these functions
+# through `bash -c` so the workflow does not depend on a script existing inside
+# whichever repository or worktree the user selects.
+agent_fzf_input() {
+  local prompt="$1" initial="${2:-}" header="${3:-Enter: accept | Esc: back | Ctrl-C: quit}"
+  local result shortcut
+
+  result="$(
+    printf 'input\t\n' | fzf --ansi --phony --print-query --query="$initial" --border \
+      --height=100% --layout=reverse --delimiter=$'\t' --with-nth=2.. --pointer='' \
+      --expect=esc --prompt="$prompt" --header=" $header"
+  )" || return
+  AGENT_FZF_VALUE="${result%%$'\n'*}"
+  result="${result#*$'\n'}"
+  shortcut="${result%%$'\n'*}"
+  [[ "$shortcut" == esc ]] && return 2
+  return 0
+}
+
+agent_choose_directory() {
+  local workspace_root="${VICEGERENT_WORKSPACE_ROOT:-/workspace}"
+  local preferred_repo="${1:-}" candidate top choice shortcut index line primary destination repo repo_name status worktree_listing worktree_name git_error
+  local prune_index prune_path prune_branch prune_note confirm force_confirm pane_cwd in_use
+  local -a repos=() paths=() branches=() worktree_names=()
+
+  for candidate in "$workspace_root"/*; do
+    [[ -d "$candidate" ]] || continue
+    top="$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null || true)"
+    [[ -n "$top" && "$(cd "$candidate" && pwd -P)" == "$(cd "$top" && pwd -P)" ]] || continue
+    repos+=("$candidate")
+  done
+
+  while true; do
+    if [[ -n "$preferred_repo" ]]; then
+      repo="$preferred_repo"
+      preferred_repo=""
+    else
+      choice="$(
+        {
+          printf 'workspace\t%s/workspace%s\t%sno repository or worktree | Ctrl-W%s\n' \
+            "$UI_CYAN" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+          for index in "${!repos[@]}"; do
+            printf 'repo:%d\t%s%s%s\t%s%s%s\n' \
+              "$index" "$UI_GREEN" "$(basename "${repos[index]}")" "$UI_RESET" \
+              "$UI_DIM" "${repos[index]}" "$UI_RESET"
+          done
+        } | fzf --ansi --layout=reverse --border --height=100% --bind='start:pos(2)' \
+          --delimiter=$'\t' --with-nth=2.. --expect=esc,ctrl-w --prompt='Repository> ' \
+          --header='Enter: select | Ctrl-W: /workspace | Esc: back | Ctrl-C: quit'
+      )" || return
+      shortcut="${choice%%$'\n'*}"
+      choice="${choice#*$'\n'}"
+      case "$shortcut" in
+        esc) return 2 ;;
+        ctrl-w) choice=workspace ;;
+      esac
+      choice="${choice%%$'\t'*}"
+      if [[ "$choice" == workspace ]]; then
+        AGENT_SESSION_CWD="$workspace_root"
+        AGENT_SESSION_DEFAULT=main
+        AGENT_SESSION_REPO=""
+        return
+      fi
+      if [[ "$choice" != repo:* ]]; then
+        printf '%sInvalid repository selection.%s\n' "$UI_RED" "$UI_RESET" >&2
+        return 1
+      fi
+      index="${choice#repo:}"
+      repo="${repos[index]}"
+    fi
+
+    while true; do
+      paths=()
+      branches=()
+      worktree_listing="$(git -C "$repo" worktree list --porcelain)" || return 1
+      paths=()
+      branches=()
+      while IFS= read -r line; do
+        case "$line" in
+          'worktree '*)
+            paths+=("${line#worktree }")
+            branches+=(detached)
+            ;;
+          'branch refs/heads/'*)
+            branches[${#branches[@]} - 1]="${line#branch refs/heads/}"
+            ;;
+        esac
+      done <<< "$worktree_listing"
+      primary="${paths[0]}"
+      repo_name="$(basename "$primary")"
+      worktree_names=()
+      for index in "${!paths[@]}"; do
+        if [[ "${paths[index]}" == "$primary" ]]; then
+          worktree_names+=(main)
+        elif [[ "${paths[index]}" == "$primary/.worktrees/"* ]]; then
+          worktree_names+=("${paths[index]#"$primary/.worktrees/"}")
+        else
+          worktree_names+=("$(basename "${paths[index]}")")
+        fi
+      done
+
+      choice="$(
+        {
+          printf 'new\t%screate a new worktree%s\t%sCtrl-N%s\n' \
+            "$UI_CYAN" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+          printf 'prune\t%sprune a linked worktree%s\t%sbranch kept | Ctrl-P%s\n' \
+            "$UI_YELLOW" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+          printf 'workspace\t%s/workspace%s\t%sno repository or worktree | Ctrl-W%s\n' \
+            "$UI_CYAN" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+          for index in "${!paths[@]}"; do
+            printf 'worktree:%d\t%s%s%s\t%s%s%s\n' \
+              "$index" "$UI_GREEN" "${worktree_names[index]}" "$UI_RESET" \
+              "$UI_DIM" "${paths[index]}" "$UI_RESET"
+          done
+        } | fzf --ansi --layout=reverse --border --height=100% --bind='start:pos(4)' \
+          --delimiter=$'\t' --with-nth=2.. --expect=esc,ctrl-n,ctrl-p,ctrl-w --prompt='Worktree> ' \
+          --header='Enter: select | Ctrl-N: new | Ctrl-P: prune | Ctrl-W: /workspace | Esc: back | Ctrl-C: quit'
+      )" || return
+      shortcut="${choice%%$'\n'*}"
+      choice="${choice#*$'\n'}"
+      case "$shortcut" in
+        esc) break ;;
+        ctrl-n) choice=new ;;
+        ctrl-p) choice=prune ;;
+        ctrl-w) choice=workspace ;;
+      esac
+      choice="${choice%%$'\t'*}"
+      case "$choice" in
+      workspace)
+        AGENT_SESSION_CWD="$workspace_root"
+        AGENT_SESSION_DEFAULT=main
+        return
+        ;;
+      prune)
+        choice="$(
+          {
+            for index in "${!paths[@]}"; do
+              [[ "${paths[index]}" == "$primary" ]] && continue
+              printf 'prune:%d\t%s%s%s\t%s%s%s\n' \
+                "$index" "$UI_YELLOW" "${branches[index]}" "$UI_RESET" \
+                "$UI_DIM" "${paths[index]}" "$UI_RESET"
+            done
+          } | fzf --ansi --layout=reverse --border --height=100% \
+            --delimiter=$'\t' --with-nth=2.. --expect=esc --prompt='Prune worktree> ' \
+            --header='Enter: choose worktree to prune | Esc: back | Ctrl-C: quit'
+        )" || return
+        shortcut="${choice%%$'\n'*}"
+        choice="${choice#*$'\n'}"
+        [[ "$shortcut" == esc ]] && continue
+        choice="${choice%%$'\t'*}"
+        [[ "$choice" == prune:* ]] || continue
+        prune_index="${choice#prune:}"
+        prune_path="${paths[prune_index]}"
+        prune_branch="${branches[prune_index]}"
+        if [[ "$prune_branch" == detached ]]; then
+          prune_note='No branch will be deleted.'
+        else
+          prune_note='The branch will be kept.'
+        fi
+        in_use=false
+        while IFS= read -r pane_cwd; do
+          if [[ "$pane_cwd" == "$prune_path" || "$pane_cwd" == "$prune_path/"* ]]; then
+            in_use=true
+            break
+          fi
+        done < <(tmux -u list-panes -a -F '#{pane_current_path}' 2>/dev/null || true)
+        if [[ "$in_use" == true ]]; then
+          printf '%sA tmux pane is still using %s. Move or close it before pruning.%s\n' \
+            "$UI_RED" "'$prune_path'" "$UI_RESET" >&2
+          continue
+        fi
+        confirm="$(
+          {
+            printf 'cancel\t%scancel%s\t%skeep the worktree%s\n' \
+              "$UI_CYAN" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+            printf 'confirm\t%sprune worktree%s\t%sbranch kept%s\n' \
+              "$UI_YELLOW" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+          } | fzf --ansi --layout=reverse --border --height=100% \
+            --delimiter=$'\t' --with-nth=2.. --expect=esc --prompt='Confirm prune> ' \
+            --header="Prune '$prune_branch' at '$prune_path' | $prune_note | Esc: back | Ctrl-C: quit"
+        )" || return
+        shortcut="${confirm%%$'\n'*}"
+        confirm="${confirm#*$'\n'}"
+        [[ "$shortcut" == esc ]] && continue
+        confirm="${confirm%%$'\t'*}"
+        if [[ "$confirm" != confirm ]]; then
+          printf '%sPrune cancelled.%s\n' "$UI_DIM" "$UI_RESET"
+          continue
+        fi
+        if ! git_error="$(git -C "$primary" worktree remove -- "$prune_path" 2>&1)"; then
+          if [[ "$git_error" == *'contains modified or untracked files'* ]]; then
+            force_confirm="$(
+              {
+                printf 'cancel\t%scancel%s\t%skeep all worktree files%s\n' \
+                  "$UI_CYAN" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+                printf 'force\t%sforce remove worktree%s\t%sdelete modified and untracked files%s\n' \
+                  "$UI_RED" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+              } | fzf --ansi --layout=reverse --border --height=100% \
+                --delimiter=$'\t' --with-nth=2.. --expect=esc --prompt='Confirm force prune> ' \
+                --header="Force removal permanently deletes modified and untracked files at '$prune_path' | Esc: back | Ctrl-C: quit"
+            )" || return
+            shortcut="${force_confirm%%$'\n'*}"
+            force_confirm="${force_confirm#*$'\n'}"
+            [[ "$shortcut" == esc ]] && continue
+            force_confirm="${force_confirm%%$'\t'*}"
+            if [[ "$force_confirm" != force ]]; then
+              printf '%sForce prune cancelled.%s\n' "$UI_DIM" "$UI_RESET"
+              continue
+            fi
+            git -C "$primary" worktree remove --force -- "$prune_path" || return 1
+          else
+            printf '%s\n' "$git_error" >&2
+            return 1
+          fi
+        fi
+        if [[ "$prune_branch" == detached ]]; then
+          printf '%sPruned worktree %s. No branch was deleted.%s\n' \
+            "$UI_GREEN" "'$prune_path'" "$UI_RESET"
+        else
+          printf '%sPruned worktree %s. The branch %s was kept.%s\n' \
+            "$UI_GREEN" "'$prune_path'" "'$prune_branch'" "$UI_RESET"
+        fi
+        ;;
+      new)
+        worktree_name=""
+        while true; do
+          if agent_fzf_input 'Worktree name: ' "$worktree_name" 'Enter: create worktree | Esc: back | Ctrl-C: quit'; then
+            worktree_name="$AGENT_FZF_VALUE"
+          else
+            status=$?
+            [[ "$status" -eq 2 ]] && continue 2
+            return "$status"
+          fi
+          if [[ -z "$worktree_name" || "$worktree_name" == /* || "$worktree_name" == . || "$worktree_name" == .. \
+            || "$worktree_name" == */./* || "$worktree_name" == ./* || "$worktree_name" == */. \
+            || "$worktree_name" == */../* || "$worktree_name" == ../* || "$worktree_name" == */.. ]]; then
+            printf '%sInvalid worktree name: %s%s\n' "$UI_RED" "'$worktree_name'" "$UI_RESET" >&2
+            return 1
+          fi
+          destination=""
+          create_worktree=true
+          for index in "${!worktree_names[@]}"; do
+            if [[ "${worktree_names[index]}" == "$worktree_name" ]]; then
+              destination="${paths[index]}"
+              create_worktree=false
+              break
+            fi
+          done
+          [[ "$create_worktree" == false ]] && break
+          destination="$primary/.worktrees/$worktree_name"
+          if [[ -e "$destination" ]]; then
+            printf '%sWorktree path already exists and is not a registered Git worktree: %s%s\n' \
+              "$UI_RED" "'$destination'" "$UI_RESET" >&2
+            return 1
+          fi
+          mkdir -p "$(dirname "$destination")" || return
+          git -C "$primary" worktree add --detach "$destination" || return 1
+          break
+        done
+        AGENT_SESSION_CWD="$destination"
+        AGENT_SESSION_DEFAULT="$(printf '%s-%s' "$repo_name" "${worktree_name//\//-}" | tr -cs '[:alnum:]_-' '-')"
+        AGENT_SESSION_DEFAULT="${AGENT_SESSION_DEFAULT%-}"
+        AGENT_SESSION_REPO="$repo"
+        return
+        ;;
+      worktree:*)
+        index="${choice#worktree:}"
+        AGENT_SESSION_CWD="${paths[index]}"
+        AGENT_SESSION_DEFAULT="$(printf '%s-%s' "$repo_name" "${worktree_names[index]//\//-}" | tr -cs '[:alnum:]_-' '-')"
+        AGENT_SESSION_DEFAULT="${AGENT_SESSION_DEFAULT%-}"
+        AGENT_SESSION_REPO="$repo"
+        return
+        ;;
+      *)
+        printf '%sInvalid worktree selection.%s\n' "$UI_RED" "$UI_RESET" >&2
+        ;;
+      esac
+    done
+  done
+}
+
+agent_tmux_session() {
+  local mode="$1" cwd="${2:-/workspace}" default_name="${3:-main}"
+  local format=$'#{session_name}\t#{pane_current_path}\t#{session_windows} windows\t#{?session_attached,attached,detached}\tcreated #{t:session_created}'
+  # kubectl exec supplies no locale, so force UTF-8 or tmux replaces TUI glyphs with underscores.
+  local -a tmux_bash=(
+    tmux -u
+    set-option -g default-shell /bin/bash ';'
+    set-option -g default-command /bin/bash ';'
+    set-option -g default-terminal tmux-256color ';'
+    set-option -g history-limit 100000 ';'
+    set-option -g focus-events on ';'
+    set-option -g status-style 'bg=colour234,fg=colour250' ';'
+    set-option -g status-left-length 60 ';'
+    set-option -g status-right-length 24 ';'
+    set-option -g status-left '#[bg=colour24,fg=white,bold] #S #[default]' ';'
+    set-option -g status-right '#[fg=colour245] %H:%M | %d %b ' ';'
+    set-option -g window-status-format '#[fg=colour245] #I:#W ' ';'
+    set-option -g window-status-current-format '#[bg=colour31,fg=white,bold] #I:#W#{?window_zoomed_flag, Z,} #[default]' ';'
+    set-option -g mouse on ';'
+  )
+  cd "$cwd" || return 1
+
+  case "$mode" in
+    shell)
+      exec /bin/bash
+      ;;
+    list)
+      tmux -u list-sessions -F "$format" 2>/dev/null || printf 'No tmux sessions.\n'
+      return
+      ;;
+  esac
+
+  local -a rows=() names=()
+  local row choice shortcut index session_name session_cwd session_windows session_state session_created status existing_choice
+  local start_position=1
+  mapfile -t rows < <(tmux -u list-sessions -F "$format" 2>/dev/null || true)
+  for row in "${rows[@]}"; do
+    names+=("${row%%$'\t'*}")
+  done
+
+  (( ${#rows[@]} > 0 )) && start_position=3
+  while true; do
+    choice="$(
+      {
+        printf 'new\t%screate a new session%s\t%sCtrl-N%s\n' \
+          "$UI_CYAN" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+        printf 'shell\t%splain shell%s\t%sCtrl-S%s\n' \
+          "$UI_CYAN" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+        for index in "${!rows[@]}"; do
+          IFS=$'\t' read -r session_name session_cwd session_windows session_state session_created <<< "${rows[index]}"
+          printf 'session:%d\t%s%s%s\t%s%s%s\t%s%s | %s | %s%s\n' \
+            "$index" "$UI_GREEN" "$session_name" "$UI_RESET" \
+            "$UI_DIM" "$session_cwd" "$UI_RESET" \
+            "$UI_DIM" "$session_windows" "$session_state" "$session_created" "$UI_RESET"
+        done
+      } | fzf --ansi --layout=reverse --border --height=100% --bind="start:pos($start_position)" \
+        --delimiter=$'\t' --with-nth=2.. --expect=esc,ctrl-n,ctrl-s --prompt='Session> ' \
+        --header='Enter: attach or create | Ctrl-N: new | Ctrl-S: shell | Ctrl-C: quit'
+    )" || return
+    shortcut="${choice%%$'\n'*}"
+    choice="${choice#*$'\n'}"
+    case "$shortcut" in
+      esc) continue ;;
+      ctrl-n) choice=new ;;
+      ctrl-s) choice=shell ;;
+    esac
+    choice="${choice%%$'\t'*}"
+    case "$choice" in
+      new) ;;
+      shell) exec /bin/bash ;;
+      session:*)
+        index="${choice#session:}"
+        exec "${tmux_bash[@]}" attach-session -t "${names[index]}"
+        ;;
+      *)
+        printf '%sInvalid session selection.%s\n' "$UI_RED" "$UI_RESET" >&2
+        return 1
+        ;;
+    esac
+
+    while true; do
+      if agent_choose_directory "${AGENT_SESSION_REPO:-}"; then
+        status=0
+      else
+        status=$?
+      fi
+      [[ "$status" -eq 2 ]] && continue 2
+      [[ "$status" -eq 0 ]] || return "$status"
+      cwd="$AGENT_SESSION_CWD"
+      default_name="$AGENT_SESSION_DEFAULT"
+      cd "$cwd" || return 1
+      if ! tmux -u has-session -t "$default_name" 2>/dev/null; then
+        break
+      fi
+      existing_choice="$(
+        {
+          printf 'cancel\t%scancel%s\t%schoose another worktree%s\n' \
+            "$UI_CYAN" "$UI_RESET" "$UI_DIM" "$UI_RESET"
+          printf 'resume\t%sresume existing session%s\t%s%s%s\n' \
+            "$UI_GREEN" "$UI_RESET" "$UI_DIM" "$default_name" "$UI_RESET"
+        } | fzf --ansi --layout=reverse --border --height=100% --bind='start:pos(2)' \
+          --delimiter=$'\t' --with-nth=2.. --expect=esc --prompt='Existing session> ' \
+          --header="A session named '$default_name' already exists | Enter: resume | Esc: choose another worktree | Ctrl-C: quit"
+      )" || return
+      shortcut="${existing_choice%%$'\n'*}"
+      existing_choice="${existing_choice#*$'\n'}"
+      [[ "$shortcut" == esc ]] && continue
+      existing_choice="${existing_choice%%$'\t'*}"
+      if [[ "$existing_choice" == resume ]]; then
+        exec "${tmux_bash[@]}" attach-session -t "$default_name"
+      fi
+    done
+    break
+  done
+  exec "${tmux_bash[@]}" new-session -s "$default_name" -c "$cwd"
+}
+
+agent_ssh_entry() {
+  local mode="$1"
+  AGENT_SESSION_CWD="${VICEGERENT_WORKSPACE_ROOT:-/workspace}"
+  AGENT_SESSION_DEFAULT=main
+  agent_tmux_session "$mode" "$AGENT_SESSION_CWD" "$AGENT_SESSION_DEFAULT"
 }
 
 usage() {
@@ -55,7 +460,7 @@ ${B}Usage:${N}
   ${C}vicegerent install${N}                      (re-)install the platform via the staged Helm reconciler
   ${C}vicegerent logs${N}                         open the VictoriaLogs dashboard
   ${C}vicegerent creds <name>${N}                 show an agent's dashboard credentials and URL
-  ${C}vicegerent ssh <name>${N}                   open a shell inside an agent container
+  ${C}vicegerent ssh <name>${N}                   open a persistent tmux session inside an agent container
   ${C}vicegerent test gateway${N}                 run MCP gateway tests
   ${C}vicegerent test policies${N}                run MCP policy enforcement tests
   ${C}vicegerent test egress <name>${N}           run egress-proxy redaction/enforcement tests
@@ -389,20 +794,63 @@ case "${1:-}" in
   ssh)
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-      echo "vicegerent ssh <agent-name> — exec into the agent container (cwd /workspace)"
+      cat <<'EOF'
+vicegerent ssh <agent-name> [--list | --shell]
+
+Choose an existing tmux session or create a new one. New sessions can select a
+repository and existing worktree, create or prune a linked worktree, or stay in
+/workspace. Existing sessions show the cwd of their active pane so worktree
+ownership is visible before attaching. From the worktree list, Ctrl-P opens the
+prune selector; pruning keeps any checked-out branch.
+
+  --list            list sessions without attaching
+  --shell           open a plain shell without tmux
+
+Detach without stopping the session with Ctrl-b d. Sessions survive a lost
+kubectl exec connection, but not an agent Pod or container restart.
+EOF
       exit 0
     fi
-    [[ $# -ge 1 ]] || { echo "usage: vicegerent ssh <agent-name>" >&2; exit 2; }
+    [[ $# -ge 1 ]] || { echo "usage: vicegerent ssh <agent-name> [--list | --shell]" >&2; exit 2; }
     AGENT="$(echo "$1" | tr '[:upper:]' '[:lower:]')"; shift
+    SSH_MODE=auto
+    case "${1:-}" in
+      "") ;;
+      --list)
+        [[ $# -eq 1 ]] || { echo "usage: vicegerent ssh <agent-name> --list" >&2; exit 2; }
+        SSH_MODE=list
+        ;;
+      --shell)
+        [[ $# -eq 1 ]] || { echo "usage: vicegerent ssh <agent-name> --shell" >&2; exit 2; }
+        SSH_MODE=shell
+        ;;
+      *)
+        echo "usage: vicegerent ssh <agent-name> [--list | --shell]" >&2
+        exit 2
+        ;;
+    esac
     require_kind_context
     # The agent-sandbox controller names the Pod after the Sandbox/agent; every agent's
     # app container is named 'agent' regardless of the Sandbox/agent name.
-    # Do not exec: the local EXIT trap must reset a TUI-abandoned terminal.
-    trap restore_terminal EXIT
-    kubectl --context "$KUBE_CONTEXT" -n agent-sandbox exec -it "$AGENT" -c agent \
-      -- bash -c "cd /workspace && exec bash"
-    trap - EXIT
-    restore_terminal
+    # Do not exec: an interactive selector can leave terminal modes enabled on failure.
+    [[ "$SSH_MODE" == auto ]] && trap restore_terminal EXIT
+    REMOTE_COLORS="$(printf \
+      'UI_BOLD=%q; UI_CYAN=%q; UI_GREEN=%q; UI_YELLOW=%q; UI_RED=%q; UI_DIM=%q; UI_RESET=%q;' \
+      "$UI_BOLD" "$UI_CYAN" "$UI_GREEN" "$UI_YELLOW" "$UI_RED" "$UI_DIM" "$UI_RESET")"
+    REMOTE_COMMAND="$REMOTE_COLORS $(declare -f agent_fzf_input); $(declare -f agent_choose_directory); $(declare -f agent_tmux_session); $(declare -f agent_ssh_entry); agent_ssh_entry \"\$@\""
+    KUBECTL_TTY=(-it)
+    [[ "$SSH_MODE" == list ]] && KUBECTL_TTY=()
+    if kubectl --context "$KUBE_CONTEXT" -n agent-sandbox exec "${KUBECTL_TTY[@]}" "$AGENT" -c agent \
+      -- bash -c "$REMOTE_COMMAND" bash "$SSH_MODE"; then
+      status=0
+    else
+      status=$?
+    fi
+    if [[ "$SSH_MODE" == auto ]]; then
+      trap - EXIT
+      restore_terminal
+    fi
+    exit "$status"
     ;;
   test)
     shift

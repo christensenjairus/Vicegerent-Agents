@@ -275,13 +275,23 @@ Each agent's Hermes dashboard is published on a Kind NodePort — derived as 301
 ./vicegerent creds <name>   # print dashboard URL + login
 ```
 
-To get a shell inside a running agent's container — it drops you into a shell in `/workspace`:
+To open a persistent tmux session inside a running agent's container:
 
 ```bash
 ./vicegerent ssh <name>
 ```
 
-The installed image includes all four configured coding harnesses. From that shell, start whichever one fits the task; the same pod-level containment, credentials, egress policy, shared skills, and MCP access apply to each:
+The command always opens a fuzzy finder over each session's name, active pane directory, window count, attachment state, and creation time. Select one to resume it immediately without navigating the repository and worktree selectors, or use `Ctrl-N` for a new session or `Ctrl-S` for a plain shell. With no running sessions, the same menu offers only those two actions.
+
+Directory selection uses full-height fuzzy finders for the Git repositories immediately under `/workspace` and for each selected repository's registered worktrees. Both selectors are searchable by name and path. Worktree names are entered through a full-height fzf query screen, and prune confirmation is another fzf selection, so the flow never drops to a shell prompt during normal navigation. Invalid worktree names and Git failures exit the selector and display their diagnostics in the terminal. Special actions stay at the top of each list while the initial selection remains on the first normal item, so the actions remain visible without making them the default. Normal sessions, repositories, and worktrees are green; non-destructive actions are cyan; and the destructive prune action is yellow. `Ctrl-W` selects `/workspace` from either directory selector, `Ctrl-N` creates a detached worktree at `<repo>/.worktrees/<name>` without creating or reserving a branch, and `Ctrl-P` opens the fuzzy prune-target selector. If a requested new session's derived name already exists, a confirmation resumes it by default or returns to that repository's worktree selector. `Esc` returns from prune confirmation to worktrees, from prune targets to worktrees, and from worktrees to repositories; it returns from repositories to sessions. At the top-level selector, `Esc` stays in the selector; use `Ctrl-C` to quit the flow. Worktree names can contain `/` to create matching subdirectories. Pruning keeps any checked-out branch, excludes the primary worktree from the selector, and refuses any path used by a tmux pane. A normal prune preserves Git's dirty-worktree protection; when Git refuses a dirty worktree, a separate red confirmation can force removal and permanently delete its modified and untracked files. New tmux sessions always use a name derived from the selected repository and worktree.
+
+Interactive Bash has a compact two-line prompt: the first line shows the user and Pod, repository and branch, a `*` for tracked Git changes, and a shortened working path; the second line shows a red `✗ <status>` after a failed command before the cyan `❯` input marker. It sets the terminal title to the repository/branch and path when the terminal supports titles. The prompt works in tmux, avoids Git work outside a repository, and caches its Git state for up to one second. `NO_COLOR=1` or `TERM=dumb` uses a plain `>` prompt instead.
+
+Detach with `Ctrl-b d`; closing the terminal or losing the `kubectl exec` connection leaves the session and its foreground process running. Tmux session names are derived from the selected repository and worktree, so use the top-level selector to resume an existing session or create one. Use `--list` to inspect sessions without attaching, or `--shell` to bypass tmux and repository selection.
+
+The tmux server runs inside the agent container. It survives only connection loss, not a Pod or container restart; the persistent `data` and `gitrepos` volumes preserve harness state and workspace files, but cannot preserve running processes.
+
+The installed image includes all four configured coding harnesses. From the session, start whichever one fits the task; the same pod-level containment, credentials, egress policy, shared skills, and MCP access apply to each:
 
 ```bash
 hermes
