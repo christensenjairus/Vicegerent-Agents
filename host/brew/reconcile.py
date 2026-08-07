@@ -220,7 +220,14 @@ def reconcile_package(
 ) -> None:
     installed = brew.run("list", "--versions", package.formula)
     if installed.returncode != 0:
-        install_args = ("--force-bottle",) if package.force_bottle else ()
+        install_args = []
+        if package.force_bottle:
+            install_args.append("--force-bottle")
+        if package.replaces:
+            # Homebrew's own post-install auto-link runs before reconcile's
+            # explicit unlink/link-force below, and fails outright if a
+            # replaced formula's keg still owns the target symlink.
+            install_args.append("--overwrite")
         brew.run("install", *install_args, package.formula, check=True)
 
     prefix_result = brew.run("--prefix", package.formula)
