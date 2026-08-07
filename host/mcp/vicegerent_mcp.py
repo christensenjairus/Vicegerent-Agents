@@ -513,7 +513,7 @@ def list_all_workload_names() -> set[str]:
 
 
 def _notify(title: str, message: str, group: str | None = None) -> None:
-    """Fire one macOS notification via terminal-notifier. Three gotchas, all
+    """Fire one macOS notification via terminal-notifier. Two gotchas, all
     verified live, are baked in here so every caller inherits them:
 
     A `group` tags the notification so a later `_notify_clear(group)` can pull
@@ -525,11 +525,6 @@ def _notify(title: str, message: str, group: str | None = None) -> None:
       app actually invoked the notification API. -contentImage is the only flag
       that still shows a custom image, as a larger attached image alongside the
       notification.
-    - The appended timestamp isn't decorative: macOS treats a repeat
-      notification with byte-identical title+message as a duplicate of any
-      earlier undismissed one and silently drops it -- a fresh process
-      re-detecting the same still-ongoing issue (a restart, `autorestart`,
-      another `start`) needs genuinely different content to actually display.
     - `launchctl asuser` (not a direct call): a long-lived supervisord (this
       process's own parent) can lose its connection to the current GUI login
       session over many hours' uptime, and every process it forks afterward
@@ -543,7 +538,7 @@ def _notify(title: str, message: str, group: str | None = None) -> None:
         [
             "launchctl", "asuser", str(os.getuid()), "terminal-notifier",
             "-title", title,
-            "-message", f"{message} [{time.strftime('%H:%M:%S')}]",
+            "-message", message,
             "-contentImage", str(REPO_ROOT / "icon.png"),
             *(["-group", group] if group else []),
         ],
@@ -727,11 +722,10 @@ def _aws_cred_status(profile: str, warning_secs: int) -> tuple[str, str, str] | 
     remaining = (expires_at - now).total_seconds()
     if remaining > warning_secs:
         return None
-    mins = max(0, round(remaining / 60))
     return (
         "aws-expiring",
         f"AWS {what} expiring soon",
-        f"Expire at {expires_at.astimezone():%H:%M} (~{mins} min). {_AWS_CRED_REFRESH_HINT}",
+        f"Expires at {expires_at.astimezone():%I:%M %p}.",
     )
 
 
@@ -762,6 +756,8 @@ def health_watch(
     warning_secs = cred_warning_mins * 60
     aws_keys = {"aws-expiring", "aws-expired"}
     notified: set[str] = set()
+    cleared_workload_notifications: set[str] = set()
+    aws_notification_needs_reconcile = True
     # One startup line so the log confirms the process is alive and shows its
     # effective settings -- the poll loop itself is silent while everything is
     # healthy (it only fires macOS notifications), so this is the sole stdout.
@@ -783,9 +779,12 @@ def health_watch(
             status = workloads.get(name, "")
             notify_group = f"vicegerent-mcp-{name}"
             if status == "running":
-                if name in notified:
+                # A watcher restart loses `notified`, but it must still clear
+                # any grouped alert posted by the previous watcher process.
+                if name not in cleared_workload_notifications or name in notified:
                     _notify_clear(notify_group)  # recovered -- pull the stale alert
                     notified.discard(name)
+                    cleared_workload_notifications.add(name)
             elif name not in notified:
                 _notify(
                     f"MCP backend down: {name} ({status or 'missing'})",
@@ -800,18 +799,23 @@ def health_watch(
         if "aws" in enabled_names:
             cred = _aws_cred_status(server_param(runtime_dir, "aws", "cred_watch_profile", ""), warning_secs)
             if cred is None:
-                if notified & aws_keys:
+                # The watcher may have restarted after posting an alert. Its
+                # in-memory `notified` set is then empty, but Notification
+                # Center still holds the prior process's grouped alert.
+                if aws_notification_needs_reconcile or notified & aws_keys:
                     _notify_clear(_AWS_CRED_GROUP)  # creds healthy again
                 notified -= aws_keys
+                aws_notification_needs_reconcile = False
             else:
                 key, title, message = cred
                 notified -= aws_keys - {key}  # a soon->expired change re-notifies
                 if key not in notified:
                     _notify(title, message, group=_AWS_CRED_GROUP)
                     notified.add(key)
-        elif notified & aws_keys:
+        elif aws_notification_needs_reconcile or notified & aws_keys:
             _notify_clear(_AWS_CRED_GROUP)
             notified -= aws_keys
+            aws_notification_needs_reconcile = False
 
         time.sleep(interval)
 
@@ -1407,15 +1411,12 @@ def wait_for_workloads_running(
     generating the config before slow npx workloads finish starting would silently
     drop them. Warn (don't fail) on any that never come up — they'll just be absent.
 
-    A workload stuck in `error` gets automatically `thv restart`'d (up to
-    MAX_ERROR_RETRIES times). `run_workloads` serializes the `thv run`/`thv
-    restart` calls themselves to shrink the ingress-proxy port-allocation race
-    that used to cause this, but `thv run`/`thv restart` fork a detached
-    background process and return before that process finishes creating
-    containers — so our lock can't fully close the window, and a retry here can
-    itself occasionally lose the same race. Retrying more than once, rather than
-    leaving it down until someone notices and restarts it by hand, is the actual
-    fix for the user-visible failure.
+    A workload stuck in `error` is recovered with an explicit stop followed by
+    a start (up to MAX_ERROR_RETRIES times). ToolHive also retries failed
+    transports internally; issuing `thv restart` while that retry is tearing
+    down the old streamable proxy can leave two proxies contending for the same
+    local port. Waiting for ToolHive to report `stopped` makes one recovery
+    owner at a time and avoids the port-allocation race.
     """
     MAX_ERROR_RETRIES = 3
     group = group_name(config)
@@ -1425,6 +1426,7 @@ def wait_for_workloads_running(
     deadline = time.time() + timeout
     pending = list(want)
     retries: dict[str, int] = {}
+    stopping: set[str] = set()
     while pending and time.time() < deadline:
         states = list_workloads(group)
         pending = [n for n in want if states.get(n) != "running"]
@@ -1432,11 +1434,17 @@ def wait_for_workloads_running(
             print(f"  all {len(want)} workloads running")
             return
         for name in pending:
-            if states.get(name) == "error" and retries.get(name, 0) < MAX_ERROR_RETRIES:
+            state = states.get(name)
+            if state == "error" and name not in stopping and retries.get(name, 0) < MAX_ERROR_RETRIES:
                 retries[name] = retries.get(name, 0) + 1
-                print(f"  workload {name} is in error state — restarting "
+                stopping.add(name)
+                print(f"  workload {name} is in error state — stopping before recovery "
                       f"(attempt {retries[name]}/{MAX_ERROR_RETRIES}) …")
-                thv("restart", name)
+                thv("stop", name)
+            elif state == "stopped" and name in stopping:
+                stopping.remove(name)
+                print(f"  starting workload {name} after clean stop …")
+                thv("start", name)
         time.sleep(2)
     print(f"  warning: workloads not running after {int(timeout)}s: {pending} "
           "— they will be omitted from the vMCP until healthy", file=sys.stderr)
