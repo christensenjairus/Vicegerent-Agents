@@ -87,7 +87,7 @@ HELM_UPGRADE_FLAGS+=(--hide-notes)
 
 # --- prerequisites ---------------------------------------------------------
 step "Prerequisites"
-for cmd in kubectl helm yq git docker; do
+for cmd in kubectl helm yq git; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed or not on PATH"
 done
 # The installer uses Helm 4 flags (--rollback-on-failure, --force-replace,
@@ -203,20 +203,6 @@ for ((si = 0; si < stage_count; si++)); do
 
   [[ "$sname" == "agents" ]] && reconcile_agents
 done
-
-# --- prune stale node images -----------------------------------------------
-# Project images (agent, mcp-cerbos-shim, etc.) are
-# rebuilt under new tags often (see AGENTS.md's tag-bump rule); the Kind node
-# never garbage-collects the superseded ones on its own, so a long-lived
-# cluster's containerd image store only grows. Best-effort: never fail the
-# install over cleanup, since a Kind node with no images to prune exits 0 too.
-step "Pruning unused node images"
-node_container="$(kind_node_container)"
-if docker exec "$node_container" crictl rmi --prune >/dev/null 2>&1; then
-  info "Pruned unused container images on $node_container."
-else
-  warn "Failed to prune images on $node_container (continuing)."
-fi
 
 echo
 ui_success "Install complete."

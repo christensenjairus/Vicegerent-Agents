@@ -190,6 +190,8 @@ DEFAULTS_FILE=<file> default layer laid under it (default: <repo>/values.default
 
 Stages run in this order: `cni` → `crds` → `storage` → `controllers` → `platform` → `agents`. Use `--stage platform` to re-render just the platform charts after editing a cluster var, or `--from controllers` to resume partway. The `agents` stage also prunes: an agent you remove from `values.yaml` is `helm uninstall`ed on the next run (removing a controller from `stages.yaml`, by contrast, needs a manual `helm uninstall`).
 
+The `csi-hostpath-gc` CronJob handles node housekeeping daily at 06:00 America/Denver: it prunes container images the node no longer runs, then garbage-collects orphaned csi-hostpath volume directories and snapshot files. An image an upgrade replaces stays on the node until that next run, so for up to 24 hours you can roll the upgrade back by pointing the tag back and re-running `./vicegerent install`, with no re-pull or rebuild.
+
 Check the result:
 
 ```bash

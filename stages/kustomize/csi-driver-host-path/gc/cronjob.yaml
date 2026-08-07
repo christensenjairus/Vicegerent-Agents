@@ -23,6 +23,32 @@ spec:
           securityContext:
             seccompProfile:
               type: RuntimeDefault
+          initContainers:
+            # Node image pruning rides along on this job for its schedule, but
+            # must not run *beside* the reconcile: that scales csi-hostpathplugin
+            # to zero, and a concurrent prune would see the plugin's own images
+            # as unreferenced. An initContainer finishes while every live
+            # workload still pins its image.
+            - name: prune-node-images
+              # renovate: datasource=docker depName=alpine/k8s
+              image: alpine/k8s:1.36.2
+              command: [/bin/sh, /scripts/prune-node-images.sh]
+              securityContext:
+                # containerd's socket is root:root 0660, so root alone suffices.
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: crictl
+                  mountPath: /host/bin/crictl
+                  readOnly: true
+                - name: containerd-socket
+                  mountPath: /run/containerd/containerd.sock
           containers:
             - name: reconcile
               # renovate: datasource=docker depName=alpine/k8s
@@ -59,3 +85,13 @@ spec:
                 type: Directory
             - name: tmp
               emptyDir: {}
+            # kind's node image is the only source of crictl here, and cri-tools
+            # builds it CGO-free, so the node's binary runs as-is under alpine.
+            - name: crictl
+              hostPath:
+                path: /usr/local/bin/crictl
+                type: File
+            - name: containerd-socket
+              hostPath:
+                path: /run/containerd/containerd.sock
+                type: Socket
