@@ -1,6 +1,6 @@
 # Managed Homebrew packages
 
-`packages.json` is the desired state for host tools whose CLI behavior is part of the platform. Repository-managed entries name immutable, version-qualified formulae under the root `Formula/` directory. `terminal-notifier` deliberately uses Homebrew Core so Homebrew can install its supported bottle instead of requiring full Xcode; the reconciler still verifies its exact version, binary ownership, and pin. The repository is tapped from GitLab as `vicegerent/packages`, so no separate tap repository is required; before applying, the managed tap checkout is synchronized to the exact commit of the invoking Vicegerent checkout, including a pre-merge task branch.
+`packages.json` is the desired state for host tools whose CLI behavior is part of the platform. Repository-managed entries name immutable, version-qualified formulae under the root `Formula/` directory. `terminal-notifier` deliberately uses Homebrew Core so Homebrew can install its supported bottle instead of requiring full Xcode; the reconciler still verifies its exact version, binary ownership, and pin. The repository is tapped from the public GitHub clone as `vicegerent/packages`, so host package reconciliation does not require GitLab credentials; before applying, the managed tap checkout is synchronized to the exact commit of the invoking Vicegerent checkout, including a pre-merge task branch.
 
 ```bash
 ./vicegerent host-packages check

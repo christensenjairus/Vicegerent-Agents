@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "tap": {
     "name": "vicegerent/packages",
-    "url": "git@gitlab.hahomelabs.com:jchristensen/vicegerent-agents.git"
+    "url": "https://github.com/christensenjairus/vicegerent-agents.git"
   },
   "packages": [
     {
