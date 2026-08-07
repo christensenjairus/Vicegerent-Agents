@@ -35,11 +35,12 @@ The CSI, Velero data-movement, and rclone path is used instead of copying a host
 
 Data movement is mandatory here. `csi-hostpath` stores snapshots inside the Kind node container, so `kind delete cluster` destroys a CSI snapshot. `configuration.defaultSnapshotMoveData: true` uploads its bytes to the rclone bucket on the host. Uploading temporarily provisions a PVC from each snapshot, so the node needs room for a second copy of the volume data.
 
-The daily backup covers the full cluster:
+The daily backup covers the full cluster, except the `velero` namespace itself:
 
 ```yaml
 includedNamespaces: ['*']
 includeClusterResources: true
+excludedNamespaces: [velero]
 ```
 
 This captures namespaced objects, CRDs, ClusterRoles, StorageClasses, PVs, and Helm release Secrets. After restoration, `helm list -A` therefore reports releases as `deployed`. A botched `./vicegerent install` is recoverable from the backup.
@@ -94,11 +95,11 @@ velero schedule describe velero-vicegerent-daily
 
 ## Take and verify a backup
 
-An ad-hoc backup inherits the server defaults: full-cluster scope, snapshot data movement, and claim exclusions.
+An ad-hoc backup inherits the server defaults: full-cluster scope, snapshot data movement, and claim exclusions. It does not inherit the schedule's `excludedNamespaces`; always pass `--exclude-namespaces velero` explicitly.
 
 ```bash
 BACKUP="pre-upgrade-$(date +%Y%m%d)"
-velero backup create "$BACKUP" --wait
+velero backup create "$BACKUP" --exclude-namespaces velero --wait
 ```
 
 To set the full scope and a 30-day TTL explicitly:
@@ -107,6 +108,7 @@ To set the full scope and a 30-day TTL explicitly:
 BACKUP="pre-upgrade-$(date +%Y%m%d)"
 velero backup create "$BACKUP" \
   --include-namespaces '*' \
+  --exclude-namespaces velero \
   --include-cluster-resources \
   --ttl 720h \
   --wait
@@ -163,7 +165,7 @@ helm --kube-context kind-vicegerent uninstall "$OLD_AGENT" -n "$NS" --wait
 Take the rollback backup after quiescing the old agent. It contains the `data` and `gitrepos` volume data and both old-name Secret objects. The `models` PVC is deliberately excluded from Velero; the CSI clone below preserves it, but a backup-only recovery reseeds it from the image.
 
 ```bash
-velero backup create "$BACKUP" --wait
+velero backup create "$BACKUP" --exclude-namespaces velero --wait
 test "$(kubectl --context kind-vicegerent -n velero get backup "$BACKUP" -o jsonpath='{.status.phase}')" = Completed
 
 for volume in data gitrepos; do
