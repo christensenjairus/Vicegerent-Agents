@@ -21,7 +21,7 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent
 TRUSTED_HOOKS = "/opt/vicegerent/git-hooks"
 GITCONFIG_PATH = "/opt/data/.gitconfig"
-GITCONFIG_PATHS = (GITCONFIG_PATH, "/opt/data/home/.gitconfig")
+LEGACY_GITCONFIG_PATH = "/opt/data/home/.gitconfig"
 
 
 def die(msg: str) -> None:
@@ -86,25 +86,32 @@ def main() -> None:
         containers = spec.get("containers", [])
         inits = spec.get("initContainers", [])
 
-        agent_mounts = []
-        for path in GITCONFIG_PATHS:
-            path_mounts = [
-                m
-                for c in containers
-                for m in c.get("volumeMounts", [])
-                if m.get("mountPath") == path
-            ]
-            if not path_mounts:
-                die(f"no container mounts {path}; the global rung stays writable")
-            for m in path_mounts:
-                if m.get("subPath") != ".gitconfig":
-                    die(
-                        f"{path} mount must use subPath .gitconfig, "
-                        f"got {m.get('subPath')!r}"
-                    )
-                if not m.get("readOnly"):
-                    die(f"{path} mount is not readOnly; the agent could replace it")
-            agent_mounts.extend(path_mounts)
+        agent_mounts = [
+            m
+            for c in containers
+            for m in c.get("volumeMounts", [])
+            if m.get("mountPath") == GITCONFIG_PATH
+        ]
+        if not agent_mounts:
+            die(f"no container mounts {GITCONFIG_PATH}; the global rung stays writable")
+        for m in agent_mounts:
+            if m.get("subPath") != ".gitconfig":
+                die(
+                    f"{GITCONFIG_PATH} mount must use subPath .gitconfig, "
+                    f"got {m.get('subPath')!r}"
+                )
+            if not m.get("readOnly"):
+                die(
+                    f"{GITCONFIG_PATH} mount is not readOnly; "
+                    "the agent could replace it"
+                )
+
+        if any(
+            m.get("mountPath") == LEGACY_GITCONFIG_PATH
+            for c in containers
+            for m in c.get("volumeMounts", [])
+        ):
+            die(f"obsolete split-home mount remains at {LEGACY_GITCONFIG_PATH}")
 
         vol_names = {m["name"] for m in agent_mounts}
         volumes = {v["name"]: v for v in spec.get("volumes", [])}
@@ -128,7 +135,7 @@ def main() -> None:
 
     print(
         "OK - agent global git config is a readOnly ConfigMap mount at "
-        f"{', '.join(GITCONFIG_PATHS)}, pinning core.hooksPath={TRUSTED_HOOKS}; "
+        f"{GITCONFIG_PATH}, pinning core.hooksPath={TRUSTED_HOOKS}; "
         "no imperative git config --global remains"
     )
 

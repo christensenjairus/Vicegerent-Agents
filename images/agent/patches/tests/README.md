@@ -20,6 +20,10 @@ docker run --rm -v "$PWD/images/agent/patches/tests:/tests" \
 
 `test_0051_mcp_parallel_tool_calls.py` verifies that all eight global worker slots can carry deferred calls to one opted-in MCP server, while discovery or refresh retains exclusive access. Its `--pre-fix` mode is the required negative control against unpatched Hermes.
 
+`test_0052_agent_runtime_identity.py` runs during the image build against disposable copies of the exact pristine Hermes sources, applies prerequisite patch `0046`, and requires the first `0052` application to transform those copies before checking idempotency, generated gateway and log scripts, and source syntax. In a built image, pass `--verify-applied` to verify the baked output without pretending to exercise the transformation again.
+
+`test_hermes_home_migration.py` needs no Hermes install. It exercises the exact-release state inventory, one-time PVC migration, recoverable destination-wins collision handling, the obsolete split-home layout, preservation of post-migration generic state, the shared-skills compatibility link, custom-home opt-out, and rejection of a root migration target. `scripts/validate.sh` runs it in CI.
+
 `test_shared_skills_sync.py` is the exception to the rule above: it needs no Hermes install, only bash + python3 + PyYAML, because it reads `images/agent/skills-scripts/sync-shared-skills.sh` and runs it against throwaway fixture trees. Safe to run anywhere, including CI:
 
 ```sh

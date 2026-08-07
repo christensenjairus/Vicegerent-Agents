@@ -2,7 +2,7 @@
 """Vicegerent patch: HERMES_HOME support for the agentburn Hermes adapter.
 
 agentburn's default_db_path() hardcodes ~/.hermes/state.db. In the vicegerent
-sandbox Hermes stores state.db at $HERMES_HOME/state.db (/opt/data/state.db),
+sandbox Hermes stores state.db at $HERMES_HOME/state.db (/opt/data/.hermes/state.db),
 so the agentburn MCP server can't find the DB without this fix.
 
 History: this patch used to ALSO inject missing model prices into

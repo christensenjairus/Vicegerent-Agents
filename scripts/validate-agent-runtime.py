@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -227,8 +228,70 @@ def validate_platform_naming_contracts() -> None:
     if f"IMAGE := {expected_image}" not in image_makefile:
         die("the agent image Makefile must publish the generic image repository")
     dockerfile = (REPO / "images/agent/Dockerfile").read_text(encoding="utf-8")
-    if "FROM nousresearch/hermes-agent:" not in dockerfile:
-        die("the generic agent image must retain the upstream Hermes base image")
+    dhi_base = re.search(
+        r"^FROM dhi\.io/python:\d+\.\d+-debian\d+-dev(?:@sha256:[0-9a-f]{64})?$",
+        dockerfile,
+        re.MULTILINE,
+    )
+    if dhi_base is None:
+        die("the generic agent image must use a tagged DHI Python dev base")
+    runtime_packages = dockerfile[
+        dhi_base.end() : dockerfile.index("COPY --from=sqlite_build", dhi_base.end())
+    ]
+    if re.search(r"^\s+gzip \\\s*$", runtime_packages, re.MULTILINE) is None:
+        die("the DHI runtime package layer must install gzip for tar.gz extraction")
+    runtime_stage = dockerfile[dhi_base.end() :]
+    apt_layers = re.findall(r"^RUN apt-get(?:\s|$)", runtime_stage, re.MULTILINE)
+    if len(apt_layers) != 1:
+        die("the DHI runtime must keep all directly managed OS packages in one apt layer")
+    shim_first_path = (
+        'PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"'
+    )
+    if dockerfile.count(shim_first_path) != 1:
+        die("the runtime PATH must put the Hermes privilege-drop shim before the venv")
+    if 'ENV PATH="/opt/hermes/.venv/bin:${PATH}"' in dockerfile:
+        die("a later Docker ENV must not move the Hermes venv ahead of its exec shim")
+    profile_path = 'export PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:$PATH"'
+    if profile_path not in dockerfile:
+        die("login-shell PATH fallback must preserve exec-shim precedence")
+    if "FROM nousresearch/hermes-agent:" in dockerfile:
+        die("the generic agent image must not inherit the prebuilt Hermes image")
+    if re.search(r"^RUN groupadd --gid 10000 agent \\$", dockerfile, re.MULTILINE) is None:
+        die("the generic agent image must create the neutral agent group at gid 10000")
+    if re.search(
+        r"^\s*&& useradd --uid 10000 --gid 10000 --create-home "
+        r"--home-dir /opt/data --shell /bin/sh agent \\$",
+        dockerfile,
+        re.MULTILINE,
+    ) is None:
+        die("the generic agent image must create the neutral agent user at uid 10000")
+    if re.search(r"\b(?:useradd|groupadd)\b[^\n]*\bhermes\b", dockerfile):
+        die("the generic agent image must not create a Hermes-named Linux account")
+    if re.search(r"^ARG HERMES_VERSION=v\d+\.\d+\.\d+$", dockerfile, re.MULTILINE) is None:
+        die("the agent image must pin the upstream Hermes release tag")
+    if re.search(r"^ARG HERMES_GIT_SHA=[0-9a-f]{40}$", dockerfile, re.MULTILINE) is None:
+        die("the agent image must pin the upstream Hermes release commit")
+    source_contracts = (
+        '--branch "${HERMES_VERSION}"',
+        'test "$(git -C /src rev-parse HEAD)" = "${HERMES_GIT_SHA}"',
+        "/opt/sqlite-fixed/bin/sqlite3",
+        "&& sqlite3 -version",
+        "/src/docker/tini-shim.sh /usr/bin/tini",
+        "COPY --link --chmod=a+rX,go-w --from=hermes_source /src/ .",
+        'org.opencontainers.image.base.name="dhi.io/python:',
+        "ENV HOME=/opt/data",
+        "HERMES_HOME=/opt/data/.hermes",
+        "HERMES_LAZY_INSTALL_TARGET=/opt/data/.hermes/lazy-packages",
+        "COPY home-scripts/migrate-hermes-home.sh /usr/local/bin/migrate-hermes-home",
+        "cp -a /opt/hermes/docker/hermes-exec-shim.sh /opt/hermes/bin/hermes",
+        'ENTRYPOINT [ "/opt/hermes/docker/entrypoint-dispatch.sh" ]',
+    )
+    missing_contracts = [item for item in source_contracts if item not in dockerfile]
+    if missing_contracts:
+        die(
+            "the DHI source build is missing required Hermes contracts: "
+            + ", ".join(missing_contracts)
+        )
 
     stages = yaml.safe_load(
         (REPO / "stages/stages.yaml").read_text(encoding="utf-8")
@@ -382,11 +445,11 @@ def main() -> None:
     if env.get("OPENCODE_EXPERIMENTAL_LSP_TOOL") != "1":
         die("OpenCode's LSP tool must be enabled in the agent runtime")
     if not (
-        env.get("HERMES_HOME") == "/opt/data"
+        env.get("HERMES_HOME") == "/opt/data/.hermes"
         and env.get("HERMES_DASHBOARD") == "1"
         and env.get("HERMES_DASHBOARD_HOST") == "0.0.0.0"
     ):
-        die("the agent runtime must preserve Hermes's upstream environment contract")
+        die("the agent runtime must isolate Hermes state while preserving its environment contract")
     if "-i /opt/agent-ssh/agent_ed25519 " not in env.get("GIT_SSH_COMMAND", ""):
         die("GIT_SSH_COMMAND must use the generic agent SSH key path")
 
@@ -394,8 +457,9 @@ def main() -> None:
     if not (
         volume_mounts["models"]["mountPath"].startswith("/opt/data/.hermes/")
         and volume_mounts["approval-policy"]["mountPath"].startswith("/opt/hermes/")
+        and volume_mounts["soul"]["mountPath"] == "/opt/data/.hermes/SOUL.md"
     ):
-        die("the agent runtime must preserve Hermes's upstream filesystem contract")
+        die("the agent runtime must isolate Hermes state while preserving its install tree")
     if volume_mounts["ssh-key"]["mountPath"] != "/opt/agent-ssh":
         die("the agent SSH key Secret must mount at /opt/agent-ssh")
     volumes = {item["name"]: item for item in pod_spec["volumes"]}
@@ -412,6 +476,23 @@ def main() -> None:
     if "hermes_agent_ed25519" in secret_setup:
         die("secret setup must not retain the retired Hermes SSH data key")
     validate_ssh_secret_migration()
+
+    seed_data = next(
+        container
+        for container in pod_spec["initContainers"]
+        if container["name"] == "seed-data"
+    )
+    seed_script = seed_data["args"][0]
+    required_home_layout = (
+        "/usr/local/bin/migrate-hermes-home",
+        'fastembed_dest="/opt/data/.hermes/cache/fastembed"',
+        "/opt/data/.hermes/plugins/mnemosyne",
+        "reconcile_config hermes yaml /opt/data/.hermes/config.yaml",
+        "touch /opt/data/.hermes/.restart_pending.json",
+    )
+    missing_layout = [item for item in required_home_layout if item not in seed_script]
+    if missing_layout:
+        die("seed-data is missing the split Hermes-home contract: " + ", ".join(missing_layout))
 
     if pod_spec.get("hostUsers") is not False:
         die("Sandbox pods must use a private user namespace")

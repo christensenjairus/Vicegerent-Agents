@@ -1,12 +1,12 @@
 # Vicegerent agent sandbox image
 
-The Vicegerent agent sandbox image is derived from upstream [`nousresearch/hermes-agent`](https://hub.docker.com/r/nousresearch/hermes-agent) and published to `harbor.hahomelabs.com/vicegerent/agent`. The sandbox is egress-locked and cannot reach Docker Hub, npm, or PyPI at runtime (`HERMES_DISABLE_LAZY_INSTALLS=1` is baked into the upstream image), so anything any bundled harness needs must be present in the image. This is the base every bake builds on.
+The Vicegerent agent sandbox is built on Docker Hardened Images' `dhi.io/python:3.13-debian13-dev` image and published to `harbor.hahomelabs.com/vicegerent/agent`. Docker Hardened Images standardizes its glibc variants on Debian rather than Ubuntu; the `-dev` variant is intentional because this coding sandbox ships a shell, compilers, and package managers at runtime. The Dockerfile clones the upstream [`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent) release tag, verifies its peeled commit, and installs that source directly. The sandbox is egress-locked and cannot reach Docker Hub, npm, or PyPI at runtime, so anything any bundled harness needs must be present in the image.
 
-## Why a derived image
+## Why a platform image
 
-The stock image ships the Hermes runtime but **not** the pieces this platform relies on. Verified against the upstream arm64 image configured in the Dockerfile:
+The tagged Hermes source build provides the runtime but **not** the pieces this platform relies on:
 
-| Needed | In stock image? |
+| Needed | In Hermes release image? |
 | --- | --- |
 | mnemosyne plugin + MiniCPM embedding gguf | no |
 | hermes-lcm context engine | no |
@@ -23,17 +23,26 @@ The stock image ships the Hermes runtime but **not** the pieces this platform re
 Built on a machine with internet (your laptop), then pushed to Harbor. The egress-locked cluster only ever pulls.
 
 ```sh
+docker login dhi.io
 docker login harbor.hahomelabs.com
 make image PLATFORM=linux/arm64      # Kind on Apple Silicon
 make push
 # or: make release PLATFORM=linux/arm64
 ```
 
-`make help` lists targets. `TAG` is `<upstream-version>-rev<N>`: keep the base in sync with the `FROM` upstream version and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream base bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
+`make help` lists targets. `TAG` is `<upstream-version>-rev<N>`: keep it in sync with `HERMES_VERSION` and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream release bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
 
-## Base pin
+## Base and source pins
 
-`FROM` is pinned by **tag + digest**: the tag keeps the reference Renovate-trackable and the digest makes the build reproducible. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
+`FROM` uses an explicit DHI Python development tag. Hermes is independently pinned by `HERMES_VERSION` and `HERMES_GIT_SHA`; the clone must resolve the release tag to that exact commit before the build continues. When advancing Hermes, update both pins and re-verify the complete patch stack. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
+
+## Runtime identity and homes
+
+The platform account is `agent` at UID/GID 10000 with `HOME=/opt/data`. Harness state is namespaced below that shared home: Hermes uses `HERMES_HOME=/opt/data/.hermes`, Codex uses `/opt/data/.codex`, Claude Code uses `/opt/data/.claude`, and OpenCode uses `/opt/data/.config/opencode`. Hermes' install prefix, virtual environment, CLI, and public `HERMES_*` variables remain under `/opt/hermes`; those are component contracts rather than platform identity.
+
+Upstream Hermes container scripts and its dynamic s6-service generator hard-code a Linux account named `hermes`. Patch `0052` changes only those privilege-drop and ownership references to `agent`, then the Dockerfile republishes the patched s6 and docker-exec scripts into their runtime locations. The image build runs patch `0052` against disposable copies of the exact pristine sources before applying the real patch stack. The seed init container runs `migrate-hermes-home` before reconciliation: it moves explicitly owned Hermes paths out of the former shared-home layout, preserves state already present at the new destination, retains collision sources under `/opt/data/.hermes/.legacy-home-backup-v1`, leaves other harness homes and generic files untouched, and links `/opt/data/.hermes/skills` to the platform-owned `/opt/data/skills` tree. A completion marker makes later runs no-ops, including after a rollback creates new root-level state, and a custom `HERMES_HOME` is not migrated automatically.
+
+Hermes remains the bundled gateway and supplies the image's current entrypoint and shared Python environment. Moving generic tools and supervision into a platform-owned prefix is a separate architectural change; this layout prevents the OS identity and writable state root from treating Hermes as the platform user while retaining clear Hermes component boundaries.
 
 ## Bakes
 
@@ -111,3 +120,4 @@ Upstream Hermes is also customized at build time by numbered Python scripts in `
 - `0043-model-pricing.py` — maintain one delta table for missing upstream model prices, apply it to live `usage_pricing`, and mirror the resulting complete table into agentburn's `burn_report` sink. A configured route is billable only when it has both a price and a `resolve_billing_route()` provider branch; `scripts/validate-model-pricing.py` renders every configured provider/failover/Mnemosyne route and checks both sinks.
 - `0044-shell-hooks-for-dashboard-serve.py` — register config-declared shell hooks for the `dashboard` and `serve` entrypoints, which run agent turns but upstream omits from its startup-registration gate.
 - `0045-hooks-doctor-entrypoint-coverage.py` — make `hermes hooks doctor` list the entrypoints that register hooks, closing the diagnostic gap where a valid hook could silently never run.
+- `0052-agent-runtime-identity.py` — rename the upstream container scripts' and dynamic s6-service generator's hard-coded Linux account from `hermes` to `agent` without renaming the Hermes CLI, install prefix, or environment contracts. Remove once upstream makes its runtime account configurable.

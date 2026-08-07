@@ -41,7 +41,7 @@ spec:
               # chown -R: stale uid-0 dirs from old subPath design cause EPERM on reseed; idempotent on fresh PVCs.
               mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode
               chown -R 10000:10000 /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode
-              # models PVC mount makes kubelet scaffold its parents as root:hermes with no group-write; fix it (non-recursive, skips the mounted content) before seed-data (uid 10000) reseeds under it.
+              # models PVC mount makes kubelet scaffold its parents as root:agent with no group-write; fix it (non-recursive, skips the mounted content) before seed-data (uid 10000) reseeds under it.
               mkdir -p /opt/data/.hermes/mnemosyne
               chown 10000:10000 /opt/data/.hermes /opt/data/.hermes/mnemosyne
           securityContext:
@@ -74,11 +74,11 @@ spec:
               export HOME=/opt/data
               # fastembed reads HERMES_HOME/cache; the local LLM reads ~/.hermes; faster-whisper
               # reads the default HF_HUB_CACHE (~/.cache/huggingface/hub) — three different dirs.
-              fastembed_dest="/opt/data/cache/fastembed"
+              fastembed_dest="/opt/data/.hermes/cache/fastembed"
               llm_dest="/opt/data/.hermes/mnemosyne/models"
               whisper_dest="/opt/data/.cache/huggingface/hub"
               marker_dir="/opt/data/.hermes"
-              mkdir -p "${fastembed_dest}" "${llm_dest}" "${whisper_dest}" "${marker_dir}" /opt/data/plugins /opt/data/.ssh
+              mkdir -p "${fastembed_dest}" "${llm_dest}" "${whisper_dest}" "${marker_dir}" /opt/data/.hermes/plugins /opt/data/.ssh
               # Seed egress proxy CA cert so curl, pip, git, and Python requests trust it.
               mkdir -p /opt/data/certs
               # Build combined CA bundle: system CAs + proxy CA.
@@ -123,7 +123,7 @@ spec:
                 for entry in "${old_home}"/* "${old_home}"/.[!.]*; do
                   [ -e "${entry}" ] || continue
                   name="$(basename "${entry}")"
-                  # .hermes was only the models mountpoint scaffold; the PVC mounts at /opt/data/.hermes now.
+                  # The Hermes subtree is merged by migrate-hermes-home below.
                   if [ "${name}" != ".hermes" ]; then
                     if [ -e "/opt/data/${name}" ]; then
                       rm -rf "${entry}"
@@ -134,6 +134,9 @@ spec:
                 done
                 find "${old_home}" -depth -type d -empty -delete 2>/dev/null || true
               fi
+              # Hermes used to share HOME directly. Move only its owned state into
+              # the per-harness home; generic harness homes and shared skills stay put.
+              /usr/local/bin/migrate-hermes-home
               # Drop the PVC copy left by the old imperative `git config --global` seeding.
               # The agent container mounts ~/.gitconfig read-only from a ConfigMap; this
               # init container has no such mount, so the path it sees is the stale PVC file.
@@ -181,7 +184,7 @@ spec:
                 done
               fi
               pkg="$(/opt/hermes/.venv/bin/python -c 'import mnemosyne_hermes, os; print(os.path.dirname(mnemosyne_hermes.__file__))')"
-              ln -sfn "${pkg}" /opt/data/plugins/mnemosyne
+              ln -sfn "${pkg}" /opt/data/.hermes/plugins/mnemosyne
               # Reconcile project-owned subtrees exactly while preserving harness state
               # and user preferences outside those boundaries.
               reconcile_config() {
@@ -208,12 +211,12 @@ spec:
               cp -f /reload/opencode-config/AGENTS.md /opt/data/.config/opencode/AGENTS.md
               # kanban init: pre-create SQLite schema on PVC; || true because self-inits on first call anyway.
               mkdir -p /opt/data/tmp
-              HERMES_HOME=/opt/data TMPDIR=/opt/data/tmp \
+              HERMES_HOME=/opt/data/.hermes TMPDIR=/opt/data/tmp \
                 /opt/hermes/.venv/bin/hermes kanban init || true
               # Remove any stale subPath artifact (dangling symlink or empty file from old design).
-              [ ! -s /opt/data/config.yaml ] && rm -f /opt/data/config.yaml
-              reconcile_config hermes yaml /opt/data/config.yaml /reload/hermes-config/config.yaml
-              touch /opt/data/.restart_pending.json
+              [ ! -s /opt/data/.hermes/config.yaml ] && rm -f /opt/data/.hermes/config.yaml
+              reconcile_config hermes yaml /opt/data/.hermes/config.yaml /reload/hermes-config/config.yaml
+              touch /opt/data/.hermes/.restart_pending.json
               find /opt/data/skills -type d -perm 555 -exec chmod u+w {} + 2>/dev/null || true
               /usr/local/bin/sync-shared-skills.sh || true
               # Baseline snapshot before any harness can reach the tree; the
@@ -417,7 +420,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: HERMES_HOME
-              value: /opt/data
+              value: /opt/data/.hermes
             # Route all HTTP(S) traffic through the GET-only MITM proxy.
             - name: http_proxy
               value: http://egress-proxy.egress-proxy.svc.cluster.local:8080
@@ -549,12 +552,8 @@ spec:
               mountPath: /opt/data/.gitconfig
               subPath: .gitconfig
               readOnly: true
-            - name: gitconfig
-              mountPath: /opt/data/home/.gitconfig
-              subPath: .gitconfig
-              readOnly: true
             - name: soul
-              mountPath: /opt/data/SOUL.md
+              mountPath: /opt/data/.hermes/SOUL.md
               subPath: SOUL.md
             - name: approval-policy
               mountPath: /opt/hermes/approval-policy.yaml

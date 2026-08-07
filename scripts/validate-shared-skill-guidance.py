@@ -15,6 +15,7 @@ REQUIRED_GUIDANCE: tuple[str, ...] = (
     "proactively save a compact declarative Mnemosyne memory in the same turn without asking for confirmation.",
     "Do not retain transient task state, raw logs, speculative conclusions, PR or issue identifiers, or duplicated documentation.",
     "Skills are shared procedural memory:",
+    "canonical tree at `/opt/data/skills`",
     "Read a skill before modifying it",
     "Do not create skills for one-off task progress.",
     "All pull requests and merge requests are forcibly kept as drafts by the platform. This is expected.",

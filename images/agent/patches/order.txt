@@ -13,6 +13,8 @@
 #
 #   0016 and 0020 must follow 0014 (they import helpers it adds).
 #   0039 must follow 0028 and 0036 (it rewrites their shared call site).
+#   0052 must follow 0046 because 0046 locates the upstream account-specific
+#   migration command before 0052 neutralizes every runtime-account reference.
 #
 #   0043 runs after every pricing-affecting patch. It is the single source of
 #   truth for model prices and
@@ -56,3 +58,4 @@
 0049-shell-hook-approval-refresh.py
 0050-kanban-orchestrator-board-guidance.py
 0051-mcp-parallel-tool-calls.py
+0052-agent-runtime-identity.py
