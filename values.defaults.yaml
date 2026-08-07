@@ -76,7 +76,7 @@ agentDefaults:
   image:
     # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/agent
     repository: harbor.hahomelabs.com/vicegerent/agent
-    tag: v2026.8.3-rev24
+    tag: v2026.8.3-rev25
   storage:
     data: 10Gi
     gitRepos: 50Gi

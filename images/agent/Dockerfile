@@ -588,10 +588,12 @@ VOLUME [ "/opt/data" ]
 # forces overlayfs copy-up), so it belongs here with the other base-image-only
 # work rather than after anything that changes more often.
 ENV BASH_ENV=/etc/bash-shadow-builtins.sh
+COPY --chmod=0644 bash-prompt.sh /etc/vicegerent-bash-prompt.sh
 RUN printf 'export PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:$PATH"\n' > /etc/profile.d/00-agent-venv-path.sh \
     && chmod 644 /etc/profile.d/00-agent-venv-path.sh \
     && printf 'enable -n "[" echo false kill printf pwd test true\n' > /etc/bash-shadow-builtins.sh \
     && chmod 644 /etc/bash-shadow-builtins.sh \
+    && printf '\n# Vicegerent interactive Bash prompt (tmux starts non-login Bash).\n[ -r /etc/vicegerent-bash-prompt.sh ] && . /etc/vicegerent-bash-prompt.sh\n' >> /etc/bash.bashrc \
     && find /opt/hermes/skills -name "SKILL.md" -exec chmod 644 {} +
 
 # Full Go toolchain so agents can build/test Go code (e.g. mcp-cerbos-shim).

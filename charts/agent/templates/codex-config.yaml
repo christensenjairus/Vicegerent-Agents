@@ -37,6 +37,8 @@ data:
     suppress_unstable_features_warning = true
     sandbox_mode = "danger-full-access"
     approval_policy = "never"
+    [tui]
+    alternate_screen = "always"
     [model_providers.vicegerent]
     name = "Vicegerent agentgateway"
     base_url = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/{{ $route }}"
