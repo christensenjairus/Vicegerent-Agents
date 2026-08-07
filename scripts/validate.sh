@@ -332,6 +332,9 @@ python3 scripts/validate-gitconfig-immutable.py
 echo "INFO - Asserting agent runtime ownership"
 python3 scripts/validate-agent-runtime.py
 
+echo "INFO - Asserting legacy Hermes state migrates into its per-harness home"
+python3 images/agent/patches/tests/test_hermes_home_migration.py
+
 echo "INFO - Asserting Slack access is single-operator and DM-only"
 python3 scripts/validate-slack-access.py
 

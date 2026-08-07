@@ -577,7 +577,7 @@ def test_empty_existing_files_are_treated_as_unseeded() -> None:
 def test_chart_invokes_reconciler_for_every_writable_config() -> None:
     sandbox = (ROOT / "charts/agent/templates/_sandbox.tpl").read_text(encoding="utf-8")
     expected_calls = {
-        "reconcile_config hermes yaml /opt/data/config.yaml /reload/hermes-config/config.yaml",
+        "reconcile_config hermes yaml /opt/data/.hermes/config.yaml /reload/hermes-config/config.yaml",
         "reconcile_config codex toml /opt/data/.codex/config.toml /reload/codex-config/config.toml",
         "reconcile_config claude-settings json /opt/data/.claude/settings.json /reload/claude-config/settings.json",
         "reconcile_config claude-state json /opt/data/.claude/.claude.json /reload/claude-config/claude.json",
