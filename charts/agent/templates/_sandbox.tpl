@@ -391,7 +391,7 @@ spec:
             - name: tmp
               mountPath: /tmp
       containers:
-        - name: {{ include "vicegerent-agent.name" . }}
+        - name: agent
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           args: [gateway]
           env:

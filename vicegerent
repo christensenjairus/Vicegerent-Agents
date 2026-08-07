@@ -390,8 +390,9 @@ case "${1:-}" in
     [[ $# -ge 1 ]] || { echo "usage: vicegerent ssh <agent-name>" >&2; exit 2; }
     AGENT="$(echo "$1" | tr '[:upper:]' '[:lower:]')"; shift
     require_kind_context
-    # The agent-sandbox controller names the Pod (and its app container) after the Sandbox/agent.
-    exec kubectl --context "$KUBE_CONTEXT" -n agent-sandbox exec -it "$AGENT" -c "$AGENT" \
+    # The agent-sandbox controller names the Pod after the Sandbox/agent; every agent's
+    # app container is named 'agent' regardless of the Sandbox/agent name.
+    exec kubectl --context "$KUBE_CONTEXT" -n agent-sandbox exec -it "$AGENT" -c agent \
       -- bash -c "cd /workspace && exec bash"
     ;;
   test)

@@ -43,9 +43,8 @@ POD="${POD:-$(kubectl "${CTX[@]}" -n "$NAMESPACE" get pods -l "$SELECTOR" \
   ui_command "kubectl -n ${NAMESPACE} get pods"
   exit 1
 }
-# The sandbox's single non-init container is named after the agent.
-CONTAINER="${CONTAINER:-$(kubectl "${CTX[@]}" -n "$NAMESPACE" get pod "$POD" \
-  -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || true)}"
+# Every agent's app container is named 'agent'.
+CONTAINER="${CONTAINER:-agent}"
 [[ -n "$CONTAINER" ]] || {
   ui_error "Could not resolve the agent container in pod '${POD}'."
   exit 1

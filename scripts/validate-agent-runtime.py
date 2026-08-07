@@ -126,6 +126,8 @@ def validate_release_named_resources(documents: list[dict], release_name: str) -
         )
 
     container = pod_spec["containers"][0]
+    if container["name"] != "agent":
+        die(f"the Sandbox app container must be named 'agent', not {release_name}")
     env_secrets = {
         item["secretRef"]["name"]
         for item in container.get("envFrom", [])
@@ -344,8 +346,8 @@ def main() -> None:
         ):
             die(f"{profile.relative_to(REPO)} must label the operator's pod")
         container = pod_template["spec"]["containers"][0]
-        if container["name"] != OPERATOR_NAME:
-            die(f"{profile.relative_to(REPO)} must render the operator's container")
+        if container["name"] != "agent":
+            die(f"{profile.relative_to(REPO)} must render the shared 'agent' container name")
 
     alternate_name = "alternate-agent"
     alternate_documents = render_documents(release_name=alternate_name)
@@ -356,9 +358,9 @@ def main() -> None:
         alternate["metadata"]["name"] == alternate_name
         and alternate_template["metadata"]["labels"].get("vicegerent.io/dashboard")
         == alternate_name
-        and alternate_container["name"] == alternate_name
+        and alternate_container["name"] == "agent"
     ):
-        die("Sandbox, pod label, and container identity must follow the Helm release name")
+        die("Sandbox and pod label identity must follow the Helm release name; container must stay 'agent'")
 
     log_values = yaml.safe_load(
         (REPO / "stages/values/victoria-logs.yaml").read_text(encoding="utf-8")
@@ -369,10 +371,10 @@ def main() -> None:
     required_log_scope = (
         '.kubernetes.pod_labels."vicegerent.io/dashboard"',
         'sandbox_agent != ""',
-        "container == sandbox_agent",
+        'container == "agent"',
     )
     if any(fragment not in log_scope for fragment in required_log_scope):
-        die("VictoriaLogs must select each sandbox's release-named agent container")
+        die("VictoriaLogs must select every sandbox's shared 'agent' container")
 
     pod_spec = render_sandbox()["spec"]["podTemplate"]["spec"]
     agent = pod_spec["containers"][0]
