@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assert the agent Sandbox owns ~/.gitconfig instead of seeding it imperatively.
+"""Assert the agent Sandbox owns global git config in every Hermes HOME.
 
 The protected-branch guard's global-scope rung depends on manifest facts, not on
 the shell scripts in images/agent/git-guard/: the ConfigMap must carry
@@ -21,6 +21,7 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent
 TRUSTED_HOOKS = "/opt/vicegerent/git-hooks"
 GITCONFIG_PATH = "/opt/data/.gitconfig"
+GITCONFIG_PATHS = (GITCONFIG_PATH, "/opt/data/home/.gitconfig")
 
 
 def die(msg: str) -> None:
@@ -85,15 +86,25 @@ def main() -> None:
         containers = spec.get("containers", [])
         inits = spec.get("initContainers", [])
 
-        agent_mounts = [m for c in containers for m in c.get("volumeMounts", [])
-                        if m.get("mountPath") == GITCONFIG_PATH]
-        if not agent_mounts:
-            die(f"no container mounts {GITCONFIG_PATH}; the global rung stays writable")
-        for m in agent_mounts:
-            if m.get("subPath") != ".gitconfig":
-                die(f"{GITCONFIG_PATH} mount must use subPath .gitconfig, got {m.get('subPath')!r}")
-            if not m.get("readOnly"):
-                die(f"{GITCONFIG_PATH} mount is not readOnly; the agent could replace it")
+        agent_mounts = []
+        for path in GITCONFIG_PATHS:
+            path_mounts = [
+                m
+                for c in containers
+                for m in c.get("volumeMounts", [])
+                if m.get("mountPath") == path
+            ]
+            if not path_mounts:
+                die(f"no container mounts {path}; the global rung stays writable")
+            for m in path_mounts:
+                if m.get("subPath") != ".gitconfig":
+                    die(
+                        f"{path} mount must use subPath .gitconfig, "
+                        f"got {m.get('subPath')!r}"
+                    )
+                if not m.get("readOnly"):
+                    die(f"{path} mount is not readOnly; the agent could replace it")
+            agent_mounts.extend(path_mounts)
 
         vol_names = {m["name"] for m in agent_mounts}
         volumes = {v["name"]: v for v in spec.get("volumes", [])}
@@ -115,8 +126,11 @@ def main() -> None:
                         die(f"container {c['name']!r} still runs `git config --global` "
                             f"({line.strip()!r}); identity must come from the ConfigMap mount")
 
-    print(f"OK - agent ~/.gitconfig is a readOnly ConfigMap mount pinning "
-          f"core.hooksPath={TRUSTED_HOOKS}; no imperative git config --global remains")
+    print(
+        "OK - agent global git config is a readOnly ConfigMap mount at "
+        f"{', '.join(GITCONFIG_PATHS)}, pinning core.hooksPath={TRUSTED_HOOKS}; "
+        "no imperative git config --global remains"
+    )
 
 
 if __name__ == "__main__":
