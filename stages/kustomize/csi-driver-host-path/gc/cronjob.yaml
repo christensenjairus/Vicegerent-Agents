@@ -30,8 +30,11 @@ spec:
             # as unreferenced. An initContainer finishes while every live
             # workload still pins its image.
             - name: prune-node-images
-              # renovate: datasource=docker depName=alpine/k8s
-              image: alpine/k8s:1.36.2
+              # The mounted crictl is dynamically linked against the node's
+              # glibc, so this base must be glibc and no older than the node's
+              # Debian release. Under a musl base the loader is absent and the
+              # binary fails to exec as a bare "not found".
+              image: debian:trixie-slim
               command: [/bin/sh, /scripts/prune-node-images.sh]
               securityContext:
                 # containerd's socket is root:root 0660, so root alone suffices.
@@ -85,8 +88,8 @@ spec:
                 type: Directory
             - name: tmp
               emptyDir: {}
-            # kind's node image is the only source of crictl here, and cri-tools
-            # builds it CGO-free, so the node's binary runs as-is under alpine.
+            # kind's node image is the only source of crictl here; no image this
+            # repo pins ships one.
             - name: crictl
               hostPath:
                 path: /usr/local/bin/crictl
