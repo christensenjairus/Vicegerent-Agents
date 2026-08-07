@@ -344,7 +344,7 @@ spec:
 
               # 3) vMCP: MCP initialize POST through the proxy must return HTTP 200.
               #    This exercises the full path: proxy -> agentgateway -> ghostunnel -> host ToolHive vMCP.
-              n=0
+              #    vMCP is mandatory, so keep the pod in Init until the host MCP stack is up.
               body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"wait-deps","version":"0"}}}'
               echo "waiting for vMCP initialize (200) at ${VMCP}..."
               until code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
@@ -354,14 +354,9 @@ spec:
                       -d "${body}" \
                       "${VMCP}" 2>/dev/null) \
                     && [ "${code}" = "200" ]; do
-                n=$((n+1))
-                if [ "${n}" -ge "${MAX}" ]; then
-                  echo "WARNING: vMCP did not return 200 (last=${code:-none}); continuing anyway"
-                  break
-                fi
                 sleep "${INTERVAL}"
               done
-              [ "${n}" -lt "${MAX}" ] && echo "vMCP ready (HTTP ${code})"
+              echo "vMCP ready (HTTP ${code})"
 
               echo "wait-deps: dependency checks complete"
               exit 0
