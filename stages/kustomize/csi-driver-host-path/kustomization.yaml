@@ -7,3 +7,4 @@ resources:
   - storageclass.yaml
   - volumesnapshotclass.yaml
   - driver
+  - gc

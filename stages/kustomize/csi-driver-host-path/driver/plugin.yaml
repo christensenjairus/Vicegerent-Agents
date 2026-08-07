@@ -337,6 +337,8 @@ spec:
             - -v=5
             - --csi-address=/csi/csi.sock
             - --feature-gates=Topology=true
+            # Default is 10s, too short to clone a gitrepos volume (up to 50Gi).
+            - --timeout=30m
             # end csi-provisioner args
           securityContext:
             # This is necessary only for systems with SELinux, where
@@ -359,7 +361,8 @@ spec:
               name: socket-dir
         - name: csi-snapshotter
           image: registry.k8s.io/sig-storage/csi-snapshotter:v8.6.0
-          args: [-v=5, --csi-address=/csi/csi.sock]
+          # Default is 1m, too short to snapshot a gitrepos volume (up to 50Gi).
+          args: [-v=5, --csi-address=/csi/csi.sock, --timeout=30m]
           securityContext:
             # This is necessary only for systems with SELinux, where
             # non-privileged sidecar containers cannot access unix domain socket

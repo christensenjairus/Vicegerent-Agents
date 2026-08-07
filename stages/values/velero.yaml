@@ -56,3 +56,6 @@ schedules:
       # captures CRDs/ClusterRoles/StorageClasses/PVs, not just namespaced objects.
       includedNamespaces: ['*']
       includeClusterResources: true
+      # This only covers the schedule; pass --exclude-namespaces velero on
+      # every ad-hoc `velero backup create` too, or this has no effect there.
+      excludedNamespaces: [velero]

@@ -1,0 +1,61 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: csi-hostpath-gc
+spec:
+  # Native CronJob rejects a CRON_TZ=/TZ= prefix in schedule; timeZone is the
+  # separate field for it. Keep this clear of the 13:00 velero-vicegerent-daily
+  # backup (stages/values/velero.yaml) so it never pauses the plugin mid-backup.
+  schedule: 0 6 * * *
+  timeZone: America/Denver
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 900
+      template:
+        spec:
+          serviceAccountName: csi-hostpath-gc
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reconcile
+              # renovate: datasource=docker depName=alpine/k8s
+              image: alpine/k8s:1.36.2
+              command: [/bin/sh, /scripts/reconcile.sh]
+              securityContext:
+                # csi-hostpath's volume directories have mixed-UID owners; root
+                # needs DAC_OVERRIDE (not the default-dropped ALL) to delete them.
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+                  add: [DAC_OVERRIDE]
+              env:
+                - name: HOME
+                  value: /tmp
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: csi-data-dir
+                  mountPath: /csi-data-dir
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: csi-hostpath-gc-scripts
+                defaultMode: 0555
+            - name: csi-data-dir
+              hostPath:
+                path: /var/lib/csi-hostpath-data/
+                type: Directory
+            - name: tmp
+              emptyDir: {}
