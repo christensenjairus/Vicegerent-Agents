@@ -377,6 +377,7 @@ auxiliary:
   title_generation:
     provider: {{ $primaryProvider }}
     model: {{ $primaryAuxiliaryModel }}
+    language: en
   approval:
     provider: {{ $primaryProvider }}
     model: {{ $primaryAuxiliaryModel }}
