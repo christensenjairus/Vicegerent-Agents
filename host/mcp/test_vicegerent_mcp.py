@@ -12,6 +12,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import call, patch
 
@@ -34,6 +35,114 @@ class InternalKubeconfigTests(unittest.TestCase):
 
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
             self.assertEqual(path.read_text(encoding="utf-8"), completed.stdout)
+
+
+class WorkloadRecoveryTests(unittest.TestCase):
+    def test_error_recovery_stops_before_starting(self) -> None:
+        config = {"group": "vicegerent", "servers": [{"name": "firecrawl", "enabled": True}]}
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(
+                vicegerent_mcp,
+                "list_workloads",
+                side_effect=[{"firecrawl": "error"}, {"firecrawl": "stopped"}, {"firecrawl": "running"}],
+            ),
+            patch.object(vicegerent_mcp, "thv", return_value=completed) as thv,
+            patch.object(vicegerent_mcp.time, "sleep"),
+        ):
+            vicegerent_mcp.wait_for_workloads_running(config, Path(directory), timeout=30)
+
+        self.assertEqual(thv.call_args_list, [call("stop", "firecrawl"), call("start", "firecrawl")])
+
+    def test_error_recovery_does_not_issue_restart(self) -> None:
+        config = {"group": "vicegerent", "servers": [{"name": "github", "enabled": True}]}
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(
+                vicegerent_mcp,
+                "list_workloads",
+                side_effect=[{"github": "error"}, {"github": "running"}],
+            ),
+            patch.object(vicegerent_mcp, "thv", return_value=completed) as thv,
+            patch.object(vicegerent_mcp.time, "sleep"),
+        ):
+            vicegerent_mcp.wait_for_workloads_running(config, Path(directory), timeout=30)
+
+        self.assertEqual(thv.call_args_list, [call("stop", "github")])
+
+
+class HealthWatchTests(unittest.TestCase):
+    def test_running_workload_clears_a_prior_watcher_notification(self) -> None:
+        config = {"group": "vicegerent", "servers": [{"name": "github", "enabled": True}]}
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp, "load_servers_config", return_value=config),
+            patch.object(vicegerent_mcp, "load_server_state", return_value={}),
+            patch.object(vicegerent_mcp, "list_workloads", return_value={"github": "running"}),
+            patch.object(vicegerent_mcp, "_notify_clear") as notify_clear,
+            patch.object(vicegerent_mcp.time, "sleep", side_effect=KeyboardInterrupt),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                vicegerent_mcp.health_watch(Path(directory), interval=1)
+
+        self.assertEqual(
+            notify_clear.call_args_list,
+            [call("vicegerent-mcp-github"), call(vicegerent_mcp._AWS_CRED_GROUP)],
+        )
+
+    def test_healthy_credentials_clear_a_prior_watcher_notification(self) -> None:
+        config = {"group": "vicegerent", "servers": [{"name": "aws", "enabled": True}]}
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp, "load_servers_config", return_value=config),
+            patch.object(vicegerent_mcp, "load_server_state", return_value={}),
+            patch.object(vicegerent_mcp, "list_workloads", return_value={"aws": "running"}),
+            patch.object(vicegerent_mcp, "server_param", return_value=""),
+            patch.object(vicegerent_mcp, "_aws_cred_status", return_value=None),
+            patch.object(vicegerent_mcp, "_notify_clear") as notify_clear,
+            patch.object(vicegerent_mcp.time, "sleep", side_effect=KeyboardInterrupt),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                vicegerent_mcp.health_watch(Path(directory), interval=1)
+
+        self.assertEqual(
+            notify_clear.call_args_list,
+            [call("vicegerent-mcp-aws"), call(vicegerent_mcp._AWS_CRED_GROUP)],
+        )
+
+
+class NotificationTests(unittest.TestCase):
+    def test_notification_message_is_not_timestamped(self) -> None:
+        with patch.object(vicegerent_mcp.subprocess, "run") as run:
+            vicegerent_mcp._notify("Title", "Message", group="test")
+
+        self.assertIn("Message", run.call_args.args[0])
+        self.assertNotIn("Message [", run.call_args.args[0])
+
+    def test_aws_expiry_message_shows_only_the_local_12_hour_time(self) -> None:
+        now = datetime(2026, 8, 7, 20, 0, tzinfo=timezone.utc)
+        expires_at = datetime(2026, 8, 8, 4, 27, 36, tzinfo=timezone.utc)
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+        class FakeDatetime:
+            @classmethod
+            def now(cls, tz: timezone) -> datetime:
+                return now
+
+        with (
+            patch.object(vicegerent_mcp.subprocess, "run", return_value=completed),
+            patch.object(vicegerent_mcp, "datetime", FakeDatetime),
+            patch.object(vicegerent_mcp, "_profile_sso_start_url", return_value="https://example.com/start"),
+            patch.object(vicegerent_mcp, "_sso_token_expiry", return_value=expires_at),
+        ):
+            result = vicegerent_mcp._aws_cred_status("", warning_secs=60 * 60 * 12)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result[2], f"Expires at {expires_at.astimezone():%I:%M %p}.")
 
 
 class StoreHiddenSecretTests(unittest.TestCase):
