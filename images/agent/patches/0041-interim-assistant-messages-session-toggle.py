@@ -8,11 +8,10 @@ Context
 -------
 ``display.interim_assistant_messages`` (gateway/display_config.py) gates
 whether Hermes sends natural mid-turn "here's what I'm doing" chat messages.
-Slack defaults to this being on (Tier 2 / _TIER_MEDIUM); this deployment sets
-it to ``false`` globally so the bot stays quiet by default, but users
-occasionally want a lightweight way to flip it on temporarily -- to peek at
-what the agent is doing mid-turn -- and back off again, without editing
-config.yaml or redeploying.
+This deployment enables it for Slack DMs but suppresses it by default in
+public channels, private channels, and MPIMs, matching the runtime footer's
+DM-only default. Users can still flip it on or off for the current session
+without editing config.yaml or redeploying.
 
 No native command exists for this today. The closest precedents are
 ``/yolo`` (tools/approval.py's module-level ``_session_yolo`` set -- a pure,
@@ -34,7 +33,7 @@ unrelated clearing mechanisms. This patch's new attribute is intentionally
 listed in ``_CONVERSATION_SCOPED_STATE`` to get the reset-on-boundary
 behavior explicitly and for the same reason ``/reasoning`` gets it.
 
-This patch touches five places across four files:
+This patch touches seven places across four files:
 
 1. ``hermes_cli/commands.py`` -- registers ``CommandDef("chatter", ...)`` in
    ``COMMAND_REGISTRY``, the single source of truth every consumer (CLI
@@ -66,11 +65,11 @@ This patch touches five places across four files:
    self._handle_chatter_command(event)`` immediately after the existing
    ``"yolo"`` arm.
 
-5. ``gateway/run.py`` (``_run_agent_inner``'s ``interim_assistant_messages_mode``
-   read site) -- layers the session override on top of the existing
-   ``_display_surface_mode("interim_assistant_messages", ...)`` resolution,
-   purely additively: when no override is set for the current session_key,
-   ``interim_assistant_messages_mode`` is byte-for-byte identical to today.
+5. ``gateway/run.py`` adds ``_slack_dm_scoped_display_default`` and applies it
+   to the config-resolved value before consulting the session override. Slack
+   DMs retain their configured value; non-DM Slack conversations fail closed
+   to off; other platforms are unchanged. A session override still wins, so
+   ``!chatter`` can explicitly enable chatter in a shared channel.
 
 6. ``gateway/slash_commands.py`` -- adds ``_handle_chatter_command``,
    mirroring ``_handle_yolo_command``'s structure. Unlike YOLO (which has no
@@ -79,9 +78,10 @@ This patch touches five places across four files:
    possibly platform-tiered config default, so the toggle direction on
    first use (no session override yet) resolves the same effective current
    state ``_display_surface_mode`` would compute, via the module-level twin
-   helper ``_resolve_gateway_display_bool`` -- otherwise a user whose config
-   default is already "on" would have their first ``/chatter`` press
-   silently produce the wrong direction from their perspective.
+   helpers ``_resolve_gateway_display_bool`` and
+   ``_slack_dm_scoped_display_default`` -- otherwise a user in a shared Slack
+   channel would have their first ``/chatter`` press toggle in the wrong
+   direction from their perspective.
 
 7. ``locales/en.yaml`` -- adds a ``gateway.chatter.*`` block alongside the
    existing ``gateway.yolo.*`` block. Located via ``agent.i18n._locales_dir()``
@@ -168,7 +168,37 @@ REPLACEMENT_SCOPED_STATE = (
     "    \"_session_service_tier_overrides\",\n"
 )
 
-# --- 4. gateway/run.py: dispatch chain --------------------------------------
+# --- 4. gateway/run.py: shared Slack DM-scoped default helper --------------
+
+ANCHOR_DISPLAY_HELPER = (
+    "    if value is None:\n"
+    "        return bool(default)\n"
+    "    return bool(value)\n"
+    "\n"
+    "\n"
+    "def _telegramize_command_mentions(text: str, platform: Any) -> str:\n"
+)
+
+REPLACEMENT_DISPLAY_HELPER = (
+    "    if value is None:\n"
+    "        return bool(default)\n"
+    "    return bool(value)\n"
+    "\n"
+    "\n"
+    "def _slack_dm_scoped_display_default(source: Any, configured: Any) -> Any:\n"
+    "    \"\"\"Keep a display default enabled only in Slack direct messages.\"\"\"\n"
+    "    if (\n"
+    "        source.platform == Platform.SLACK\n"
+    "        and not str(source.chat_id or \"\").startswith(\"D\")\n"
+    "    ):\n"
+    "        return False if isinstance(configured, bool) else \"off\"\n"
+    "    return configured\n"
+    "\n"
+    "\n"
+    "def _telegramize_command_mentions(text: str, platform: Any) -> str:\n"
+)
+
+# --- 5. gateway/run.py: dispatch chain --------------------------------------
 
 ANCHOR_DISPATCH = (
     "        if canonical == \"yolo\":\n"
@@ -183,7 +213,7 @@ REPLACEMENT_DISPATCH = (
     "            return await self._handle_chatter_command(event)\n"
 )
 
-# --- 5. gateway/run.py: interim_assistant_messages_mode read site ----------
+# --- 6. gateway/run.py: interim_assistant_messages_mode read site ----------
 
 ANCHOR_READ_SITE = (
     "        # Natural assistant status messages are intentionally independent from\n"
@@ -208,6 +238,9 @@ REPLACEMENT_READ_SITE = (
     "            \"interim_assistant_messages\",\n"
     "            default=True,\n"
     "            require_platform_override_for={Platform.MATTERMOST},\n"
+    "        )\n"
+    "        interim_assistant_messages_mode = _slack_dm_scoped_display_default(\n"
+    "            source, interim_assistant_messages_mode\n"
     "        )\n"
     "        # Vicegerent patch 0041: a session-scoped /chatter override (set by\n"
     "        # _handle_chatter_command in gateway/slash_commands.py) takes\n"
@@ -234,7 +267,7 @@ REPLACEMENT_READ_SITE = (
     "        )\n"
 )
 
-# --- 6. gateway/slash_commands.py: new handler -----------------------------
+# --- 7. gateway/slash_commands.py: new handler -----------------------------
 
 ANCHOR_HANDLER_INSERT = (
     "    async def _handle_verbose_command(self, event: MessageEvent) -> str:\n"
@@ -259,6 +292,7 @@ REPLACEMENT_HANDLER_INSERT = (
     "            _load_gateway_config,\n"
     "            _platform_config_key,\n"
     "            _resolve_gateway_display_bool,\n"
+    "            _slack_dm_scoped_display_default,\n"
     "        )\n"
     "\n"
     "        session_key = self._session_key_for_source(event.source)\n"
@@ -274,6 +308,7 @@ REPLACEMENT_HANDLER_INSERT = (
     "                platform=event.source.platform,\n"
     "                require_platform_override_for={Platform.MATTERMOST},\n"
     "            )\n"
+    "            current = _slack_dm_scoped_display_default(event.source, current)\n"
     "\n"
     "        new_value = not current\n"
     "        if not hasattr(self, \"_session_interim_assistant_message_overrides\"):\n"
@@ -360,6 +395,9 @@ def _patch_gateway_run() -> None:
     _count_or_raise(src, ANCHOR_SCOPED_STATE, path, "_CONVERSATION_SCOPED_STATE tuple entries")
     src = src.replace(ANCHOR_SCOPED_STATE, REPLACEMENT_SCOPED_STATE, 1)
 
+    _count_or_raise(src, ANCHOR_DISPLAY_HELPER, path, "display helper insertion point")
+    src = src.replace(ANCHOR_DISPLAY_HELPER, REPLACEMENT_DISPLAY_HELPER, 1)
+
     _count_or_raise(src, ANCHOR_DISPATCH, path, "yolo dispatch arm")
     src = src.replace(ANCHOR_DISPATCH, REPLACEMENT_DISPATCH, 1)
 
@@ -368,8 +406,9 @@ def _patch_gateway_run() -> None:
 
     src += (
         f"\n# {APPLIED_MARKER}: added _session_interim_assistant_message_overrides "
-        "(incl. _CONVERSATION_SCOPED_STATE entry), the 'chatter' dispatch arm, and "
-        "the session-override precedence layer on interim_assistant_messages_mode.\n"
+        "(incl. _CONVERSATION_SCOPED_STATE entry), Slack DM-scoped defaults, the "
+        "'chatter' dispatch arm, and the session-override precedence layer on "
+        "interim_assistant_messages_mode.\n"
     )
 
     with open(path, "w", encoding="utf-8") as f:

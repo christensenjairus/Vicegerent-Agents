@@ -417,7 +417,7 @@ display:
   platforms:
     slack:
       tool_progress: false
-      interim_assistant_messages: false
+      interim_assistant_messages: true
       long_running_notifications: false
       runtime_footer:
         enabled: true
