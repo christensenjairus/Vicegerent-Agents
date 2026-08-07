@@ -54,7 +54,7 @@ backends:
       gitlab_get_label: *gitlab_project
       # isMrCreate lets policy permit creation into the normal target branch but
       # deny retargeting an existing MR. Draft state is derived from the title,
-      # so forceFrom prefixes a supplied title without inventing one on update.
+      # so creation prefixes the supplied title.
       gitlab_create_merge_request:
         <<: *gitlab_project
         forceFrom: gitlabDraftTitleForce(args)
@@ -63,7 +63,6 @@ backends:
           isMrCreate: "'true'"
       gitlab_update_merge_request:
         <<: *gitlab_project
-        forceFrom: gitlabDraftTitleForce(args)
         attrFrom: gitlabMergeRequestAttr(args)
         attr:
           isMrCreate: "'false'"
@@ -285,10 +284,9 @@ backends:
           owner: get(args,'owner','')
           repo: get(args,'repo','')
           branch: get(args,'branch','')
-      # create/update_pull_request force draft: true regardless of what's sent —
-      # every PR the agent opens (or un-drafts via update) stays a draft. This is
-      # a mutation (allow-with-rewritten-args), not a deny: see server.go's Force
-      # handling. Applied only after the repo/branch checks above already passed.
+      # create_pull_request forces draft: true. This is a mutation
+      # (allow-with-rewritten-args), not a deny: see server.go's Force handling.
+      # Applied only after the repo/branch checks above already passed.
       # Both tools also carry a 'reviewers' array (GitHub usernames or
       # ORG/team-slug reviewers to request) -- there is no separate
       # "assignee" concept on a PR (assignees only exists on issue_write,
@@ -321,7 +319,6 @@ backends:
           isPrCreate: "'true'"
       github_update_pull_request:
         <<: *github_repo
-        force: {draft: true}
         attrFrom: githubReviewersAttr(args)
         attr:
           owner: get(args,'owner','')

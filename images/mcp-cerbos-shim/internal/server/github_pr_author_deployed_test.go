@@ -99,11 +99,9 @@ func TestDeployedGithubMapping_RequestCopilotReviewOnOtherAuthorResolvesAndForwa
 	}
 }
 
-// TestDeployedGithubMapping_UpdatePullRequestOnOwnPRStillForcesDraft proves the
-// author gate composes correctly with the PRE-EXISTING force:{draft:true}
-// mapping on update_pull_request: an allowed call (own PR) must still come
-// back Mutated with draft forced, not a bare Pass.
-func TestDeployedGithubMapping_UpdatePullRequestOnOwnPRStillForcesDraft(t *testing.T) {
+// TestDeployedGithubMapping_UpdatePullRequestOnOwnPRPassesThrough proves the
+// author gate permits an owned pull request update without changing draft state.
+func TestDeployedGithubMapping_UpdatePullRequestOnOwnPRPassesThrough(t *testing.T) {
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{text: githubPRResultOwnAuthor}
 	s := newGithubServer(t, d, up)
@@ -113,15 +111,11 @@ func TestDeployedGithubMapping_UpdatePullRequestOnOwnPRStillForcesDraft(t *testi
 	if err != nil {
 		t.Fatalf("CheckRequest: %v", err)
 	}
-	if !isMutated(res) {
-		t.Fatalf("expected a mutated (force draft:true) result, got pass=%v deny=%v", isPass(res), isDeny(res))
+	if !isPass(res) {
+		t.Fatalf("expected an untouched pass, got mutated=%v deny=%v", isMutated(res), isDeny(res))
 	}
 	if got, _ := d.gotAttr["prAuthor"].(string); got != "christensenjairus" {
 		t.Errorf("Cerbos saw prAuthor=%q, want christensenjairus", got)
-	}
-	_, args := decodeMutated(t, res)
-	if args["draft"] != true {
-		t.Errorf("forced arg draft = %v, want true", args["draft"])
 	}
 }
 

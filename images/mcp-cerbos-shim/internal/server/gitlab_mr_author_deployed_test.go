@@ -62,10 +62,8 @@ func TestDeployedGitlabMapping_UpdateMergeRequestResolvesAndForwardsAuthor(t *te
 	if err != nil {
 		t.Fatalf("CheckRequest: %v", err)
 	}
-	// update_merge_request also carries the draft override, so an allowed call
-	// comes back Mutated rather than a bare Pass.
-	if !isMutated(res) {
-		t.Fatalf("expected a mutated (draft title rewrite) result, got pass=%v deny=%v", isPass(res), isDeny(res))
+	if !isPass(res) {
+		t.Fatalf("expected an untouched pass, got mutated=%v deny=%v", isMutated(res), isDeny(res))
 	}
 	if up.calls != 1 {
 		t.Errorf("expected exactly one get_merge_request lookup, got %d", up.calls)
@@ -81,18 +79,6 @@ func TestDeployedGitlabMapping_UpdateMergeRequestResolvesAndForwardsAuthor(t *te
 	}
 	if got, _ := d.gotAttr["mrAuthor"].(string); got != "jchristensen" {
 		t.Errorf("Cerbos saw mrAuthor=%q, want the resolved author jchristensen", got)
-	}
-	_, args := decodeMutated(t, res)
-	// GitLab has no draft boolean — draft comes from the title prefix, so the
-	// override rewrites the title rather than setting draft:true (which the
-	// API silently ignores). Asserting the title is what makes this test
-	// reflect deployed behaviour: it previously asserted draft==true, which
-	// passed while every real agent-opened MR shipped non-draft.
-	if args["title"] != "Draft: new title" {
-		t.Errorf("forced arg title = %v, want %q", args["title"], "Draft: new title")
-	}
-	if _, present := args["draft"]; present {
-		t.Errorf("draft arg should not be forced on GitLab (it is ignored by the API), got %v", args["draft"])
 	}
 }
 
@@ -242,7 +228,7 @@ func TestDeployedGitlabMapping_UnconfiguredMRAuthorGateFailsClosed(t *testing.T)
 
 // TestDeployedGitlabMapping_CreateMergeRequestDoesNotTriggerAuthorGate: there is
 // no prior MR to look up, and the bot's own token authors whatever it creates.
-// Its force:{draft:true} mapping still applies independently.
+// Its title-derived draft rewrite still applies independently.
 func TestDeployedGitlabMapping_CreateMergeRequestDoesNotTriggerAuthorGate(t *testing.T) {
 	d := &stubDecider{allow: true}
 	up := &fakeUpstream{err: errors.New("must not be called")}
@@ -254,7 +240,7 @@ func TestDeployedGitlabMapping_CreateMergeRequestDoesNotTriggerAuthorGate(t *tes
 		t.Fatalf("CheckRequest: %v", err)
 	}
 	if !isMutated(res) {
-		t.Fatalf("expected a mutated (force draft:true) result, got pass=%v deny=%v", isPass(res), isDeny(res))
+		t.Fatalf("expected a mutated (draft title rewrite) result, got pass=%v deny=%v", isPass(res), isDeny(res))
 	}
 	if up.calls != 0 {
 		t.Errorf("create_merge_request must not trigger the MR-author lookup gate, got %d calls", up.calls)

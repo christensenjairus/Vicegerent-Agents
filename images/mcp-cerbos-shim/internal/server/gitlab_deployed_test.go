@@ -312,16 +312,15 @@ func TestDeployedGitlabMapping_TargetProjectIdIsSurfaced(t *testing.T) {
 	}
 }
 
-// TestDeployedGitlabMapping_MergeRequestsAlwaysForceDraft proves the SHIPPED
-// mapping's draft override on create/update_merge_request, the GitLab half of
-// the GitHub force-draft rule.
+// TestDeployedGitlabMapping_MergeRequestsOnlyForceDraftOnCreation proves the
+// SHIPPED mapping's draft override applies only to create_merge_request.
 //
 // GitLab has no draft boolean: draft status is derived from the TITLE
 // ("Draft: ..."). Verified live -- passing draft:true is silently ignored and
 // the MR comes back draft:false. So the override rewrites the title, and this
 // test asserts the TITLE, not a draft flag. It previously asserted draft==true
 // and passed while every real agent-opened MR shipped ready-for-review.
-func TestDeployedGitlabMapping_MergeRequestsAlwaysForceDraft(t *testing.T) {
+func TestDeployedGitlabMapping_MergeRequestsOnlyForceDraftOnCreation(t *testing.T) {
 	m := deployedMapping(t)
 	e, err := eval.Compile(m)
 	if err != nil {
@@ -339,7 +338,7 @@ func TestDeployedGitlabMapping_MergeRequestsAlwaysForceDraft(t *testing.T) {
 		}, "Draft: t"},
 		{"gitlab_update_merge_request", map[string]any{
 			"project_id": "148", "merge_request_iid": "42", "title": "t", "draft": false,
-		}, "Draft: t"},
+		}, ""},
 		{
 			// An already-drafted title must not be double-prefixed.
 			"gitlab_update_merge_request", map[string]any{
