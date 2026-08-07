@@ -342,7 +342,7 @@ class ApplyTests(unittest.TestCase):
 
         self.assertEqual(brew.commands, [
             ("list", "--versions", self.package.formula),
-            ("install", self.package.formula),
+            ("install", "--overwrite", self.package.formula),
             ("--prefix", self.package.formula),
             ("list", "--versions", "stacklok/tap/thv"),
             ("unlink", "stacklok/tap/thv"),
@@ -374,7 +374,7 @@ class ApplyTests(unittest.TestCase):
 
         self.assertEqual(brew.commands, [
             ("list", "--versions", "homebrew/core/terminal-notifier"),
-            ("install", "--force-bottle", "homebrew/core/terminal-notifier"),
+            ("install", "--force-bottle", "--overwrite", "homebrew/core/terminal-notifier"),
             ("--prefix", "homebrew/core/terminal-notifier"),
             ("list", "--versions", replacement),
             ("unlink", replacement),
