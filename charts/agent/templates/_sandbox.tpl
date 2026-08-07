@@ -549,6 +549,10 @@ spec:
               mountPath: /opt/data/.gitconfig
               subPath: .gitconfig
               readOnly: true
+            - name: gitconfig
+              mountPath: /opt/data/home/.gitconfig
+              subPath: .gitconfig
+              readOnly: true
             - name: soul
               mountPath: /opt/data/SOUL.md
               subPath: SOUL.md
