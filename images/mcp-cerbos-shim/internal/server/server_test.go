@@ -602,7 +602,7 @@ func TestCheckRequest_OptimizerCallToolUnwrap(t *testing.T) {
 }
 
 // TestCheckRequest_ForceOverride covers a mapping `force` block (used to make
-// GitHub PR create/update always draft: true): on allow, the call must be
+// GitHub PR creation draft): on allow, the call must be
 // forwarded with the forced key rewritten regardless of what was sent — as a
 // Mutated result, not a bare Pass. On deny, force must never apply.
 func TestCheckRequest_ForceOverride(t *testing.T) {

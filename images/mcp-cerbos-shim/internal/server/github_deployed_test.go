@@ -150,11 +150,9 @@ func TestDeployedGithubMapping_RemovedToolsAreUnmapped(t *testing.T) {
 	}
 }
 
-// TestDeployedGithubMapping_PullRequestsAlwaysForceDraft proves the SHIPPED
-// mapping's force block on create/update_pull_request: on an allowed repo, the
-// call is forwarded as Mutated with draft rewritten to true regardless of what
-// was sent — closing the "create as draft, then update to un-draft" loophole.
-func TestDeployedGithubMapping_PullRequestsAlwaysForceDraft(t *testing.T) {
+// TestDeployedGithubMapping_PullRequestsOnlyForceDraftOnCreation proves the
+// SHIPPED mapping forces draft only when creating a pull request.
+func TestDeployedGithubMapping_PullRequestsOnlyForceDraftOnCreation(t *testing.T) {
 	m := deployedMapping(t)
 	e, err := eval.Compile(m)
 	if err != nil {
@@ -162,17 +160,18 @@ func TestDeployedGithubMapping_PullRequestsAlwaysForceDraft(t *testing.T) {
 	}
 
 	cases := []struct {
-		tool string
-		args map[string]any
+		tool       string
+		args       map[string]any
+		forceDraft bool
 	}{
 		{"github_create_pull_request", map[string]any{
 			"owner": "christensenjairus", "repo": "vicegerent-agents",
 			"title": "t", "head": "feature-x", "base": "main", "draft": false,
-		}},
+		}, true},
 		{"github_update_pull_request", map[string]any{
 			"owner": "christensenjairus", "repo": "vicegerent-agents",
 			"pullNumber": 1, "draft": false,
-		}},
+		}, false},
 	}
 
 	for _, tc := range cases {
@@ -187,6 +186,12 @@ func TestDeployedGithubMapping_PullRequestsAlwaysForceDraft(t *testing.T) {
 				mcpReq("vmcp", "tools/call", toolCall(tc.tool, tc.args)))
 			if err != nil {
 				t.Fatalf("CheckRequest: %v", err)
+			}
+			if !tc.forceDraft {
+				if !isPass(res) {
+					t.Fatalf("expected update to pass through unchanged, got mutated=%v deny=%v", isMutated(res), isDeny(res))
+				}
+				return
 			}
 			if !isMutated(res) {
 				t.Fatalf("expected a mutated (forced-draft) result, got pass=%v deny=%v", isPass(res), isDeny(res))
