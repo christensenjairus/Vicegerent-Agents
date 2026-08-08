@@ -110,12 +110,16 @@ validate_values_schema() {
     ((.egress // {}) | has("internalAllowlistCIDRs")),
     ((.egress // {}) | has("replicaCount")),
     ([.agents[]? | has("networkAllowlist")] | any),
+    ([.agents[]? | ((.directEgress.ssh // {}) | has("fqdn") or has("cnameChain"))] | any),
     ([.agents[]? | (.storage // {}) | has("gitrepos")] | any),
     ([.agents[]? | (.tuning // {}) | has("gatewayTimeout") or has("clarifyTimeout")] | any),
     ([.agents[]? | (.tuning.vmcp // {}) | has("timeout") or has("connectTimeout")] | any),
     ([.agents[]? | .config? | type == "!!str"] | any)
   ] | any' "$VALUES_FILE")"
-  [[ "$legacy" != "true" ]] || die "$VALUES_FILE uses the retired values schema; migrate it from clusterVars/networkAllowlist/comma-separated egress fields to policy/directEgress/list fields (see values.example.yaml)"
+  [[ "$legacy" != "true" ]] || die "$VALUES_FILE uses the retired values schema; migrate it from clusterVars/networkAllowlist/directEgress.ssh.fqdn/comma-separated egress fields to policy/directEgress.ssh.hosts/list fields (see values.example.yaml)"
+  python3 "$REPO_ROOT/scripts/validate-model-backend-alignment.py" \
+    --defaults "$DEFAULTS_FILE" "$VALUES_FILE" \
+    || die "$VALUES_FILE enables an agent provider without its platform model backend"
 }
 
 preflight_agent_secrets() {

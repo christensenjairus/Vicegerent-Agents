@@ -241,10 +241,20 @@ if command -v cerbos >/dev/null 2>&1; then
   cp charts/cerbos-policies/tests/*.yaml "$defs_with"/
   cerbos compile "$defs_with"
 
+  echo "INFO - Cerbos tests for documented deny-all policy sentinels"
+  defs_deny_all="$(mktemp_d)"
+  render_cerbos_defs charts/cerbos-policies/deny-all-values.yaml "$defs_deny_all"
+  cp charts/cerbos-policies/deny-all-tests/*.yaml "$defs_deny_all"/
+  cerbos compile "$defs_deny_all"
+
   echo "INFO - Cerbos compile-only against $EXAMPLE_VALUES"
   defs_example="$(mktemp_d)"
   render_cerbos_defs "$EXAMPLE_VALUES" "$defs_example"
   cerbos compile --skip-tests "$defs_example"
+
+  echo "INFO - Cerbos tests against the Moveworks DevOps starter"
+  cp charts/cerbos-policies/starter-tests/*.yaml "$defs_example"/
+  cerbos compile "$defs_example"
 elif [[ -n "${CI:-}" ]]; then
   # Locally a missing cerbos is a convenience skip; in CI it would silently turn
   # the only test of the authorization rules into a no-op that still reports green.
@@ -297,8 +307,19 @@ python3 scripts/gen-vector-redactor.py --check
 echo "INFO - Asserting every image we build is deployed on the tag its Makefile defaults to"
 python3 scripts/validate-image-tags.py
 
+echo "INFO - Asserting values.example.yaml remains a scoped Moveworks DevOps starter"
+python3 scripts/validate-values-example.py
+
+echo "INFO - Asserting SSH direct egress fails closed and remains FQDN-scoped"
+python3 scripts/validate-agent-ssh-egress.py
+
 echo "INFO - Asserting every configured model has live pricing"
 python3 scripts/validate-model-pricing.py
+
+echo "INFO - Asserting agent provider routes have matching platform backends"
+python3 scripts/validate-model-backend-alignment.py \
+  --defaults "$DEFAULTS_VALUES" \
+  "$EXAMPLE_VALUES" examples/personal.yaml examples/work.yaml
 
 echo "INFO - Asserting Anthropic and OpenAI model switches stay on Agentgateway"
 python3 scripts/validate-model-switch-routing.py

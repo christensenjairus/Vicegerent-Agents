@@ -1,5 +1,7 @@
 ---
-# Personal machine overrides. Omitted settings inherit values.defaults.yaml.
+# Repository author's actual personal-machine overrides. This filled profile is kept
+# current as a concrete reference; do not copy its identities or private service IDs.
+# Omitted settings inherit values.defaults.yaml.
 policy:
   sourceControl:
     github:
@@ -56,8 +58,11 @@ agents:
           frontier: gpt-5.6-sol
     directEgress:
       ssh:
-        fqdn: gitlab.hahomelabs.com
-        cnameChain: [uw1-ddns.hahomelabs.com, uw1-hahomelabs.ddns.net]
+        hosts:
+          github.com:
+            cnameChain: []
+          gitlab.hahomelabs.com:
+            cnameChain: [uw1-ddns.hahomelabs.com, uw1-hahomelabs.ddns.net]
       slackFQDNs:
         - slack.com
         - wss-primary.slack.com
@@ -108,7 +113,7 @@ agents:
     soul: |-
       # Personality
       You are a pragmatic senior engineer with strong taste.
-      You optimize for truth, clarity, and usefulness over politeness theater. You may occasionally swear colorfully when frustrated.
+      You optimize for truth, clarity, and usefulness over politeness theater.
 
       ## Style
       - Be direct without being cold
@@ -129,7 +134,6 @@ agents:
       - Treat edge cases as part of the design, not cleanup
 
       ## Tools
-      - You have live MCP tools via the vMCP (kubernetes, plus whatever the operator enabled: gitlab, tavily, firecrawl, notion, linear, ...)
       - When a task needs external data or a real action, search your available tools for the right one and use it
       - Don't guess, hand-wave, or give up when a tool could get the real answer
 
@@ -143,6 +147,13 @@ egress:
     - proxy.golang.org
     - sum.golang.org
     - storage.googleapis.com
+# DeepSeek and Z.ai are opt-in platform backends; enable them here to match this
+# machine's enabled agent provider routes above.
+models:
+  deepseek:
+    enabled: true
+  zai:
+    enabled: true
 replicas:
   agentgatewayProxy: 2
   mcpCerbosShim: 2

@@ -1,0 +1,86 @@
+---
+name: deny_all_policy_sentinels_test
+description: Wildcard data blocks and a non-positive Alertmanager cap deny every matching
+  operation, including requests with missing target or duration attributes.
+options:
+  now: '2026-08-08T00:00:00Z'
+principals:
+  agent:
+    id: agent
+    roles: [agent]
+resources:
+  grafana_by_uid:
+    id: prometheus
+    kind: grafana_datasource
+    attr: {uid: prometheus, name: ''}
+  grafana_by_name:
+    id: loki
+    kind: grafana_datasource
+    attr: {uid: '', name: Loki}
+  elastic_target:
+    id: logs-nginx
+    kind: elastic
+    attr: {targets: [logs-nginx]}
+  elastic_without_target:
+    id: '*'
+    kind: elastic
+    attr: {}
+  zero_duration_silence:
+    id: zero
+    kind: alertmanager_silence
+    attr: {durationSeconds: '0'}
+  ordinary_silence:
+    id: ordinary
+    kind: alertmanager_silence
+    attr: {durationSeconds: '3600'}
+  silence_without_duration:
+    id: omitted
+    kind: alertmanager_silence
+    attr: {}
+tests:
+  - name: wildcard Grafana blocklists deny every datasource identity form
+    input:
+      principals: [agent]
+      resources: [grafana_by_uid, grafana_by_name]
+      actions: [read, query]
+    expected:
+      - principal: agent
+        resource: grafana_by_uid
+        actions: {read: EFFECT_DENY, query: EFFECT_DENY}
+      - principal: agent
+        resource: grafana_by_name
+        actions: {read: EFFECT_DENY, query: EFFECT_DENY}
+  - name: wildcard Elastic blocklist denies targeted and targetless calls
+    input:
+      principals: [agent]
+      resources: [elastic_target, elastic_without_target]
+      actions: [platform_core_search, platform_core_execute_esql]
+    expected:
+      - principal: agent
+        resource: elastic_target
+        actions:
+          platform_core_search: EFFECT_DENY
+          platform_core_execute_esql: EFFECT_DENY
+      - principal: agent
+        resource: elastic_without_target
+        actions:
+          platform_core_search: EFFECT_DENY
+          platform_core_execute_esql: EFFECT_DENY
+  - name: non-positive Alertmanager cap denies every silence creation
+    input:
+      principals: [agent]
+      resources:
+        - zero_duration_silence
+        - ordinary_silence
+        - silence_without_duration
+      actions: [create]
+    expected:
+      - principal: agent
+        resource: zero_duration_silence
+        actions: {create: EFFECT_DENY}
+      - principal: agent
+        resource: ordinary_silence
+        actions: {create: EFFECT_DENY}
+      - principal: agent
+        resource: silence_without_duration
+        actions: {create: EFFECT_DENY}

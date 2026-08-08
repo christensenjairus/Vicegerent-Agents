@@ -1,0 +1,258 @@
+---
+name: moveworks_devops_starter_security_test
+description: The starter permits maintained Moveworks DevOps scopes, denies targets
+  outside them, and keeps Grafana and Elastic read-only access permissive outside
+  global blocklists.
+options:
+  now: '2026-08-07T00:00:00Z'
+principals:
+  agent:
+    id: agent
+    roles: [agent]
+resources:
+  github_moveworks_fork:
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: moveworks
+      head: your-github-username:feature
+      title: '[TEAM-1234] Update deployment configuration'
+      isPrCreate: 'true'
+  github_moveworks_bad_title:
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr:
+      owner: moveworks-emu
+      repo: moveworks
+      head: your-github-username:feature
+      title: Update deployment configuration
+      isPrCreate: 'true'
+  github_moveworks_bare_head:
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: moveworks, head: feature}
+  github_moveworks_wrong_fork:
+    id: moveworks-emu/moveworks
+    kind: github_repo
+    attr: {owner: moveworks-emu, repo: moveworks, head: someone-else:feature}
+  github_out_of_scope_repo:
+    id: someone-else/private
+    kind: github_repo
+    attr: {owner: someone-else, repo: private}
+  jira_project:
+    id: CHANGE
+    kind: jira_project
+    attr:
+      projectKey: CHANGE
+      issueKey: ''
+      inwardKey: ''
+      outwardKey: ''
+      epicKey: ''
+      extraEpicKey: ''
+      extraParentKey: ''
+      assignee: you@moveworks.ai
+      issueType: Environment Change
+  jira_out_of_scope_project:
+    id: OTHER
+    kind: jira_project
+    attr:
+      projectKey: OTHER
+      issueKey: ''
+      inwardKey: ''
+      outwardKey: ''
+      epicKey: ''
+      extraEpicKey: ''
+      extraParentKey: ''
+      assignee: you@moveworks.ai
+      issueType: Environment Change
+  linear_team:
+    id: DEVOPS
+    kind: linear_team
+    attr: {teamId: DEVOPS}
+  linear_out_of_scope_team:
+    id: OTHER
+    kind: linear_team
+    attr: {teamId: OTHER}
+  pagerduty_service:
+    id: manage_incidents
+    kind: pagerduty_incident
+    attr: {hasOutOfScopeChange: 'false', serviceIds: [PJD41LB]}
+  pagerduty_out_of_scope_service:
+    id: manage_other_incidents
+    kind: pagerduty_incident
+    attr: {hasOutOfScopeChange: 'false', serviceIds: [REAL_SERVICE_ID]}
+  notion_team_parent:
+    id: notion-create-pages
+    kind: notion_page
+    attr:
+      parentKind: page_id
+      parentPageId: 6fc3f07af7084089a14088581502e3f1  # pragma: allowlist secret
+  alertmanager_silence:
+    id: HighMemoryUsage
+    kind: alertmanager_silence
+    attr: {durationSeconds: '3600'}
+  alertmanager_zero_duration_silence:
+    id: HighMemoryUsage
+    kind: alertmanager_silence
+    attr: {durationSeconds: '0'}
+  alertmanager_over_cap_silence:
+    id: HighMemoryUsage
+    kind: alertmanager_silence
+    attr: {durationSeconds: '86401'}
+  grafana_datasource:
+    id: prometheus
+    kind: grafana_datasource
+    attr:
+      uid: prometheus
+      name: Prometheus
+  blocked_grafana_datasource:
+    id: dev-opensearch-datasource
+    kind: grafana_datasource
+    attr:
+      uid: fess5o6x6evb4b
+      name: dev-opensearch-datasource
+  elastic_target:
+    id: logs-nginx
+    kind: elastic
+    attr:
+      targets: [logs-nginx]
+  blocked_elastic_target:
+    id: snowflake-events
+    kind: elastic
+    attr:
+      targets: [snowflake-events]
+  elastic_without_target:
+    id: '*'
+    kind: elastic
+    attr: {}
+tests:
+  - name: GitHub requires an allowed fork for Moveworks and denies unlisted repos
+    input:
+      principals: [agent]
+      resources:
+        - github_moveworks_fork
+        - github_moveworks_bad_title
+        - github_moveworks_bare_head
+        - github_moveworks_wrong_fork
+        - github_out_of_scope_repo
+      actions: [access]
+    expected:
+      - principal: agent
+        resource: github_moveworks_fork
+        actions: {access: EFFECT_ALLOW}
+      - principal: agent
+        resource: github_moveworks_bad_title
+        actions: {access: EFFECT_DENY}
+      - principal: agent
+        resource: github_moveworks_bare_head
+        actions: {access: EFFECT_DENY}
+      - principal: agent
+        resource: github_moveworks_wrong_fork
+        actions: {access: EFFECT_DENY}
+      - principal: agent
+        resource: github_out_of_scope_repo
+        actions: {access: EFFECT_DENY}
+  - name: Jira permits standard CHANGE work and denies other projects
+    input:
+      principals: [agent]
+      resources: [jira_project, jira_out_of_scope_project]
+      actions: [write]
+    expected:
+      - principal: agent
+        resource: jira_project
+        actions: {write: EFFECT_ALLOW}
+      - principal: agent
+        resource: jira_out_of_scope_project
+        actions: {write: EFFECT_DENY}
+  - name: Linear permits the DevOps team and denies other teams
+    input:
+      principals: [agent]
+      resources: [linear_team, linear_out_of_scope_team]
+      actions: [access]
+    expected:
+      - principal: agent
+        resource: linear_team
+        actions: {access: EFFECT_ALLOW}
+      - principal: agent
+        resource: linear_out_of_scope_team
+        actions: {access: EFFECT_DENY}
+  - name: PagerDuty permits maintained services and denies other services
+    input:
+      principals: [agent]
+      resources: [pagerduty_service, pagerduty_out_of_scope_service]
+      actions: [manage]
+    expected:
+      - principal: agent
+        resource: pagerduty_service
+        actions: {manage: EFFECT_ALLOW}
+      - principal: agent
+        resource: pagerduty_out_of_scope_service
+        actions: {manage: EFFECT_DENY}
+  - name: Notion creation remains pinned to the personal Scratchpad
+    input:
+      principals: [agent]
+      resources: [notion_team_parent]
+      actions: [create]
+    expected:
+      - principal: agent
+        resource: notion_team_parent
+        actions: {create: EFFECT_DENY}
+  - name: Alertmanager permits up to 24 hours and denies longer silences
+    input:
+      principals: [agent]
+      resources:
+        - alertmanager_silence
+        - alertmanager_zero_duration_silence
+        - alertmanager_over_cap_silence
+      actions: [create]
+    expected:
+      - principal: agent
+        resource: alertmanager_silence
+        actions: {create: EFFECT_ALLOW}
+      - principal: agent
+        resource: alertmanager_zero_duration_silence
+        actions: {create: EFFECT_ALLOW}
+      - principal: agent
+        resource: alertmanager_over_cap_silence
+        actions: {create: EFFECT_DENY}
+  - name: Grafana permits ordinary reads and blocks the Moveworks-wide datasource
+    input:
+      principals: [agent]
+      resources: [grafana_datasource, blocked_grafana_datasource]
+      actions: [read, query]
+    expected:
+      - principal: agent
+        resource: grafana_datasource
+        actions:
+          read: EFFECT_ALLOW
+          query: EFFECT_ALLOW
+      - principal: agent
+        resource: blocked_grafana_datasource
+        actions:
+          read: EFFECT_DENY
+          query: EFFECT_DENY
+  - name: Elastic permits ordinary reads and blocks Moveworks-wide index patterns
+    input:
+      principals: [agent]
+      resources:
+        - elastic_target
+        - blocked_elastic_target
+        - elastic_without_target
+      actions: [platform_core_search, platform_core_execute_esql]
+    expected:
+      - principal: agent
+        resource: elastic_target
+        actions:
+          platform_core_search: EFFECT_ALLOW
+          platform_core_execute_esql: EFFECT_ALLOW
+      - principal: agent
+        resource: blocked_elastic_target
+        actions:
+          platform_core_search: EFFECT_DENY
+          platform_core_execute_esql: EFFECT_DENY
+      - principal: agent
+        resource: elastic_without_target
+        actions:
+          platform_core_search: EFFECT_ALLOW
+          platform_core_execute_esql: EFFECT_ALLOW

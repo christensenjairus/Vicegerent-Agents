@@ -2,7 +2,8 @@
 # grafana_datasource policy: deny reads targeting any denied datasource
 # (${grafanaDeniedDatasourceUids}/${grafanaDeniedDatasourceNames}, from
 # policy.dataAccess.grafana — matched by uid or name, CEL-list-ready
-# same as githubAllowedRepos/linearAllowedTeams); allow everything else. The
+# same as githubAllowedRepos/linearAllowedTeams); allow everything else. A `*`
+# in either denylist denies every datasource so a starter can fail closed. The
 # shim maps every datasource-bearing Grafana tool to this resource, carrying
 # uid+name attrs. Do NOT add tools/kinds here to permit them; that belongs in
 # the gateway allowlist.
@@ -18,6 +19,10 @@ resourcePolicy:
       condition:
         match:
           expr: >-
+            "*" in [{{ include "cerbos-policies.celList" .Values.policy.dataAccess.grafana.deniedDatasourceUids }}]
+            ||
+            "*" in [{{ include "cerbos-policies.celList" .Values.policy.dataAccess.grafana.deniedDatasourceNames }}]
+            ||
             (has(request.resource.attr.uid) && request.resource.attr.uid in [{{ include "cerbos-policies.celList" .Values.policy.dataAccess.grafana.deniedDatasourceUids }}])
             ||
             (has(request.resource.attr.name) && request.resource.attr.name in [{{ include "cerbos-policies.celList" .Values.policy.dataAccess.grafana.deniedDatasourceNames }}])

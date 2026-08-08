@@ -1,54 +1,113 @@
 ---
-# Copy this deltas-only example to the gitignored values.yaml and customize it for your machine. Omitted settings inherit values.defaults.yaml; secrets are provisioned separately with `./vicegerent setup secrets`.
-# See examples/ for complete personal and work configurations.
-# Machine-wide authorization and identity
+# Moveworks DevOps starter profile. Copy this mostly deltas-only file to the
+# gitignored values.yaml and replace the person-specific identity placeholders.
+# Shared team, service, repository, and network defaults are usable as-is for
+# DevOps-adjacent work. Omitted settings inherit values.defaults.yaml; a few safety
+# and operating defaults are restated here deliberately so the starter contract is
+# visible and regression-tested. Secrets are separate. See
+# examples/work.yaml and examples/personal.yaml for the repository author's actual,
+# filled machine profiles when you need a concrete configuration reference.
 policy:
   sourceControl:
     github:
-  # GitHub owner/repo pairs agents may write to, and this machine's GitHub login.
-      allowedRepos: [your-org/your-repo]
+      # Shared Moveworks repositories and the public mirror are usable as-is;
+      # push branches to your own fork of repositories under moveworks-emu.
+      # Replace every `your-github-username` occurrence with your GitHub login.
+      allowedRepos:
+        - moveworks-emu/moveworks
+        - moveworks-emu/k8s-manifests
+        - your-github-username/moveworks
+        - your-github-username/k8s-manifests
+        - christensenjairus/vicegerent-agents
+        - your-github-username/vicegerent-agents
+      # PRs into Moveworks-owned repositories or the public platform mirror must
+      # use a fork-qualified head owned by your GitHub login.
+      forkRequiredOwners: [moveworks-emu, christensenjairus]
+      forkOwners: [your-github-username]
+      # Cerbos compares this login with the live PR author before allowing edits.
       username: your-github-username
-  # GitLab projects agents may act on (reads included). Prefer numeric ids;
-  # plain path forms are resolved before matching, but percent-encoded paths are unsupported.
-    gitlab:
-      allowedProjects: ['12345']
-      username: your-gitlab-username
-  # Linear live lookups return display names, so include every form of an identity.
   workManagement:
+    # Shared DevOps scopes are usable as-is. Replace only person-specific assignee
+    # placeholders after copying this file to values.yaml.
     jira:
-      allowedProjects: [PROJ]
-      allowedAssignees: [you@example.com]
+      # Standard CHANGE project and issue types for DevOps change operations.
+      allowedProjects: [CHANGE]
+      allowedAssignees: [you@moveworks.ai]
+      allowedIssueTypes:
+        - Environment Change
+        - Deploy Service Specific
+        - Service Restart
     linear:
-      allowedTeams: [your-linear-team-uuid, YourTeam, TEAM]
-      allowedAssignees: [you@example.com, Your Name]
-  # Notion Scratchpad page, and this machine's Notion user id (deny-not-own-page gate).
+      # Callers and live lookups may identify the DevOps team by UUID, name, or key.
+      allowedTeams:
+        - 6deab0c5-9bda-4f82-b552-41f4aa9e449b
+        - DevOps
+        - DEVOPS
+      # Include both the caller-facing email and the display name returned by Linear.
+      allowedAssignees: [you@moveworks.ai, Your Name]
+    pagerduty:
+      # Primary: pd-devops-svc, pd-devops-test-svc, and Blr-Devops.
+      # Secondary: pd-devops-svc. Other PagerDuty services remain denied.
+      allowedServiceIds: [PJD41LB, PV3S4O5, PORBNK3, P7X89U2]
+  dataAccess:
+    # Grafana and Elastic are intentionally permissive read-only backends except
+    # for these Moveworks-wide sensitive-data blocks. Keep these entries when
+    # enabling either backend; add narrower blocks if your work requires them.
+    grafana:
+      deniedDatasourceUids: [fess5o6x6evb4b]
+      deniedDatasourceNames: [dev-opensearch-datasource]
+    elastic:
+      deniedIndexPatterns: [snowflake]
+  contentSafety:
+    # These OpenAI-backed checks are explicitly off in the Anthropic-only starter.
+    # After adding an OpenAI key and enabling the OpenAI backend below, change either
+    # status to `enabled` to turn on that check (`enabled`/`disabled`, not booleans).
+    moderation:
+      status: disabled
+    promptInjection:
+      status: disabled
   notion:
-    scratchpadPageId: your-notion-scratchpad-page-id
-    userId: your-notion-user-id
-  # Empty Grafana and Elastic denylists impose no restriction. Empty notionAllowedParentPageIds keeps writes Scratchpad-only.
-  # This machine's fixed Alertmanager silence-creator identity.
+    # After Notion OAuth, replace these with your Scratchpad page ID and the UUID
+    # returned by Notion `self`. These maintained team parents are usable as-is.
+    scratchpadPageId: YOUR_NOTION_SCRATCHPAD_PAGE_ID
+    allowedParentPageIds:
+      - 6fc3f07af7084089a14088581502e3f1  # DevOps
+      - 1de588d8909f80458ad6c0a831284768  # DevSecOps
+      - 306588d8909f806d9e78f7004cf3b9db  # DevOps WIP
+      - 41348461628a472bbc16c14e2e866a89  # Major Incidents [RCAs]
+    userId: YOUR_NOTION_USER_ID
   alertmanager:
+    # Moveworks agents may create silences lasting at most 24 hours.
+    maxSilenceSeconds: 86400
+    # Replace with the normal username Cerbos uses for silence ownership.
     createdBy: your-username
-# One chart release per agent, up to ten. Dashboard NodePorts use 30119-30128 in list order.
 agents:
-  - name: my-first-agent  # pick a name for your agent
-    obsidian:
-      vaultPath: /workspace/knowledge-vault
+  - name: my-first-agent  # replace with an operator-chosen release name
     git:
-      userName: your-name
-      userEmail: you@example.com
-    # Defaults enable anthropic + openai; this agent is anthropic-only.
+      # Commit identity inside the sandbox; these are not credentials.
+      userName: Your Name
+      userEmail: you@moveworks.ai
+    # IANA timezone used for timestamps and scheduled jobs.
+    timezone: America/Los_Angeles
+    # New users are Anthropic-only. OpenAI-backed models and content-safety
+    # checks remain unavailable until an OpenAI key and routes are added.
     providers:
       openai:
         enabled: false
-    # Disable the OpenAI failover alongside the provider.
     failover:
+      # Empty disables failover instead of inheriting the OpenAI default.
       provider: ''
-    # Cilium requires every intermediate CNAME in the chain.
     directEgress:
       ssh:
-        fqdn: git.example.com
-        cnameChain: [ddns-a.example.com, ddns-b.example.net]
+        # Each map key is a connection hostname from a git remote's SSH URL, not a
+        # repository, URL, IP, or DNS alias. Include every SSH host this agent needs.
+        hosts:
+          github.com:
+            # GitHub currently resolves without intermediate CNAMEs.
+            cnameChain: []
+      # Slack Socket Mode and Web API traffic cannot use the GET-only HTTP proxy.
+      # Keep these exact direct-TCP/443 destinations so Slack works when its optional
+      # credentials are configured; no Slack credential or user access is enabled here.
       slackFQDNs:
         - slack.com
         - wss-primary.slack.com
@@ -57,20 +116,46 @@ agents:
     config:
       model:
         provider: anthropic
+      # Intentionally retained as a useful starter instruction. Change it only when
+      # you want to alter the agent's role, not as part of initial setup.
       agent:
         system_prompt: You are a technical expert. Provide detailed, accurate technical
           information.
-    # Personality and voice only; the chart appends its fixed environment guidance.
+    # Intentionally retained as the starter personality and voice. This is not an
+    # identity placeholder or a credential; customize it only if you want different
+    # behavior.
     soul: |-
       # Personality
-      You are a pragmatic senior engineer with strong taste. You optimize for truth,
-      clarity, and usefulness over politeness theater.
+      You are a pragmatic senior engineer with strong taste.
+      You optimize for truth, clarity, and usefulness over politeness theater.
 
       ## Style
       - Be direct without being cold
+      - Prefer substance over filler
       - Push back when something is a bad idea
       - Admit uncertainty plainly
+      - Keep explanations compact unless depth is useful
+
+      ## What to avoid
+      - Sycophancy
+      - Hype language
+      - Repeating the user's framing if it's wrong
+      - Overexplaining obvious things
+
+      ## Technical posture
+      - Prefer simple systems over clever systems
+      - Care about operational reality, not idealized architecture
+      - Treat edge cases as part of the design, not cleanup
+
+      ## Tools
+      - When a task needs external data or a real action, search your available tools for the right one and use it
+      - Don't guess, hand-wave, or give up when a tool could get the real answer
+
+      ## Secondary MCPs
+      - Secondary MCPs access GovCloud. If one times out, tell the user that they still need to enable the Gov VPN; do not repeatedly retry it.
+# Package, source, and Moveworks-internal endpoints used by DevOps workflows.
 egress:
+  # wildcardDomains also allow each apex; exactDomains allow only the named host.
   wildcardDomains: [github.com, githubusercontent.com]
   exactDomains:
     - pypi.org
@@ -78,11 +163,13 @@ egress:
     - proxy.golang.org
     - sum.golang.org
     - storage.googleapis.com
-# Render only the Anthropic platform backend.
+    - artifactory.global.mgmt.moveworks.io
+  # Artifactory resolves into this Moveworks management-network range. Any allowed
+  # hostname that resolves to an internal IP must have that range included here.
+  internalAllowedCIDRs: [10.230.0.0/16]
+# Render only the Anthropic platform backend. After adding an OPENAI_API_KEY,
+# enable both this backend and agents[].providers.openai to use GPT models. The
+# OpenAI-backed content-safety checks above may then be enabled independently.
 models:
   openai:
-    enabled: false
-  deepseek:
-    enabled: false
-  zai:
     enabled: false
