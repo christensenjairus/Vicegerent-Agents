@@ -3,7 +3,8 @@
 # matches a denied token (${elasticDeniedIndexPatterns}, from
 # policy.dataAccess.elastic.deniedIndexPatterns — substrings, CEL-list-ready same as
 # grafanaDeniedDatasourceNames, lowercased at match time so a mixed-case entry
-# still matches); allow everything else. The shim's
+# still matches); allow everything else. A `*` token denies every call,
+# including calls with no explicit target, so a starter can fail closed. The shim's
 # elasticTargetsAttr helper (mapping.yaml) surfaces every index-bearing arg
 # (index / indices[] / pattern / indexPattern / stream name) plus the
 # execute_esql query text as one lowercased `targets` list. A substring match
@@ -31,9 +32,11 @@ resourcePolicy:
       condition:
         match:
           expr: >-
-            has(request.resource.attr.targets)
+            "*" in [{{ include "cerbos-policies.celList" .Values.policy.dataAccess.elastic.deniedIndexPatterns }}]
+            ||
+            (has(request.resource.attr.targets)
             && request.resource.attr.targets.exists(t,
-            [{{ include "cerbos-policies.celList" .Values.policy.dataAccess.elastic.deniedIndexPatterns }}].exists(p, t.contains(p.lowerAscii())))
+            [{{ include "cerbos-policies.celList" .Values.policy.dataAccess.elastic.deniedIndexPatterns }}].exists(p, t.contains(p.lowerAscii()))))
       output:
         when:
           ruleActivated: >-

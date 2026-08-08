@@ -1,0 +1,11 @@
+---
+# Exercise documented deny-all sentinels independently of maintained machine profiles.
+policy:
+  dataAccess:
+    grafana:
+      deniedDatasourceUids: ['*']
+      deniedDatasourceNames: ['*']
+    elastic:
+      deniedIndexPatterns: ['*']
+  alertmanager:
+    maxSilenceSeconds: 0

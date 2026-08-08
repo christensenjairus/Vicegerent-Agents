@@ -14,8 +14,8 @@ Vicegerent is a credential-isolated, egress-locked, harness-agnostic agent platf
 
 ## Configuration and Layout
 
-- `values.defaults.yaml` is the single annotated default layer for the platform. The gitignored `values.yaml`, committed `values.example.yaml`, and `examples/*.yaml` contain deltas only. The in-repo `charts/*/values.yaml` files are intentionally empty pointers; do not restore defaults to them.
-- Omit values that repeat Kubernetes, controller-chart, application, or platform defaults. For upstream controller overrides under `stages/values/`, link to the upstream default values file rather than copying it.
+- `values.defaults.yaml` is the single annotated default layer for the platform. The gitignored `values.yaml`, committed `values.example.yaml`, and `examples/*.yaml` are mostly deltas-only. `values.example.yaml` may deliberately restate selected safety or operating defaults when that keeps the starter contract visible and regression-tested. The in-repo `charts/*/values.yaml` files are intentionally empty pointers; do not restore defaults to them.
+- Omit values that repeat Kubernetes, controller-chart, application, or platform defaults unless `values.example.yaml` intentionally pins an explicit starter behavior. For upstream controller overrides under `stages/values/`, link to the upstream default values file rather than copying it.
 - Each machine has its own clone, gitignored `values.yaml`, and `kind-vicegerent` cluster. Never commit machine-specific configuration or secrets.
 - User-configurable agents, models, routes, MCP wiring, egress, and cluster variables belong in `values.yaml` and `charts/platform`. Standard controllers and their pinned versions belong in `stages/stages.yaml` and are installed from upstream charts.
 - Host-side MCP servers are declared in `host/mcp/toolhive-servers.json`; the cluster-side vMCP routes are rendered by `charts/platform/templates/vmcp.yaml`. Do not move MCP servers into the cluster charts.

@@ -1,5 +1,7 @@
 ---
-# Work machine overrides. Omitted settings inherit values.defaults.yaml.
+# Repository author's actual work-machine overrides. This filled profile is kept
+# current as a concrete reference; do not copy its personal identities or private IDs.
+# Omitted settings inherit values.defaults.yaml.
 policy:
   sourceControl:
     github:
@@ -11,7 +13,7 @@ policy:
         - jchristensen_movester/k8s-manifests
         - christensenjairus/vicegerent-agents
         - jchristensen_movester/Knowledge-Vault
-      forkRequiredOwners: [moveworks-emu]
+      forkRequiredOwners: [moveworks-emu, christensenjairus]
       forkOwners: [jchristensen_movester]
       username: jchristensen_movester
     gitlab:
@@ -33,6 +35,8 @@ policy:
       # Include both the caller-facing email and the display name returned by live lookup.
       allowedAssignees: [jchristensen@moveworks.ai, Jairus Christensen]
     pagerduty:
+      # Primary: pd-devops-svc, pd-devops-test-svc, and Blr-Devops.
+      # Secondary: pd-devops-svc.
       allowedServiceIds: [PJD41LB, PV3S4O5, PORBNK3, P7X89U2]
   dataAccess:
     grafana:
@@ -43,10 +47,10 @@ policy:
   notion:
     scratchpadPageId: 1ea588d8909f80edb0cef38d0aeaf64f
     allowedParentPageIds:
-      - 6fc3f07af7084089a14088581502e3f1
-      - 1de588d8909f80458ad6c0a831284768
-      - 306588d8909f806d9e78f7004cf3b9db
-      - 41348461628a472bbc16c14e2e866a89
+      - 6fc3f07af7084089a14088581502e3f1  # DevOps
+      - 1de588d8909f80458ad6c0a831284768  # DevSecOps
+      - 306588d8909f806d9e78f7004cf3b9db  # DevOps WIP
+      - 41348461628a472bbc16c14e2e866a89  # Major Incidents [RCAs]
     userId: 1ded872b-594c-813d-aa2c-000228ba9671
   contentSafety:
     moderation:
@@ -81,8 +85,11 @@ agents:
           frontier: gpt-5.6-sol
     directEgress:
       ssh:
-        fqdn: gitlab.hahomelabs.com
-        cnameChain: [uw1-ddns.hahomelabs.com, uw1-hahomelabs.ddns.net]
+        hosts:
+          github.com:
+            cnameChain: []
+          gitlab.hahomelabs.com:
+            cnameChain: [uw1-ddns.hahomelabs.com, uw1-hahomelabs.ddns.net]
       slackFQDNs:
         - slack.com
         - wss-primary.slack.com
@@ -129,7 +136,7 @@ agents:
     soul: |-
       # Personality
       You are a pragmatic senior engineer with strong taste.
-      You optimize for truth, clarity, and usefulness over politeness theater. You may occasionally swear colorfully when frustrated.
+      You optimize for truth, clarity, and usefulness over politeness theater.
 
       ## Style
       - Be direct without being cold
@@ -150,7 +157,6 @@ agents:
       - Treat edge cases as part of the design, not cleanup
 
       ## Tools
-      - You have live MCP tools via the vMCP (kubernetes, plus whatever the operator enabled: gitlab, tavily, firecrawl, notion, linear, ...)
       - When a task needs external data or a real action, search your available tools for the right one and use it
       - Don't guess, hand-wave, or give up when a tool could get the real answer
 
@@ -165,13 +171,9 @@ egress:
     - sum.golang.org
     - storage.googleapis.com
     - artifactory.global.mgmt.moveworks.io
+  # Artifactory resolves into this range; include every internal range reached by an
+  # allowed hostname.
   internalAllowedCIDRs: [10.230.0.0/16]
-# Defaults render all four model backends; this machine drops deepseek and zai.
-models:
-  deepseek:
-    enabled: false
-  zai:
-    enabled: false
 replicas:
   agentgatewayProxy: 2
   mcpCerbosShim: 2

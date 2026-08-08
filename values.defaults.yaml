@@ -1,7 +1,7 @@
 ---
-# Canonical platform defaults. The installer layers the machine's gitignored values.yaml over this file; values.example.yaml and examples/ contain deltas-only machine configurations.
+# Canonical platform defaults. The installer layers the machine's gitignored values.yaml over this file; values.example.yaml and examples/ are mostly deltas-only machine configurations, with selected defaults restated when their intended profile behavior should remain explicit.
 #
-# Maps merge recursively, but lists replace their defaults. Empty allowlists deny access; empty denylists impose no restriction; ['*'] disables a supported check.
+# Maps merge recursively, but lists replace their defaults. Empty allowlists deny access; empty denylists impose no restriction; ['*'] disables a supported allowlist check, while documented data-access denylists use it to deny all.
 # Machine-wide authorization, safety, and operational policy.
 policy:
   sourceControl:
@@ -37,12 +37,12 @@ policy:
     pagerduty:
       allowedServiceIds: ['*']
   dataAccess:
-    # Grafana datasources agents may not read, matched by uid or name.
+    # Grafana datasources agents may not read, matched by uid or name; ['*'] denies all.
     grafana:
       deniedDatasourceUids: []
       deniedDatasourceNames: []
 
-    # Elastic index and datastream tokens agents may not read (substring match).
+    # Elastic index and datastream tokens agents may not read (substring match); ['*'] denies all.
     elastic:
       deniedIndexPatterns: []
   notion:
@@ -62,7 +62,7 @@ policy:
       status: disabled
       judgeModel: gpt-4.1-mini
   alertmanager:
-    # An empty creator denies all silence deletion.
+    # A non-positive cap denies all silence creation; an empty creator denies all deletion.
     maxSilenceSeconds: 86400
     createdBy: ''
 
@@ -149,11 +149,11 @@ agentDefaults:
       models:
         default: claude-sonnet-5
         frontier: claude-opus-5
-  # Every intermediate SSH CNAME must be listed or Cilium strips the answer.
+  # Direct SSH bypasses the HTTP proxy. Map each allowed connection hostname to
+  # only its intermediate DNS CNAMEs; Cilium strips answers with unlisted names.
   directEgress:
     ssh:
-      fqdn: ''
-      cnameChain: []
+      hosts: {}
     # Slack endpoints bypass the GET-only proxy for POST and WebSocket traffic.
     slackFQDNs: []
     # Edge-TTS endpoints bypass the scrubbing proxy.
@@ -198,10 +198,12 @@ models:
     enabled: true
   openai:
     enabled: true
+  # Optional platform backends stay off until a machine config explicitly enables
+  # them alongside a matching agent provider route and API key.
   deepseek:
-    enabled: true
+    enabled: false
   zai:
-    enabled: true
+    enabled: false
 # Shared component replicas.
 replicas:
   agentgatewayProxy: 1

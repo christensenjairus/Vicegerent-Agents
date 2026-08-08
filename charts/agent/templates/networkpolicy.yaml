@@ -32,13 +32,12 @@ spec:
               - matchName: {{ . }}
               {{- end }}
               {{- end }}
-              {{- if .Values.directEgress.ssh.fqdn }}
-              - matchName: {{ .Values.directEgress.ssh.fqdn }}
-              {{- end }}
-              {{- range .Values.directEgress.ssh.cnameChain }}
+              {{- range $fqdn, $host := .Values.directEgress.ssh.hosts }}
+              - matchName: {{ $fqdn }}
+              {{- range (get (default dict $host) "cnameChain" | default list) }}
               - matchName: {{ . }}
               {{- end }}
-              - matchName: github.com
+              {{- end }}
     # All HTTP(S) traffic — to internet, agentgateway, and searxng — routes through
     # the scrubbing proxy. Secrets are redacted before reaching any destination.
     - toEndpoints:
@@ -86,20 +85,19 @@ spec:
             - port: '443'
               protocol: TCP
     {{- end }}
-    # SSH bypasses the HTTP proxy — direct egress for git push/pull. The configured FQDN may
-    # resolve through a CNAME chain (dynamic DNS); Cilium's toFQDNs DNS proxy strips a CNAME
-    # answer unless every name in the chain is itself allowlisted, so cnameChain lists the
-    # intermediate names. Both are machine-scoped (values.yaml); github.com is always
-    # allowed.
+    # SSH bypasses the HTTP proxy — direct egress for git push/pull. Each hosts map key is a
+    # connection FQDN. Its cnameChain lists only intermediate DNS aliases because Cilium's
+    # toFQDNs DNS proxy strips a CNAME answer unless every name in the chain is allowlisted.
+    {{- if .Values.directEgress.ssh.hosts }}
     - toFQDNs:
-        {{- if .Values.directEgress.ssh.fqdn }}
-        - matchName: {{ .Values.directEgress.ssh.fqdn }}
-        {{- end }}
-        {{- range .Values.directEgress.ssh.cnameChain }}
+        {{- range $fqdn, $host := .Values.directEgress.ssh.hosts }}
+        - matchName: {{ $fqdn }}
+        {{- range (get (default dict $host) "cnameChain" | default list) }}
         - matchName: {{ . }}
         {{- end }}
-        - matchName: github.com
+        {{- end }}
       toPorts:
         - ports:
             - port: '22'
               protocol: TCP
+    {{- end }}

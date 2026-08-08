@@ -1,7 +1,8 @@
 ---
 # alertmanager_silence policy: deny createSilence calls whose duration exceeds
 # this machine's cap (${alertmanagerMaxSilenceSeconds}, from
-# policy.alertmanager -- work is capped at 24h, personal at 14d). The
+# policy.alertmanager -- a non-positive cap disables creation, work is capped at
+# 24h, and personal at 14d). The
 # shim's alertmanagerAttr helper (helpers_alertmanager.go) converts
 # createSilence's free-form `duration` string ("30m","2h","1d") into
 # durationSeconds, defaulting an omitted duration to Alertmanager's own
@@ -37,13 +38,14 @@ resourcePolicy:
       condition:
         match:
           expr: >-
-            has(request.resource.attr.durationSeconds) &&
-            int(request.resource.attr.durationSeconds) > {{ .Values.policy.alertmanager.maxSilenceSeconds | int }}
+            {{ .Values.policy.alertmanager.maxSilenceSeconds | int }} <= 0 ||
+            (has(request.resource.attr.durationSeconds) &&
+            int(request.resource.attr.durationSeconds) > {{ .Values.policy.alertmanager.maxSilenceSeconds | int }})
       output:
         when:
           ruleActivated: >-
-            "Silence duration exceeds this agent's cap of {{ .Values.policy.alertmanager.maxSilenceSeconds | int }}
-            seconds."
+            "Silence creation is disabled or its duration exceeds this agent's"
+            + " cap of {{ .Values.policy.alertmanager.maxSilenceSeconds | int }} seconds."
             + " Create a shorter silence, or ask a human to extend it."
     - name: deny-not-own-silence
       actions: [delete]

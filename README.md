@@ -31,7 +31,7 @@ The sandbox is for autonomous or near-autonomous agents: auto mode, cron jobs, a
 charts/               Helm charts: agent, egress-proxy, platform (gateway/models/vmcp/searxng/host-firewall), cerbos-policies, mcp-cerbos-shim
 stages/               staged installer manifest (stages.yaml), per-controller upstream-chart values (values/), and kubectl-applied kustomize overlays (kustomize/) incl. the one vendored tree, csi-driver-host-path (documented exception)
 values.defaults.yaml  committed, fully-annotated default layer for every platform setting; layered UNDER your machine values.yaml by the installer and validate.sh
-values.example.yaml   deltas-only starter; copy to a gitignored values.yaml that overrides just what differs from values.defaults.yaml (policy + agents)
+values.example.yaml   mostly deltas-only starter; selected safety/operating defaults are restated explicitly; copy to a gitignored values.yaml (policy + agents)
 examples/             two complete real-world delta configs (personal.yaml, work.yaml) to model your values.yaml on
 charts/*/values.yaml  intentionally empty pointer files — the platform defaults live in values.defaults.yaml
 host/mcp/             host-side MCP control plane (ToolHive + vMCP) — see docs/setup.md
@@ -57,11 +57,12 @@ Every extension point has a working example already in the repo to copy, not jus
 
 ## Quickstart
 
-Full walkthrough, flags, and troubleshooting: [`docs/setup.md`](docs/setup.md). Before your first install, copy `values.example.yaml` to `values.yaml` and edit it — your `values.yaml` carries only **deltas** layered over the committed `values.defaults.yaml` (the full annotated reference for every setting), and the example ships **placeholders** (`your-org/your-repo`, `you@example.com`, `PROJ`, …), not a real identity, so fill in every value before installing; `examples/personal.yaml` and `examples/work.yaml` are two complete real-world delta configs to model yours on. See [`docs/setup.md` § Values to change for your machine](docs/setup.md#values-to-change-for-your-machine). Before provisioning secrets, choose the model providers and optional MCP services you will use: [`docs/setup.md` § External API keys and MCP credentials](docs/setup.md#external-api-keys-and-mcp-credentials) lists every key, what it enables, and the matching `values.yaml` switches. This is the condensed path on macOS with Docker:
+Full walkthrough, flags, and troubleshooting: [`docs/setup.md`](docs/setup.md). Before your first install, copy `values.example.yaml` to `values.yaml` and replace its person-specific GitHub, assignee, git-identity, Notion, and Alertmanager placeholders. The Anthropic-only starter is shaped for a DevOps or DevOps-adjacent Moveworks engineer: it includes the shared Moveworks repositories and fork rule, Jira change scope, Linear DevOps team, maintained PagerDuty services, Notion parent folders, a 24-hour Alertmanager cap, data blocklists, Artifactory, and the management-network range from the work profile. The public mirror remains available, while private GitLab policy and Slack credentials remain unconfigured. [`examples/work.yaml`](examples/work.yaml) and [`examples/personal.yaml`](examples/personal.yaml) are the repository author's actual filled machine profiles, kept current with the values schema so users can inspect what someone really configures. Use them as concrete references, not files to copy unchanged: they include personal identities, private IDs, internal destinations, and provider choices. See [`docs/setup.md` § Values to change for your machine](docs/setup.md#values-to-change-for-your-machine). Before provisioning secrets, choose the model providers and optional MCP services you will use: [`docs/setup.md` § External API keys and MCP credentials](docs/setup.md#external-api-keys-and-mcp-credentials) lists every key, what it enables, and the matching `values.yaml` switches. This is the condensed path on macOS with Docker:
 
 ```bash
-# 1. Clone this repo
-git clone <repo-ssh-url> && cd vicegerent-agents
+# 1. Clone the public mirror
+git clone git@github.com:christensenjairus/vicegerent-agents.git
+cd vicegerent-agents
 
 # 2. Create the Kind cluster + Cilium CNI
 ./vicegerent setup cluster

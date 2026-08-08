@@ -54,7 +54,13 @@ def render_configmaps() -> dict[str, dict[str, str]]:
         defaults = Path(tmp) / "defaults.yaml"
         machine = Path(tmp) / "machine.yaml"
         values_slice(REPO / "values.defaults.yaml", ".agentDefaults", defaults)
-        values_slice(REPO / "values.example.yaml", ".agents[0]", machine)
+        # The starter keeps Obsidian opt-in. Enable a vault only in this fixture so
+        # the rendered prompts exercise the conditional vault guidance.
+        values_slice(
+            REPO / "values.example.yaml",
+            '.agents[0] * {"obsidian": {"vaultPath": "/workspace/knowledge-vault"}}',
+            machine,
+        )
         result = subprocess.run(
             [
                 "helm",
