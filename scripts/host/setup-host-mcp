@@ -4,7 +4,7 @@
 # Idempotent setup of the host-side prerequisites for the vicegerent host stack
 # (ToolHive workloads + vMCP + ghostunnel + rclone, kept awake by caffeinate):
 #
-#   1. Homebrew packages: thv (ToolHive), ghostunnel, supervisor, rclone, terminal-notifier
+#   1. Homebrew packages plus the native Vicegerent notification helper
 #   2. Repository Python environment: reconcile the root .venv from uv.lock
 #   3. ToolHive secrets provider + required API-key secrets (guidance)
 #   4. Configure MCP servers: enable/skip each + set its secrets

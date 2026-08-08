@@ -69,6 +69,7 @@ from typing import Any, Generator, Iterator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+HOST_PACKAGE_RECONCILER = REPO_ROOT / "host" / "brew" / "reconcile.py"
 DEFAULT_RUNTIME_DIR = Path.home() / ".vicegerent" / "mcp"
 # Durable operator choices must not share a directory with generated configs, sockets,
 # logs, or pidfiles that may safely be removed during recovery.
@@ -123,6 +124,16 @@ AWS_DIR_CONTAINER_PATH = "/app/.aws"
 # reported as a non-zero returncode, the shell convention for a timeout.
 THV_TIMEOUT_SECS = 120.0
 AWS_CLI_TIMEOUT_SECS = 20.0
+NOTIFIER_TIMEOUT_SECS = 5.0
+NOTIFIER_BINARY = (
+    Path.home()
+    / ".vicegerent"
+    / "notifier"
+    / "Vicegerent Notifier.app"
+    / "Contents"
+    / "MacOS"
+    / "vicegerent-notifier"
+)
 _TIMEOUT_RC = 124
 
 # Core supervised programs (always run): vMCP, ghostunnel, rclone-s3, and
@@ -642,53 +653,39 @@ def list_all_workload_names() -> set[str]:
     return {w["name"] for w in data if "name" in w}
 
 
-def _notify(title: str, message: str, group: str | None = None) -> None:
-    """Fire one macOS notification via terminal-notifier. Two gotchas are
-    baked in here so every caller inherits them:
+def _run_notifier(*args: str) -> None:
+    """Run the signed native notifier in the current GUI session without
+    letting an OS notification-service failure block the watcher indefinitely."""
+    try:
+        subprocess.run(
+            [
+                "launchctl", "asuser", str(os.getuid()), str(NOTIFIER_BINARY),
+                *args,
+            ],
+            check=False,
+            timeout=NOTIFIER_TIMEOUT_SECS,
+        )
+    except subprocess.TimeoutExpired:
+        pass
 
-    A `group` tags the notification so a later `_notify_clear(group)` can pull
-    it from Notification Center once the underlying issue clears, and so a
-    repost with the same group replaces the prior one instead of stacking.
 
-    - `-contentImage`, not `-appIcon`: macOS (Catalina+) no longer lets any
-      script/CLI override the small sending-app icon badge -- it stays whatever
-      app actually invoked the notification API. -contentImage is the only flag
-      that still shows a custom image, as a larger attached image alongside the
-      notification.
-    - `launchctl asuser` (not a direct call): a long-lived supervisord (this
-      process's own parent) can lose its connection to the current GUI login
-      session over many hours' uptime, and every process it forks afterward
-      inherits that same stale session regardless of how freshly *they* were
-      spawned. Routing the actual notification through the CURRENT session's
-      bootstrap namespace instead of this process's own (possibly stale) one
-      is the standard fix.
+def _notify(title: str, message: str, group: str) -> None:
+    """Post a native notification under a stable identifier.
+
+    The helper leaves an existing delivered notification alone and recreates it
+    after user dismissal, while `_notify_clear` removes the exact identifier on
+    recovery. `launchctl asuser` routes the app through the current GUI session
+    even when the long-lived supervisord inherited a stale bootstrap namespace.
     """
-    subprocess.run(
-        [
-            "launchctl", "asuser", str(os.getuid()), "terminal-notifier",
-            "-title", title,
-            "-message", message,
-            "-contentImage", str(REPO_ROOT / "icon.png"),
-            *(["-group", group] if group else []),
-        ],
-        check=False,
-    )
+    _run_notifier("post", group, title, message)
 
 
 def _notify_clear(group: str) -> None:
-    """Remove any Notification Center entry previously posted under `group`
-    (routed through the current GUI session, same as _notify). A no-op when
-    nothing with that group is showing."""
-    subprocess.run(
-        [
-            "launchctl", "asuser", str(os.getuid()), "terminal-notifier",
-            "-remove", group,
-        ],
-        check=False,
-    )
+    """Remove the exact native notification identifier after recovery."""
+    _run_notifier("remove", group)
 
 
-_AWS_CRED_REFRESH_HINT = "Refresh host-side (e.g. aws sso login), then re-run ./vicegerent mcp start."
+_AWS_CRED_REFRESH_HINT = "Refresh host-side (e.g. aws sso login), then run vicegerent start."
 _AWS_CRED_GROUP = "vicegerent-aws-cred"
 # botocore has no env override for this; it's always ~/.aws/sso/cache under HOME.
 _AWS_SSO_CACHE_DIR = Path.home() / ".aws" / "sso" / "cache"
@@ -865,28 +862,24 @@ def health_watch(
     cred_warning_mins: int = 60,
 ) -> int:
     """Poll every enabled ToolHive workload's own `thv list` status forever,
-    firing a macOS notification the first time one drops out of "running"
+    firing a macOS notification on every poll while one is not "running"
     (e.g. an OAuth-backed remote losing its token and going
     unauthenticated/error -- observed live: the workload drops out of vMCP
-    entirely until `start` brings it back), and clearing that notification
-    once it's running again so a since-recovered backend doesn't stay flagged.
+    entirely until `start` brings it back), and removing that notification on
+    every healthy poll so a since-recovered backend doesn't stay flagged.
 
     When the `aws` server is enabled it also watches that backend's AWS
     credentials on the same loop, warning BEFORE they expire and again once
     they've actually expired (see `_aws_cred_status`).
 
-    Detection-only: it never restarts or refreshes anything. `./vicegerent mcp
-    start` is what brings a dropped workload back (and already recreates/restarts
+    Detection-only: it never restarts or refreshes anything. `vicegerent start`
+    is what brings a dropped workload back (and already recreates/restarts
     only what's needed); an AWS refresh is host-side and often
     interactive/MFA-gated, which a headless process can't do anyway.
     """
     config = load_servers_config(servers_config)
     group = group_name(config)
     warning_secs = cred_warning_mins * 60
-    aws_keys = {"aws-expiring", "aws-expired"}
-    notified: set[str] = set()
-    cleared_workload_notifications: set[str] = set()
-    aws_notification_needs_reconcile = True
     # One startup line so the log confirms the process is alive and shows its
     # effective settings -- the poll loop itself is silent while everything is
     # healthy (it only fires macOS notifications), so this is the sole stdout.
@@ -908,19 +901,13 @@ def health_watch(
             status = workloads.get(name, "")
             notify_group = f"vicegerent-mcp-{name}"
             if status == "running":
-                # A watcher restart loses `notified`, but it must still clear
-                # any grouped alert posted by the previous watcher process.
-                if name not in cleared_workload_notifications or name in notified:
-                    _notify_clear(notify_group)  # recovered -- pull the stale alert
-                    notified.discard(name)
-                    cleared_workload_notifications.add(name)
-            elif name not in notified:
+                _notify_clear(notify_group)
+            else:
                 _notify(
-                    f"MCP backend down: {name} ({status or 'missing'})",
-                    "Run ./vicegerent mcp start to bring it back.",
+                    f"MCP backend down: {name}",
+                    "Run vicegerent start to bring it back.",
                     group=notify_group,
                 )
-                notified.add(name)
 
         # AWS credential watch -- only when the `aws` backend itself is enabled
         # (nothing else here depends on AWS creds). Profile comes from the `aws`
@@ -928,23 +915,12 @@ def health_watch(
         if "aws" in enabled_names:
             cred = _aws_cred_status(server_param(runtime_dir, "aws", "cred_watch_profile", ""), warning_secs)
             if cred is None:
-                # The watcher may have restarted after posting an alert. Its
-                # in-memory `notified` set is then empty, but Notification
-                # Center still holds the prior process's grouped alert.
-                if aws_notification_needs_reconcile or notified & aws_keys:
-                    _notify_clear(_AWS_CRED_GROUP)  # creds healthy again
-                notified -= aws_keys
-                aws_notification_needs_reconcile = False
+                _notify_clear(_AWS_CRED_GROUP)
             else:
-                key, title, message = cred
-                notified -= aws_keys - {key}  # a soon->expired change re-notifies
-                if key not in notified:
-                    _notify(title, message, group=_AWS_CRED_GROUP)
-                    notified.add(key)
-        elif aws_notification_needs_reconcile or notified & aws_keys:
+                _, title, message = cred
+                _notify(title, message, group=_AWS_CRED_GROUP)
+        else:
             _notify_clear(_AWS_CRED_GROUP)
-            notified -= aws_keys
-            aws_notification_needs_reconcile = False
 
         # Health transitions are also aggregation transitions: ToolHive's init
         # snapshot omits unhealthy workloads, so reconcile the served membership
@@ -2452,8 +2428,8 @@ def start_stack(
 
     # mcp-health-watch reads the `aws` backend's cred_watch_profile param itself
     # (blank -> no --profile flag), so nothing AWS-specific is threaded here.
-    # PATH/HOME travel through supervisord's stripped environment so `aws`,
-    # `terminal-notifier`, and `launchctl` resolve. --runtime-dir/--servers-config
+    # PATH/HOME travel through supervisord's stripped environment so `aws` and
+    # `launchctl` resolve. --runtime-dir/--servers-config
     # are GLOBAL options (defined on the top-level parser, before add_subparsers) --
     # they must precede the subcommand name or argparse rejects them as
     # "unrecognized arguments" (verified live).
@@ -2714,7 +2690,7 @@ def doctor(
         ok = False
     for binary in (
         "thv", "ghostunnel", "rclone", "supervisord", "supervisorctl",
-        "caffeinate", "kind", "aws", "terminal-notifier",
+        "caffeinate", "kind", "aws",
     ):
         found = shutil.which(binary)
         optional = binary in ("kind", "aws")
@@ -2730,6 +2706,12 @@ def doctor(
         # enabled); neither is fatal here.
         if not found and binary not in ("kind", "aws"):
             ok = False
+    notifier = str(NOTIFIER_BINARY)
+    if NOTIFIER_BINARY.is_file():
+        binaries.add_row("vicegerent-notifier", f"[green]✓[/green] {notifier}")
+    else:
+        binaries.add_row("vicegerent-notifier", "[red]✗ missing[/red]")
+        ok = False
     console.print(binaries)
     if host_packages.returncode != 0 or optional_package_drift:
         heading = (
@@ -3048,7 +3030,35 @@ def cmd_status(args: argparse.Namespace) -> int:
     return status(args.runtime_dir, args.servers_config)
 
 
+def ensure_host_packages_current() -> None:
+    """Repair host-package drift before starting any host MCP process."""
+    command = [sys.executable, str(HOST_PACKAGE_RECONCILER)]
+    checked = subprocess.run(
+        [*command, "check"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if checked.returncode == 0:
+        _ui_ok("Host packages are current.")
+        return
+
+    _ui_warn("Host package drift detected; reconciling before startup.")
+    if checked.stdout:
+        print(checked.stdout, end="" if checked.stdout.endswith("\n") else "\n")
+    if checked.stderr:
+        print(
+            checked.stderr,
+            end="" if checked.stderr.endswith("\n") else "\n",
+            file=sys.stderr,
+        )
+    applied = subprocess.run([*command, "apply", "--yes"], check=False)
+    if applied.returncode != 0:
+        raise SystemExit("host-package reconciliation failed; MCP startup aborted")
+
+
 def cmd_start(args: argparse.Namespace) -> int:
+    ensure_host_packages_current()
     return start_stack(
         args.runtime_dir, args.servers_config, args.ghostshell,
         args.listen, args.allow_cn, args.skip_workloads,
@@ -3101,7 +3111,7 @@ Commands:
   configure              interactively enable/skip each server + set its secrets
   enable KEY             enable a server (persists; brought up on next start)
   disable KEY            disable a server (stops it; ToolHive won't run it)
-  start [OPTIONS]        bring up enabled workloads + vMCP + ghostunnel (idempotent);
+  start [OPTIONS]        reconcile drifted host packages, then bring up enabled workloads + vMCP + ghostunnel (idempotent);
                          --operator-vmcp adds the unscoped host endpoint;
                          --caffeinate keeps macOS awake while the stack runs.
                          mcp-health-watch always runs (no flag): macOS notification

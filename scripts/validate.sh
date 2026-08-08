@@ -485,5 +485,13 @@ fi
 echo "INFO - Testing managed Homebrew package reconciliation"
 "$PYTHON" -m unittest host.brew.test_generate host.brew.test_reconcile
 "$PYTHON" host/brew/reconcile.py validate
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  echo "INFO - Compiling the native macOS notification helper"
+  xcrun clang -fobjc-arc -fmodules \
+    -fmodules-cache-path="$WORKDIR/notifier-module-cache" \
+    -mmacosx-version-min=13.0 host/notifier/main.m \
+    -o "$WORKDIR/vicegerent-notifier" \
+    -framework Cocoa -framework UserNotifications
+fi
 
 echo "INFO - All validations passed"

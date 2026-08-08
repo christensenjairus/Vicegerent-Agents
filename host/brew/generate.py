@@ -162,7 +162,6 @@ def validate_formula_change_scope(manifest: dict[str, Any], changed_paths: list[
     allowed = {
         f"Formula/{package['formula'].rsplit('/', 1)[1]}.rb"
         for package in manifest.get("packages", [])
-        if package.get("generator", {}).get("type") != "homebrew-core"
     }
     unexpected = sorted(set(changed_paths) - allowed)
     if unexpected:
@@ -197,15 +196,6 @@ def generate_updates(
 
     for package in data.get("packages", []):
         formula = package["formula"]
-        generator_type = package.get("generator", {}).get("type")
-        if generator_type == "homebrew-core":
-            expected_formula = f"homebrew/core/{package.get('name', '')}"
-            if formula != expected_formula:
-                raise ValueError(
-                    f"Homebrew Core formula for {package.get('name')} must be {expected_formula}"
-                )
-            _validate_renovate_metadata(package, generator_type)
-            continue
         if not re.fullmatch(
             r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/[a-z0-9][a-z0-9-]*@[0-9]+(?:\.[0-9]+){1,3}",
             formula,
