@@ -16,7 +16,7 @@ native host harness (optional, manually supervised)
   -> the same ToolHive workloads
 ```
 
-`thv` runs the workloads as Docker containers under ToolHive's own daemon — they persist across `start`/`stop` so OAuth tokens are not re-prompted. `start` detects when a workload's declared spec (package, env, run/server flags, secret targets) has drifted from what's actually running — e.g. editing `env` or `tools` for a server already up — and recreates that one container instead of `thv restart`-ing it (which would silently keep the OLD args forever, since restart reuses whatever was passed to the container's original `thv run`). Supervisord manages the long-lived host processes:
+`thv` runs the workloads as Docker containers under ToolHive's own daemon — they persist across `start`/`stop` so OAuth tokens are not re-prompted. `start` recreates a workload when its declared package, environment, flags, secrets, or mounted configuration has changed. Supervisord manages the long-lived host processes:
 
 - `vmcp` — `thv vmcp serve` aggregating the group on 127.0.0.1:4483.
 - `operator-vmcp` — opt-in via `start --operator-vmcp`; reuses the same backends without `aggregation.tools` filtering on 127.0.0.1:4484 for manually supervised native harnesses.
@@ -232,7 +232,7 @@ RCLONE_S3_HOST_DIR      disposable rclone auth-key copy (default ~/.vicegerent/r
 RCLONE_SERVE_DIR        directory rclone serves as the Velero bucket (default <repo>/velero-backups)
 ```
 
-## Runtime state files
+## Runtime and durable state files
 
 ```text
 ~/.vicegerent/mcp/supervisord.conf        # generated supervisord config
@@ -241,12 +241,13 @@ RCLONE_SERVE_DIR        directory rclone serves as the Velero bucket (default <r
 ~/.vicegerent/mcp/vmcp-config.json        # generated + validated vMCP config
 ~/.vicegerent/mcp/operator-vmcp-config.json # generated unscoped config when --operator-vmcp is enabled
 ~/.vicegerent/mcp/vmcp-init.yaml          # raw `thv vmcp init` output, post-processed into vmcp-config.json
-~/.vicegerent/mcp/servers-state.json      # which backends are enabled + their non-secret params
 ~/.vicegerent/mcp/kubeconfig-vicegerent.yaml  # kind --internal kubeconfig (mounted into the k8s workload)
 ~/.vicegerent/mcp/permission-profile-<server>.json  # per-server ToolHive permission profile
 ~/.vicegerent/mcp/aws-workdir/            # writable overlay for servers mounting ~/.aws
 ~/.vicegerent/mcp/aws-cli-cache/          # writable overlay for servers mounting ~/.aws
 ~/.vicegerent/mcp/logs/                   # per-process logs
+~/.vicegerent/mcp-state/servers-state.json # versioned durable enabled state, params, and fingerprints
+~/.vicegerent/mcp-state/servers-state.json.previous # last recoverable durable state
 ```
 
-All of it is disposable — delete the directory and the next `start` regenerates everything except `servers-state.json`, which is what `configure`/`enable`/`disable` write and is the one file worth not losing.
+Everything under `~/.vicegerent/mcp/` is disposable generated runtime state. Durable MCP intent is stored separately at `~/.vicegerent/mcp-state/servers-state.json` (override with `VICEGERENT_MCP_STATE`), with an atomic previous-copy recovery file. The first command after upgrade migrates the legacy runtime state file.
