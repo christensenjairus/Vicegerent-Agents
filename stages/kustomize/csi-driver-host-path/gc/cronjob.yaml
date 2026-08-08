@@ -14,7 +14,7 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 0
+      backoffLimit: 2
       activeDeadlineSeconds: 900
       template:
         spec:
@@ -24,6 +24,22 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           initContainers:
+            # Every retry pod must restore the plugin before pruning. A failed
+            # earlier reconcile can leave it scaled down after its own retry
+            # budget, which would make the plugin images appear unused.
+            - name: restore-csi-driver
+              image: alpine/k8s:1.36.2
+              command: [/bin/sh, /scripts/restore-csi-driver.sh]
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
             # Node image pruning rides along on this job for its schedule, but
             # must not run *beside* the reconcile: that scales csi-hostpathplugin
             # to zero, and a concurrent prune would see the plugin's own images

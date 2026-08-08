@@ -118,7 +118,7 @@ See [`host/mcp/README.md`](../host/mcp/README.md#prerequisites) for the exact se
 
 ### Platform-wide
 
-Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, generates the SearXNG signing key, the mcp-cerbos-shim self-token, and the Velero S3 credentials, and applies the model API keys you supply. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start. The Velero S3 credentials are likewise mirrored to `~/.vicegerent/rclone-s3/auth-key` (override with `RCLONE_S3_HOST_DIR`), which is what the host `rclone serve s3` process authenticates against.
+Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, generates the SearXNG signing key, the mcp-cerbos-shim self-token, and the Velero S3 credentials, and applies the model API keys you supply. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start. The Velero `velero/velero-credentials` Secret is authoritative; the host rclone auth key is reconciled from it.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # set any key to apply it non-interactively
@@ -195,7 +195,7 @@ DEFAULTS_FILE=<file> default layer laid under it (default: <repo>/values.default
 
 Stages run in this order: `cni` → `crds` → `storage` → `controllers` → `platform` → `agents`. Use `--stage platform` to re-render just the platform charts after editing a cluster var, or `--from controllers` to resume partway. The `agents` stage also prunes: an agent you remove from `values.yaml` is `helm uninstall`ed on the next run (removing a controller from `stages.yaml`, by contrast, needs a manual `helm uninstall`).
 
-The `csi-hostpath-gc` CronJob handles node housekeeping daily at 06:00 America/Denver: it prunes container images the node no longer runs, then garbage-collects orphaned csi-hostpath volume directories and snapshot files. An image an upgrade replaces stays on the node until that next run, so for up to 24 hours you can roll the upgrade back by pointing the tag back and re-running `./vicegerent install`, with no re-pull or rebuild.
+The `csi-hostpath-gc` CronJob handles node housekeeping daily at 06:00 America/Denver: it prunes container images the node no longer runs, then garbage-collects orphaned csi-hostpath volume directories and snapshot files. It restores `csi-hostpathplugin` after cleanup or failure; if restoration fails, the Job prints the manual recovery command and exits nonzero. An image an upgrade replaces stays on the node until that next run, so for up to 24 hours you can roll the upgrade back by pointing the tag back and re-running `./vicegerent install`, with no re-pull or rebuild.
 
 Check the result:
 

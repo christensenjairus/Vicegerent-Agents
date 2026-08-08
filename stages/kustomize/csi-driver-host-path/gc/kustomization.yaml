@@ -5,4 +5,4 @@ namespace: csi-hostpath-system
 resources: [rbac.yaml, cronjob.yaml]
 configMapGenerator:
   - name: csi-hostpath-gc-scripts
-    files: [reconcile.sh, prune-node-images.sh]
+    files: [reconcile.sh, restore-csi-driver.sh, prune-node-images.sh]

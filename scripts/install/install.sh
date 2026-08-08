@@ -214,7 +214,9 @@ for ((si = 0; si < stage_count; si++)); do
     run_action ".stages[$si].actions[$ai]"
   done
 
-  [[ "$sname" == "agents" ]] && reconcile_agents
+  if [[ "$sname" == "agents" ]]; then
+    reconcile_agents || die "agent-release pruning did not converge; installation is incomplete"
+  fi
 done
 
 echo

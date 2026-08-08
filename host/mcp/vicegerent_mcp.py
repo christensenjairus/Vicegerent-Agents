@@ -50,6 +50,7 @@ import hashlib
 import json
 import os
 import base64
+import binascii
 import re
 import shlex
 import shutil
@@ -1982,37 +1983,72 @@ def ensure_ghostunnel_material() -> None:
         print(f"  restored {fname} from kind")
 
 
-def ensure_rclone_material() -> None:
-    """If the host rclone S3 auth-key is missing, recover it from the velero
-    credential Secret (mirrors ensure_ghostunnel_material).
+def _valid_rclone_authkey(authkey: Path) -> bool:
+    """Return whether a host auth-key is safe to keep during a Kind outage."""
+    try:
+        lines = authkey.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return False
+    if len(lines) != 1:
+        return False
+    access, separator, secret = lines[0].partition(",")
+    return bool(separator and access and secret)
 
-    The Secret's `cloud` key is an AWS credentials file; the auth-key file is the
-    `access,secret` pair `rclone serve s3 --auth-key` expects. Both are seeded by
-    setup-secrets-platform.sh, which also applies the Secret — so a laptop missing
-    the file can rebuild it from the cluster before rclone starts.
+
+def _kind_temporarily_unreachable(detail: str) -> bool:
+    """Distinguish an unavailable API from an authoritative Secret error."""
+    detail = detail.lower()
+    return any(marker in detail for marker in (
+        "connection refused", "context deadline exceeded", "i/o timeout",
+        "no such host", "network is unreachable", "unable to connect to the server",
+    ))
+
+
+def ensure_rclone_material() -> bool:
+    """Reconcile the disposable host rclone auth-key from Kind's Velero Secret.
+
+    A valid existing key keeps a previously working host stack available during a
+    temporary Kind outage. A reachable Secret is authoritative: absent, malformed,
+    or invalid Secret data always fails closed rather than trusting host state.
     """
     d = Path(os.environ.get("RCLONE_S3_HOST_DIR", str(DEFAULT_RCLONE_S3_DIR)))
     authkey = d / "auth-key"
-    if authkey.is_file() and authkey.stat().st_size > 0:
-        return
+    has_existing_key = _valid_rclone_authkey(authkey)
     ctx = resolve_kind_context()
     if not ctx:
-        print("rclone auth-key missing; cannot recover without a Kind context.", file=sys.stderr)
-        return
-    print(f"rclone auth-key missing; recovering from kind Secret {VELERO_SECRET} …")
+        if has_existing_key:
+            print("Kind context is unavailable; preserving the existing rclone auth-key.", file=sys.stderr)
+            return True
+        print("rclone auth-key is unavailable and cannot recover without a Kind context.", file=sys.stderr)
+        return False
     result = subprocess.run(
         ["kubectl", "--context", ctx, "-n", VELERO_SECRET_NS,
          "get", "secret", VELERO_SECRET, "-o", "jsonpath={.data.cloud}"],
         capture_output=True, text=True,
     )
-    if result.returncode != 0 or not result.stdout.strip():
+    detail = result.stderr.strip()
+    if result.returncode != 0:
+        if has_existing_key and _kind_temporarily_unreachable(detail):
+            print("  Kind is temporarily unreachable; preserving the existing rclone auth-key.", file=sys.stderr)
+            return True
         print(
-            f"  could not recover the auth-key from kind ({result.stderr.strip() or 'secret/key absent'}).\n"
+            f"  could not recover the auth-key from kind ({detail or 'secret/key absent'}).\n"
             "  Run `./vicegerent setup secrets platform` to (re)generate the Velero credentials.",
             file=sys.stderr,
         )
-        return
-    cloud = base64.b64decode(result.stdout).decode("utf-8", "replace")
+        return False
+    if not result.stdout.strip():
+        print(
+            "  could not recover the auth-key from kind (secret/key absent).\n"
+            "  Run `./vicegerent setup secrets platform` to (re)generate the Velero credentials.",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        cloud = base64.b64decode(result.stdout, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError) as exc:
+        print(f"  {VELERO_SECRET} Secret is malformed ({exc}).", file=sys.stderr)
+        return False
     access = secret = ""
     for line in cloud.splitlines():
         if line.startswith("aws_access_key_id="):
@@ -2021,12 +2057,34 @@ def ensure_rclone_material() -> None:
             secret = line.split("=", 1)[1].strip()
     if not access or not secret:
         print(f"  {VELERO_SECRET} Secret is malformed (missing key id/secret).", file=sys.stderr)
-        return
-    d.mkdir(parents=True, exist_ok=True)
-    d.chmod(0o700)
-    authkey.write_text(f"{access},{secret}\n", encoding="utf-8")
-    authkey.chmod(0o600)
-    print("  restored rclone auth-key from kind")
+        return False
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        d.chmod(0o700)
+        desired = f"{access},{secret}\n"
+        current = None
+        if authkey.is_file():
+            with contextlib.suppress(UnicodeDecodeError):
+                current = authkey.read_text(encoding="utf-8")
+        if current == desired:
+            authkey.chmod(0o600)
+            return True
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=d, mode="w", encoding="utf-8", delete=False) as tmp:
+                tmp.write(desired)
+                tmp_path = Path(tmp.name)
+            tmp_path.chmod(0o600)
+            tmp_path.replace(authkey)
+        finally:
+            if tmp_path is not None:
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink()
+    except OSError as exc:
+        print(f"  could not atomically reconcile the rclone auth-key ({exc}).", file=sys.stderr)
+        return False
+    print("  reconciled rclone auth-key from kind")
+    return True
 
 
 def start_stack(
@@ -2064,6 +2122,11 @@ def start_stack(
                 "rclone-s3": _addr_port(rclone_addr),
             },
         )
+
+    # This must precede workload reconciliation: a fail-closed credential recovery
+    # must not leave newly started workloads behind when the host stack cannot start.
+    if not ensure_rclone_material():
+        return 1
 
     already_running = is_supervisor_running(runtime_dir)
     preserve_pids: frozenset[int] = frozenset()
@@ -2157,7 +2220,6 @@ def start_stack(
         "ALLOW_CN": allow_cn or DEFAULT_AGENT_CLIENT_CN,
     }
 
-    ensure_rclone_material()
     rclone_serve_dir = os.environ.get("RCLONE_SERVE_DIR", str(DEFAULT_RCLONE_SERVE_DIR))
     rclone_env: dict[str, str] = {
         "RCLONE_S3_HOST_DIR": os.environ.get("RCLONE_S3_HOST_DIR", str(DEFAULT_RCLONE_S3_DIR)),
