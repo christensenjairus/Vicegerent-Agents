@@ -110,9 +110,9 @@ import sys
 check = (
     "import os; os.environ['HTTPS_PROXY'] = 'http://smoke-test-proxy:8080';"
     "from slack_sdk.web.async_client import AsyncWebClient;"
-    "c = AsyncWebClient(token='xoxb-smoke', proxy=None);"
+    "c = AsyncWebClient(token='test-token', proxy=None);"
     "assert c.proxy is None, 'proxy not bypassed: %r' % (c.proxy,);"
-    "e = AsyncWebClient(token='xoxb-smoke', proxy='http://explicit:8080');"
+    "e = AsyncWebClient(token='test-token', proxy='http://explicit:8080');"
     "assert e.proxy == 'http://explicit:8080', 'explicit proxy lost: %r' % (e.proxy,);"
     "print('subprocess-ok')"
 )

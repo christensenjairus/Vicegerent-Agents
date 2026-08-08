@@ -36,10 +36,12 @@ The two agentgateway legs are provably disjoint from the sandbox's egress path: 
 ### 3. agentgateway AIPromptGuard (Rust regex, native CRD field)
 
 - **Covers:** the model-facing request and response bodies on every AI backend — `anthropic`, `openai`, `deepseek`, `zai`, and the `mnemosyne-anthropic` shim (`charts/platform/templates/models/*.yaml`). This is agentgateway's own HTTPS call to the provider, which never transits the egress-proxy.
-- **Catches:** all 41 canonical patterns (35 secret shapes plus the SSN/card/phone PII regexes) as literal `regex.matches` entries — the same `secret-patterns.json`, injected at render time via `helm --set-file secretPatterns=…`, exactly like the egress-proxy leg. Custom regexes for every pattern, **not** agentgateway's native `builtins: [Ssn, CreditCard, PhoneNumber]`: the built-in detectors carry an unscored bare `\b[0-9]{9}\b` that masks ordinary 9-digit numeric content, so all PII is matched by the canonical regexes instead.
+- **Catches:** all 41 canonical patterns (35 secret shapes plus the SSN/card/phone PII regexes) on model requests and the 33 high-confidence credential patterns on model responses. Both lists come from the same `secret-patterns.json`, injected at render time via `helm --set-file secretPatterns=…`, exactly like the egress-proxy leg. Custom regexes are used instead of agentgateway's native `builtins: [Ssn, CreditCard, PhoneNumber]`: the built-in detectors carry an unscored bare `\b[0-9]{9}\b` that masks ordinary 9-digit numeric content.
 - **Where the patterns live:** the canonical `secret-patterns.json`, rendered into the `promptGuard.request[].regex.matches` / `.response[].regex.matches` lists by `charts/platform/templates/_promptguard.tpl` (the shared partial `include`d by each AI backend) via `fromJsonArray`; the partial's `required` + empty-list `fail` guards make a render that forgets `--set-file` fail closed rather than ship an empty guard.
-- **Action:** matching request content is masked before forwarding. Matching buffered or streaming model responses are rejected with agentgateway's default 403 response instead of masked because v1.4.1 cannot mutate streamed response chunks safely. The default body is the static text `The request was rejected due to inappropriate content`; it does not echo matched content. The v1.4.1 runtime supports custom rejection bodies internally, but its Kubernetes CRD does not declare the `rejection` field, so chart-managed backends must use the default.
+- **Action:** all 41 patterns mask matching request content before forwarding. Buffered or streaming model responses use `Reject`, because v1.4.1 cannot safely mutate streamed response chunks, but only for the 33 high-confidence credential patterns. Generic HTTP authentication wrappers and PII shapes are request-only: request masking prevents the provider from seeing or echoing those inbound values, while response rejection on ordinary authentication prose, generated phone numbers, and synthetic test fixtures caused frequent false 403s. A provider can still independently generate content matching one of those eight request-only shapes; that output is accepted as the deliberate false-positive tradeoff. The default rejection body is the static text `The request was rejected due to inappropriate content`; it does not echo matched content. The v1.4.1 runtime supports custom rejection bodies internally, but its Kubernetes CRD does not declare the `rejection` field, so chart-managed backends must use the default.
 - **Known limits / caveats:** regex-only, with the same pattern caveats as the other legs. Streaming evaluation is windowed: agentgateway holds roughly 1 KiB at a time with 256 bytes of overlap, so content from earlier clean windows may already have reached the client when a later match terminates the stream, and patterns spanning more than the overlap can be missed. This closes the demonstrated token leak but is not equivalent to full-response buffering.
+
+The exact 403 body above is therefore a gateway guard signature, not evidence that the provider rejected the prompt or that the caller needs to authenticate again. Retry only after removing the matched synthetic fixture from model-visible context; construct the complete secret-shaped fixture deterministically at runtime rather than weakening the response guard. A more specific HTTP body requires an agentgateway CRD version that declares `promptGuard.response[].rejection`; v1.4.1's runtime implementation alone is not enough because Kubernetes rejects undeclared chart fields.
 
 ### 4. victoria-logs Vector agent (VRL remap, cluster-wide DaemonSet)
 
@@ -84,15 +86,15 @@ Each HTTP, MCP, model, and logging arrow is labelled with its enforcement point.
 
 ## Pattern parity
 
-All four legs carry the same 35 secret regexes and the same three PII categories.
+All four legs derive from the same 41-pattern registry. The agentgateway request guard carries all 41; its response guard intentionally carries only the 33 high-confidence credential patterns.
 
-| Pattern | egress-proxy | mcp-cerbos-shim | agentgateway promptGuard | victoria-logs Vector |
+| Pattern | egress-proxy | mcp-cerbos-shim | agentgateway request / response | victoria-logs Vector |
 | --- | :---: | :---: | :---: | :---: |
 | SSH private key | ✅ | ✅ | ✅ | ✅ |
 | Slack `xox*` token | ✅ | ✅ | ✅ | ✅ |
 | Slack `xapp-*` token | ✅ | ✅ | ✅ | ✅ |
-| `Bearer` value | ✅ | ✅ | ✅ | ✅ |
-| `Basic` value | ✅ | ✅ | ✅ | ✅ |
+| `Bearer` value | ✅ | ✅ | ✅ / ❌ | ✅ |
+| `Basic` value | ✅ | ✅ | ✅ / ❌ | ✅ |
 | AWS access key ID | ✅ | ✅ | ✅ | ✅ |
 | GitHub token | ✅ | ✅ | ✅ | ✅ |
 | GitLab token | ✅ | ✅ | ✅ | ✅ |
@@ -123,17 +125,19 @@ All four legs carry the same 35 secret regexes and the same three PII categories
 | 1Password service account token | ✅ | ✅ | ✅ | ✅ |
 | Linear API key | ✅ | ✅ | ✅ | ✅ |
 | PagerDuty `Token token=` header | ✅ | ✅ | ✅ | ✅ |
-| US SSN | ✅ regex | ✅ regex | ✅ regex | ✅ regex |
-| Credit card (Visa/MC/Amex/Discover) | ✅ 4 regexes | ✅ 4 regexes | ✅ 4 regexes | ✅ 4 regexes |
-| US phone | ✅ regex | ✅ regex | ✅ regex | ✅ regex |
+| US SSN | ✅ regex | ✅ regex | ✅ / ❌ | ✅ regex |
+| Credit card (Visa/MC/Amex/Discover) | ✅ 4 regexes | ✅ 4 regexes | ✅ / ❌ | ✅ 4 regexes |
+| US phone | ✅ regex | ✅ regex | ✅ / ❌ | ✅ regex |
 | Email | ❌ excluded | ❌ excluded | ❌ excluded | ❌ excluded |
-| Action on match | redact | redact | mask | redact |
+| Action on match | redact | redact | mask / reject | redact |
 
-Every leg is regex-only, carrying exactly the same 41 canonical patterns (35 secret + 6 PII regexes) — there is no wider ruleset on any of them, and the agentgateway leg no longer uses PII builtins. One asymmetry still matters: the Vector leg's structurally narrower field coverage. On the Vector leg only the `.message` field is scrubbed — a secret landing in a structured field Vector attaches separately (`kubernetes.*` labels, etc.) would not be caught even though the same 41 patterns run against the log body.
+In the agentgateway column, a single ✅ means ✅ / ✅; only the eight request-only rows are shown as ✅ / ❌.
+
+Every leg is regex-only and derives from the same 41 canonical patterns (35 secret + 6 PII regexes); agentgateway requests use all 41 while responses use the 33 entries not marked request-only. Agentgateway does not use its PII builtins. A separate asymmetry remains on the Vector leg: only `.message` is scrubbed, so a secret landing in a structured field Vector attaches separately (`kubernetes.*` labels, etc.) would not be caught even though all 41 patterns run against the log body.
 
 ## The canonical JSON: one source, four legs
 
-The pattern set has **one source of truth** — `images/mcp-cerbos-shim/internal/server/secret-patterns.json`, an array of 41 `{"name", "regex"}` objects (35 secret shapes + 6 PII regexes). Every one of the four legs derives from it; none is hand-mirrored. Each leg uses the strongest centralization its config surface allows:
+The pattern set has **one source of truth** — `images/mcp-cerbos-shim/internal/server/secret-patterns.json`, an array of 41 objects with `name` and `regex`, plus optional `modelResponse: false` metadata for request-only prompt-guard entries (35 secret shapes + 6 PII regexes). Every one of the four legs derives from it; none is hand-mirrored. Each leg uses the strongest centralization its config surface allows:
 
 1. `images/mcp-cerbos-shim/internal/server/secrets_redact.go` — `secretPatternRegistry` (Go, RE2), embedded via `//go:embed secret-patterns.json` at build time.
 2. `charts/egress-proxy/templates/addon-configmap.yaml` — `REDACT_PATTERNS` (Python, `re`), injected at render time via `helm --set-file secretPatterns=<that file>`.

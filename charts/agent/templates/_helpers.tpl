@@ -77,6 +77,7 @@ Apply the KISS principle: break work into simple, focused pieces and prefer the 
 {{ include "vicegerent-agent.draftPullRequestExpectation" . | trim }}
 
 {{ include "vicegerent-agent.kissPrinciple" . | trim }}
+
 {{- end -}}
 
 {{- /* codingHarnessSystemPrompt = sharedSystemPrompt plus a web-tooling-only
