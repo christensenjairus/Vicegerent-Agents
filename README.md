@@ -80,7 +80,7 @@ $EDITOR values.yaml          # cluster vars + the agents you want (start with th
 ./vicegerent install
 
 # 6. Bring up the host-side MCP control plane (ToolHive + vMCP)
-./vicegerent setup mcp       # one-time: reconciles exact host-tool versions, creates the venv, then configures MCP servers + links the CLI onto PATH
+./vicegerent setup mcp       # one-time: reconciles exact host tools and the locked root .venv, then configures MCP servers + links the CLI onto PATH
 ./vicegerent start
 
 # 7. Show the agent's dashboard URL + login
@@ -103,8 +103,8 @@ Requires `kind`, `cilium-cli`, `kubectl`, `helm` 4+, `yq` v4, `jq`, `git`, and O
 ## Development
 
 ```bash
-pre-commit install
-pre-commit run --all-files
+scripts/run-python -m pre_commit install
+scripts/run-python -m pre_commit run --all-files
 ```
 
-The local validation hook (`scripts/validate.sh`) expects `helm`, `yq` v4, `kubeconform`, and `python3` on `PATH` (plus `cerbos` for the policy-compile pass, skipped if absent).
+The repository has one Python environment at `.venv`. `pyproject.toml` declares every host-tool and validation dependency, `uv.lock` locks the full cross-platform graph, and `scripts/run-python`, setup, and validation reconcile it with `uv sync --locked`. The first reconciliation needs Python 3.11+ and bootstraps the pinned `uv` inside the venv without modifying Homebrew's externally managed Python. Host MCP runtime commands use the environment created by `./vicegerent setup mcp` without performing package installation, so teardown remains available during a package-source outage. The local validation hook (`scripts/validate.sh`) also expects `helm`, `yq` v4 (the Go binary from [mikefarah/yq](https://github.com/mikefarah/yq), not the same-named PyPI `yq`), and `kubeconform` on `PATH` (plus `cerbos` for the policy-compile pass, skipped if absent).

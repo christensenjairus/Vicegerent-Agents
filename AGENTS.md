@@ -8,7 +8,7 @@ Vicegerent is a credential-isolated, egress-locked, harness-agnostic agent platf
 - Preserve unrelated user changes. Before editing, confirm the worktree path and branch with `pwd` and `git branch --show-current`.
 - Keep changes focused and remove obsolete configuration, comments, examples, and documentation instead of preserving them for history. Put change rationale and investigation history in the merge request, not inline.
 - Use soft-wrapped Markdown: one physical line per paragraph, list item, or blockquote.
-- Before every commit, run `scripts/validate.sh` and `pre-commit run --files <changed files>`. Re-run both if a hook modifies files.
+- Before every commit, run `scripts/validate.sh` and `scripts/run-python -m pre_commit run --files <changed files>`. Re-run both if a hook modifies files.
 - For shell changes, also run `bash -n <file>` and `shellcheck <file>`.
 - Create the merge request with a complete description, verification results, and a `Follow-up tasks` section. Wait for the pipeline for the pushed commit to pass before declaring the work complete.
 

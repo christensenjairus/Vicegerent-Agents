@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -15,7 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RECONCILER = ROOT / "charts/agent/files/reconcile-config.py"
 
 
-def reconcile(kind: str, fmt: str, existing: str, desired: str) -> dict:
+def reconcile(
+    kind: str, fmt: str, existing: str, desired: str, *, env: dict[str, str] | None = None
+) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         existing_path = work / f"existing.{fmt}"
@@ -23,18 +27,25 @@ def reconcile(kind: str, fmt: str, existing: str, desired: str) -> dict:
         output_path = work / f"output.{fmt}"
         existing_path.write_text(existing, encoding="utf-8")
         desired_path.write_text(desired, encoding="utf-8")
-        subprocess.run(
-            [
-                "python3",
-                str(RECONCILER),
-                kind,
-                fmt,
-                str(existing_path),
-                str(desired_path),
-                str(output_path),
-            ],
-            check=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(RECONCILER),
+                    kind,
+                    fmt,
+                    str(existing_path),
+                    str(desired_path),
+                    str(output_path),
+                ],
+                check=True,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as error:
+            detail = error.stderr or error.stdout or "no diagnostic output"
+            raise RuntimeError(f"config reconciliation failed for {kind}: {detail}") from error
         text = output_path.read_text(encoding="utf-8")
         if fmt == "yaml":
             return yaml.safe_load(text)
@@ -574,6 +585,52 @@ def test_empty_existing_files_are_treated_as_unseeded() -> None:
         assert isinstance(result, dict)
 
 
+def test_toml_serialization_does_not_depend_on_yq() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        yq = Path(tmp) / "yq"
+        yq.write_text("#!/usr/bin/env bash\nprintf 'unsupported TOML value' >&2\nexit 1\n")
+        yq.chmod(0o755)
+        env = os.environ | {"PATH": f"{yq.parent}:{os.environ['PATH']}"}
+        result = reconcile("codex", "toml", "", 'model = "default"\n', env=env)
+        assert result == {"model": "default"}
+
+
+def test_toml_serialization_preserves_user_arrays_of_tables() -> None:
+    result = reconcile(
+        "codex",
+        "toml",
+        """
+[[profiles]]
+name = "interactive"
+enabled = true
+
+[[profiles]]
+name = "batch"
+enabled = false
+limits = { jobs = 4, labels = ["safe", "fast"] }
+""",
+        'model = "default"\n',
+    )
+    assert result["profiles"] == [
+        {"name": "interactive", "enabled": True},
+        {
+            "name": "batch",
+            "enabled": False,
+            "limits": {"jobs": 4, "labels": ["safe", "fast"]},
+        },
+    ]
+
+
+def test_reconcile_uses_the_test_interpreter_not_path_python3() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        python3 = Path(tmp) / "python3"
+        python3.write_text("#!/usr/bin/env bash\nprintf 'wrong interpreter' >&2\nexit 99\n")
+        python3.chmod(0o755)
+        env = os.environ | {"PATH": f"{python3.parent}:{os.environ['PATH']}"}
+        result = reconcile("hermes", "yaml", "", "model: default\n", env=env)
+        assert result == {"model": "default"}
+
+
 def test_chart_invokes_reconciler_for_every_writable_config() -> None:
     sandbox = (ROOT / "charts/agent/templates/_sandbox.tpl").read_text(encoding="utf-8")
     expected_calls = {
@@ -604,6 +661,9 @@ def main() -> int:
     test_codex_replaces_runtime_policy_and_preserves_tui_state()
     test_opencode_replaces_routing_and_preserves_user_options()
     test_empty_existing_files_are_treated_as_unseeded()
+    test_toml_serialization_does_not_depend_on_yq()
+    test_toml_serialization_preserves_user_arrays_of_tables()
+    test_reconcile_uses_the_test_interpreter_not_path_python3()
     test_chart_invokes_reconciler_for_every_writable_config()
     print(
         "OK - harness config reconciliation replaces owned sections and preserves user settings"

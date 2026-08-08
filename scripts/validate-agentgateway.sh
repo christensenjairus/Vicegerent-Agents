@@ -10,6 +10,10 @@ set -o pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# shellcheck source=lib/python-env.sh
+source "$REPO_ROOT/scripts/lib/python-env.sh"
+ensure_python_environment "$REPO_ROOT"
+
 STAGES="stages/stages.yaml"
 DEFAULTS_VALUES="values.defaults.yaml"
 EXAMPLE_VALUES="values.example.yaml"
@@ -20,7 +24,7 @@ CRD_VERSION="$(yq '.stages[].actions[] | select(.name == "agentgateway-crds") | 
 echo "INFO - agentgateway-crds version pinned to ${CRD_VERSION} (from ${STAGES})"
 
 echo "INFO - Testing strict agentgateway CRD field validation"
-python3 scripts/test_validate_agentgateway_crds.py
+"$REPO_ROOT/.venv/bin/python" scripts/test_validate_agentgateway_crds.py
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -39,4 +43,4 @@ RENDERED="$WORK/rendered.yaml"
 helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" \
   --set-file "secretPatterns=$SECRET_PATTERNS_FILE" > "$RENDERED"
 
-python3 scripts/validate-agentgateway-crds.py "$CRD_GLOB" "$RENDERED"
+"$REPO_ROOT/.venv/bin/python" scripts/validate-agentgateway-crds.py "$CRD_GLOB" "$RENDERED"

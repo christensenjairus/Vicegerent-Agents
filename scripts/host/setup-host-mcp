@@ -5,7 +5,7 @@
 # (ToolHive workloads + vMCP + ghostunnel + rclone, kept awake by caffeinate):
 #
 #   1. Homebrew packages: thv (ToolHive), ghostunnel, supervisor, rclone, terminal-notifier
-#   2. Python venv + deps: pip install -r host/mcp/requirements-host.txt
+#   2. Repository Python environment: reconcile the root .venv from uv.lock
 #   3. ToolHive secrets provider + required API-key secrets (guidance)
 #   4. Configure MCP servers: enable/skip each + set its secrets
 #   5. Final doctor check: vicegerent mcp doctor
@@ -34,6 +34,8 @@ done
 
 # shellcheck source=../lib/cli-ui.sh
 source "$REPO_ROOT/scripts/lib/cli-ui.sh"
+# shellcheck source=../lib/python-env.sh
+source "$REPO_ROOT/scripts/lib/python-env.sh"
 
 info()    { ui_success "$@"; }
 step()    { ui_section "$@"; }
@@ -66,32 +68,9 @@ if [[ "$ASSUME_YES" == "1" ]]; then
 fi
 python3 "$BREW_RECONCILER" "${BREW_ARGS[@]}"
 
-step "Python venv + dependencies"
-
-REQ="$REPO_ROOT/host/mcp/requirements-host.txt"
-VENV="$REPO_ROOT/host/mcp/.venv"
-[[ -f "$REQ" ]] || die "requirements-host.txt not found: $REQ"
-
-if [[ ! -d "$VENV" ]]; then
-  echo "  Creating venv at host/mcp/.venv"
-  python3 -m venv "$VENV"
-fi
-
-if "$VENV/bin/python" -c "
-import importlib.util, sys
-mods = ['rich', 'supervisor', 'textual']
-missing = [m for m in mods if importlib.util.find_spec(m) is None]
-if missing:
-    print('missing:', ' '.join(missing))
-    sys.exit(1)
-" 2>/dev/null; then
-  info "Python dependencies up to date (host/mcp/.venv)"
-else
-  echo "  Installing from $REQ into host/mcp/.venv"
-  confirm || die "Aborted."
-  "$VENV/bin/pip" install -r "$REQ" -q
-  info "Python dependencies installed into host/mcp/.venv"
-fi
+step "Python environment"
+ensure_python_environment "$REPO_ROOT"
+info "Python dependencies match uv.lock (.venv)"
 
 step "ToolHive secrets"
 
@@ -113,14 +92,14 @@ else
   ui_info "API keys use hidden prompts; OAuth servers open a browser on first start."
   ui_info "Re-run 'vicegerent setup mcp' whenever you want to change the selection."
   echo
-  "$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" configure
+  "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" configure
 fi
 
 step "Doctor check"
 echo
 # Reported, not fatal: the remaining steps (CLI symlink, next-steps) are still
 # worth doing on a partial setup, and doctor's own output names what is missing.
-"$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" doctor \
+"$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" doctor \
   || warn "doctor reported missing prerequisites (above); fix them, then re-run './vicegerent mcp doctor'."
 
 step "CLI symlink (~/.local/bin/vicegerent)"

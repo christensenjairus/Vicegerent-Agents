@@ -77,25 +77,25 @@ validate:pre-commit:
   variables:
     TOOLS_CACHE_DIR: $CI_PROJECT_DIR/.cache/ci-tools
     KUBECONFORM_CACHE: $CI_PROJECT_DIR/.cache/kubeconform
+    UV_CACHE_DIR: $CI_PROJECT_DIR/.cache/uv
     # renovate: datasource=github-releases depName=mikefarah/yq
     YQ_VERSION: v4.53.3
     # renovate: datasource=github-releases depName=yannh/kubeconform
     KUBECONFORM_VERSION: v0.8.0
     # renovate: datasource=github-releases depName=cerbos/cerbos
     CERBOS_VERSION: v0.54.0
-    # renovate: datasource=pypi depName=pre-commit
-    PRE_COMMIT_VERSION: 4.6.1
-    # renovate: datasource=pypi depName=detect-secrets
-    DETECT_SECRETS_VERSION: 1.5.0
+
   cache:
     key:
       prefix: validation-cache-yq${YQ_VERSION}-kubeconform${KUBECONFORM_VERSION}-cerbos${CERBOS_VERSION}
       files:
         - .pre-commit-config.yaml
+        - uv.lock
     paths:
       - .cache/pre-commit/
       - .cache/kubeconform/
       - .cache/ci-tools/
+      - .cache/uv/
   rules:
     - if: $CI_PIPELINE_SOURCE == "pipeline" && $GENERATED_CHANGE == "host-brew-formulae"
       when: on_success
@@ -105,7 +105,7 @@ validate:pre-commit:
       when: on_success
     - when: never
   before_script:
-    - apk add --no-cache bash curl git python3 py3-pip tar 2>/dev/null || true
+    - apk add --no-cache bash curl git python3 py3-pip tar
     - mkdir -p "$TOOLS_CACHE_DIR"
     - |
       if [ ! -x "$TOOLS_CACHE_DIR/yq" ]; then
@@ -124,7 +124,7 @@ validate:pre-commit:
       fi
     - chmod +x "$TOOLS_CACHE_DIR"/{yq,kubeconform,cerbos}
     - export PATH="$TOOLS_CACHE_DIR:$PATH"
-    - pip install "pre-commit==$PRE_COMMIT_VERSION" "detect-secrets==$DETECT_SECRETS_VERSION" --break-system-packages --quiet
+    - source scripts/lib/python-env.sh && ensure_python_environment "$CI_PROJECT_DIR"
   script:
     - |
       if test "$CI_PIPELINE_SOURCE" = "merge_request_event" &&
@@ -173,10 +173,11 @@ validate:agentgateway-crds:
   image: harbor.hahomelabs.com/docker.io/alpine/k8s:1.36.2
   interruptible: true
   variables:
-    # renovate: datasource=pypi depName=jsonschema
-    JSONSCHEMA_VERSION: 4.26.0
-    # renovate: datasource=pypi depName=PyYAML
-    PYYAML_VERSION: 6.0.3
+    UV_CACHE_DIR: $CI_PROJECT_DIR/.cache/uv
+  cache:
+    key:
+      files: [uv.lock]
+    paths: [.cache/uv/]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
@@ -190,8 +191,7 @@ validate:agentgateway-crds:
       when: on_success
     - when: never
   before_script:
-    - apk add --no-cache python3 py3-pip 2>/dev/null || true
-    - pip install "jsonschema==$JSONSCHEMA_VERSION" "PyYAML==$PYYAML_VERSION" --break-system-packages --quiet
+    - apk add --no-cache bash python3 py3-pip
   script:
     - bash scripts/validate-agentgateway.sh
 
@@ -208,7 +208,7 @@ validate:image-tag-bump:
       when: on_success
     - when: never
   before_script:
-    - apk add --no-cache curl git python3 2>/dev/null || true
+    - apk add --no-cache curl git python3
   script:
     - git fetch --no-tags origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
     - python3 scripts/validate-image-tags.py --bump-since "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
@@ -241,7 +241,7 @@ validate:tag-bump-head:
       when: on_success
     - when: never
   before_script:
-    - apk add --no-cache python3 2>/dev/null || true
+    - apk add --no-cache python3
   script:
     - python3 scripts/validate-image-tags.py
 

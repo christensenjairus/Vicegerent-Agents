@@ -39,26 +39,38 @@ repos:
       - id: test-markdown-soft-wrap
         name: Markdown soft-wrap tests
         language: system
-        entry: python3 -m unittest scripts/test_check_markdown_soft_wrap.py
+        entry: scripts/run-python -m unittest scripts/test_check_markdown_soft_wrap.py
         files: ^scripts/(check-markdown-soft-wrap|test_check_markdown_soft_wrap)\.py$
         pass_filenames: false
       - id: markdown-soft-wrap
         name: Markdown soft-wrap
         language: system
-        entry: python3 scripts/check-markdown-soft-wrap.py
+        entry: scripts/run-python scripts/check-markdown-soft-wrap.py
         files: \.md$
       - id: validate-policy-runtime-coverage
         name: Cerbos runtime policy coverage
         language: system
-        entry: python3 scripts/validate-policy-runtime-coverage.py
+        entry: scripts/run-python scripts/validate-policy-runtime-coverage.py
         files: ^(charts/cerbos-policies/policies/.+\.yaml|scripts/test-mcp-policies\.sh|scripts/validate-policy-runtime-coverage\.py)$
         pass_filenames: false
       - id: validate-host-brew
         name: managed Homebrew package pins
         language: system
-        entry: bash -c 'python3 -m unittest host.brew.test_generate host.brew.test_reconcile
-          && python3 host/brew/reconcile.py validate'
+        entry: bash -c 'scripts/run-python -m unittest host.brew.test_generate host.brew.test_reconcile
+          && scripts/run-python host/brew/reconcile.py validate'
         files: ^(Formula/.+\.rb|host/brew/.+)$
+        pass_filenames: false
+      - id: validate-python-dependencies
+        name: locked repository Python dependencies
+        language: system
+        entry: scripts/run-python scripts/validate-python-dependencies.py
+        files: ^(pyproject\.toml|uv\.lock|\.gitlab-ci\.yml|\.pre-commit-config\.yaml|vicegerent|scripts/.+|host/(brew|mcp)/.+|images/agent/patches/tests/(test_hermes_home_migration|test_provider_reasoning_overrides)\.py)$
+        pass_filenames: false
+      - id: test-python-environment
+        name: serialized Python environment reconciliation
+        language: system
+        entry: scripts/test-python-env.sh
+        files: ^scripts/(lib/python-env\.(py|sh)|test-python-env\.sh)$
         pass_filenames: false
       - id: validate-manifests
         name: helm lint + render + kubeconform + cerbos compile

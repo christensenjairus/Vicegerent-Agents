@@ -23,17 +23,15 @@ C="$UI_CYAN"
 source "$REPO_ROOT/scripts/lib/kube-context.sh"
 # shellcheck source=scripts/lib/kind-userns.sh
 source "$REPO_ROOT/scripts/lib/kind-userns.sh"
-
-# Drive the host-side ToolHive/vMCP stack controller (host/mcp/vicegerent_mcp.py) via
-# its venv. Single entrypoint for the host stack: `vicegerent mcp <cmd>` and the
-# start/stop/status delegations below all route through here.
+# Drive the host-side ToolHive/vMCP stack controller (host/mcp/vicegerent_mcp.py)
+# from the environment created by `vicegerent setup mcp`. Runtime commands do not
+# reconcile packages, so `stop` remains available when a package source is down.
 mcp_py() {
-  local venv_python="$REPO_ROOT/host/mcp/.venv/bin/python"
-  [[ -x "$venv_python" ]] || {
-    ui_error "Host MCP venv not found. Run: ./vicegerent setup mcp"
-    exit 1
-  }
-  "$venv_python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" "$@"
+  if [[ ! -x "$REPO_ROOT/.venv/bin/python" ]]; then
+    ui_error "Repository Python environment not found. Run: ./vicegerent setup mcp"
+    return 127
+  fi
+  "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" "$@"
 }
 
 restore_terminal() {
@@ -631,12 +629,13 @@ cluster_setup() {
 # Port-forward agentgateway, check the host MCP stack is running, run a test script,
 # then tear everything down. Used by `test gateway` and `test policies`.
 run_with_portforward() {
-  local script="$1"; shift
+  local script="$1" mcp_status=0; shift
 
-  # Only stdout is swallowed: mcp_py's own "venv not found" goes to stderr and
-  # exits before this `if` can run, so redirecting stderr too would make the
-  # missing-venv case exit 1 printing nothing at all.
-  if ! mcp_py status >/dev/null; then
+  mcp_py status >/dev/null || mcp_status=$?
+  if (( mcp_status == 127 )); then
+    exit 1
+  fi
+  if (( mcp_status != 0 )); then
     ui_error "Host MCP stack is not running. Start it first: ./vicegerent mcp start"
     exit 1
   fi
@@ -743,7 +742,7 @@ case "${1:-}" in
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
           echo "vicegerent setup mcp — set up all host-side MCP prerequisites, then configure servers"
           echo "  Reconciles exact Homebrew package versions (thv, ghostunnel, supervisor, rclone, terminal-notifier),"
-          echo "  the Python venv, and the thv secrets provider, then walks you through enabling/skipping each"
+          echo "  the locked repository Python environment and thv secrets provider, then walks you through enabling/skipping each"
           echo "  MCP server and setting its secrets."
           echo "  Flags: -y/--yes (auto-approves the prerequisite installs; the per-server"
           echo "         configure step stays interactive)"

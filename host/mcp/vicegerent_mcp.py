@@ -1793,7 +1793,7 @@ def _require_rich() -> tuple[Any, Any]:
 
         return Console(highlight=False, no_color="NO_COLOR" in os.environ), Table
     except ImportError:
-        raise SystemExit("rich is required: pip install -r host/mcp/requirements-host.txt")
+        raise SystemExit("rich is required: run ./vicegerent setup mcp")
 
 
 def _ui(message: str, style: str | None = None, *, stderr: bool = False) -> None:
@@ -2519,7 +2519,7 @@ def run_tui(
     try:
         from tui import HostMCPApp
     except ImportError as exc:
-        raise SystemExit(f"textual is required for the TUI: {exc}\n  pip install -r host/mcp/requirements-host.txt")
+        raise SystemExit(f"textual is required for the TUI: {exc}\n  run ./vicegerent setup mcp")
     HostMCPApp(runtime_dir=runtime_dir, servers_config=servers_config).run()
     return 0
 

@@ -156,7 +156,7 @@ The host side of this stack trusts the host. Two exposures are inherent to how D
 ## Prerequisites
 
 ```bash
-./vicegerent setup mcp      # brew: thv, ghostunnel, supervisor, rclone, terminal-notifier + Python venv
+./vicegerent setup mcp      # exact Homebrew tools + the repository's locked root .venv
 ```
 
 `setup mcp` reconciles those tools to the exact versions declared in [`host/brew/packages.json`](../brew/packages.json), using this repository's immutable versioned formulae rather than whatever the upstream taps currently serve. `./vicegerent host-packages check` reports drift without changing the machine, `./vicegerent host-packages apply` repairs it, and `./vicegerent mcp doctor` includes the same version gate.

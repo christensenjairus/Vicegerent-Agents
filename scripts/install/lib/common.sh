@@ -55,8 +55,8 @@ defaults_slice_agent() {
 # resolved scalar, or "" if neither file sets it.
 resolve_value_or_default() {
   local path="$1" v
-  v="$(yq eval "$path // \"\"" "$VALUES_FILE")"
-  [[ -n "$v" && "$v" != "null" ]] || v="$(yq eval "$path // \"\"" "$DEFAULTS_FILE")"
+  v="$(yq -r eval "$path // \"\"" "$VALUES_FILE")"
+  [[ -n "$v" && "$v" != "null" ]] || v="$(yq -r eval "$path // \"\"" "$DEFAULTS_FILE")"
   [[ "$v" != "null" ]] || v=""
   printf '%s' "$v"
 }
@@ -93,7 +93,7 @@ preflight_platform_secrets() {
 # front so a bad machine file fails before any stage runs, not at the last one.
 require_agent_names() {
   local count i n
-  count="$(yq '.agents | length' "$VALUES_FILE")"
+  count="$(yq -r '.agents | length' "$VALUES_FILE")"
   for ((i = 0; i < count; i++)); do
     n="$(yq -r ".agents[$i].name // \"\"" "$VALUES_FILE")"
     [[ -n "$n" && "$n" != "null" ]] \
@@ -117,9 +117,17 @@ validate_values_schema() {
     ([.agents[]? | .config? | type == "!!str"] | any)
   ] | any' "$VALUES_FILE")"
   [[ "$legacy" != "true" ]] || die "$VALUES_FILE uses the retired values schema; migrate it from clusterVars/networkAllowlist/directEgress.ssh.fqdn/comma-separated egress fields to policy/directEgress.ssh.hosts/list fields (see values.example.yaml)"
-  python3 "$REPO_ROOT/scripts/validate-model-backend-alignment.py" \
-    --defaults "$DEFAULTS_FILE" "$VALUES_FILE" \
-    || die "$VALUES_FILE enables an agent provider without its platform model backend"
+  local alignment_output
+  if alignment_output="$("$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/scripts/validate-model-backend-alignment.py" \
+      --defaults "$DEFAULTS_FILE" "$VALUES_FILE" 2>&1)"; then
+    echo "$alignment_output"
+  else
+    echo "$alignment_output" >&2
+    if grep -q '^FAIL - ' <<<"$alignment_output"; then
+      die "$VALUES_FILE enables an agent provider without its platform model backend"
+    fi
+    die "validate-model-backend-alignment.py crashed instead of validating $VALUES_FILE (see traceback above)"
+  fi
 }
 
 preflight_agent_secrets() {

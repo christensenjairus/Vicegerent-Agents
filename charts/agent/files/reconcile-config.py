@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
-import subprocess
+import re
 import sys
 import tempfile
 from copy import deepcopy
@@ -319,15 +320,61 @@ def dump_config(data: dict[str, Any], fmt: str) -> str:
     if fmt == "json":
         return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     if fmt == "toml":
-        completed = subprocess.run(
-            ["yq", "-p", "json", "-o", "toml"],
-            input=json.dumps(data),
-            text=True,
-            check=True,
-            capture_output=True,
-        )
-        return completed.stdout
+        return dump_toml(data)
     raise ValueError(f"unsupported format: {fmt}")
+
+
+_TOML_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def toml_key(key: str) -> str:
+    return key if _TOML_BARE_KEY.fullmatch(key) else json.dumps(key, ensure_ascii=False)
+
+
+def toml_value(value: Any) -> str:
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("TOML does not support non-finite floats")
+        return repr(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(toml_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        items = ", ".join(f"{toml_key(key)} = {toml_value(item)}" for key, item in value.items())
+        return "{ " + items + " }"
+    raise TypeError(f"unsupported TOML value: {value!r}")
+
+
+def dump_toml(data: dict[str, Any]) -> str:
+    lines: list[str] = []
+
+    def write_table(
+        table: dict[str, Any], path: tuple[str, ...], *, array: bool = False
+    ) -> None:
+        if path:
+            if lines:
+                lines.append("")
+            brackets = "[[{}]]" if array else "[{}]"
+            lines.append(brackets.format(".".join(toml_key(key) for key in path)))
+        for key, value in table.items():
+            if not isinstance(value, dict) and not (
+                isinstance(value, list) and value and all(isinstance(item, dict) for item in value)
+            ):
+                lines.append(f"{toml_key(key)} = {toml_value(value)}")
+        for key, value in table.items():
+            if isinstance(value, dict):
+                write_table(value, (*path, key))
+            elif isinstance(value, list) and value and all(isinstance(item, dict) for item in value):
+                for item in value:
+                    write_table(item, (*path, key), array=True)
+
+    write_table(data, ())
+    return "\n".join(lines) + "\n"
 
 
 def write_atomic(path: Path, content: str) -> None:
