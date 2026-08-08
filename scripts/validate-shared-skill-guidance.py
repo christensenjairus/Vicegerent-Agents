@@ -18,7 +18,14 @@ REQUIRED_GUIDANCE: tuple[str, ...] = (
     "canonical tree at `/opt/data/skills`",
     "Read a skill before modifying it",
     "Do not create skills for one-off task progress.",
+    "Never use Git in the vault:",
+    "Treat the vault as a self-saving folder; any scheduled Git backup is operator-managed outside the agent's vault workflow.",
     "All pull requests and merge requests are forcibly kept as drafts by the platform. This is expected.",
+)
+FORBIDDEN_GUIDANCE: tuple[str, ...] = (
+    "shared git-synced Obsidian vault",
+    "After medium-to-large vault changes, commit and push the vault",
+    "Treat the vault's `vicegerent` branch as its primary branch",
 )
 HARNESS_PROMPTS = {
     "Hermes": ("agent-soul", "SOUL.md"),
@@ -81,6 +88,9 @@ def main() -> None:
         missing = [phrase for phrase in REQUIRED_GUIDANCE if phrase not in prompt]
         if missing:
             die(f"{harness} prompt lacks shared skill guidance: {missing}")
+        forbidden = [phrase for phrase in FORBIDDEN_GUIDANCE if phrase in prompt]
+        if forbidden:
+            die(f"{harness} prompt retains forbidden vault Git guidance: {forbidden}")
     print("OK - shared operating guidance reaches all four harnesses")
 
 
