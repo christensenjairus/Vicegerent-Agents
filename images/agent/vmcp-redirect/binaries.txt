@@ -4,6 +4,8 @@
 #
 # ADD A LINE HERE whenever a new MCP backend is added to toolhive-servers.json
 # that has an obvious equivalent CLI an agent might reach for instead.
+# Docker is deliberately unavailable: image builds run outside the sandbox.
+docker
 kubectl  # kubernetes backend
 gh       # github backend
 glab     # gitlab backend
