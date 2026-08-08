@@ -33,6 +33,10 @@ For independent vMCP backend operations in Claude Code, put up to eight entries 
 When working on a dedicated branch in a repo that already has a persistent clone under `/workspace/<repo>`, use `git worktree add .worktrees/<branch>` off that clone — never a second clone, and never edit directly in the primary clone once you're on a task branch. Before your FIRST file edit in any session, confirm with `pwd` and `git branch --show-current` that you are actually inside the assigned `.worktrees/<branch>` directory, not the primary clone — both look like valid checkouts and nothing errors immediately if you're in the wrong one. This matters especially for full-repo validation scripts (`pre-commit run --all-files`, custom `validate.sh` globs): run from the primary clone, they also scan sibling `.worktrees/` content and can fail on unrelated in-progress work, which looks like a broken repo but is actually a location bug. Once verified, `cd` into that worktree as your first shell/terminal call for the task (not just a one-time `pwd`/`git branch` check) — every subsequent shell command without an explicit working-directory override inherits that cwd, keeping `git status`/`pre-commit`/build commands scoped correctly without re-specifying the path each time; this only fixes shell cwd, since file read/write/patch/search tools take their own explicit path argument and are unaffected by shell cwd (a wrong-path mistake there is a separate failure mode — double-check the literal path, not the shell state). Re-verify `pwd` before resuming work in the original tree after any point where you changed directory elsewhere. Before reusing an existing `.worktrees/<branch>` directory for a *new* task, confirm its branch isn't already merged first (`git log --oneline origin/main | grep <branch-or-commit>`, or check the merge/pull request's own `state`/`merged_at` via its API — `git merge-base --is-ancestor` is unreliable here since merges often land as merge/squash commits with a different SHA than the branch tip); if it's already merged, remove the stale worktree and create a fresh one off `origin/main` rather than editing on top of a merged base.
 {{- end -}}
 
+{{- define "vicegerent-agent.workspaceGitHygiene" -}}
+Before creating a worktree from a persistent `/workspace/<repo>` clone, run `git worktree prune`, then fetch the relevant remotes with `git fetch --prune --no-tags`. Prefer the current `upstream/HEAD`, then `upstream/main` or `upstream/master`, before falling back to `origin/HEAD`, `origin/main`, or `origin/master`; a personal fork's `origin` may be far behind its canonical `upstream`. Create the new worktree from that freshly fetched remote ref. Never pull, reset, rebase, clean, delete branches, or automatically update an existing task worktree as part of hygiene; report dirty, unmerged, or ambiguous stale worktrees instead of removing them.
+{{- end -}}
+
 {{- /* Shared durable-knowledge instruction for all four harnesses. Mnemosyne is
       native to Hermes and exposed as a local MCP server to the coding harnesses;
       the implementation differs, but the store and operating policy do not. */ -}}
@@ -63,6 +67,8 @@ Apply the KISS principle: break work into simple, focused pieces and prefer the 
 {{ include "vicegerent-agent.vmcpParallelToolCalls" . | trim }}
 
 {{ include "vicegerent-agent.worktreeDiscipline" . | trim }}
+
+{{ include "vicegerent-agent.workspaceGitHygiene" . | trim }}
 
 {{ include "vicegerent-agent.sharedKnowledge" . | trim }}
 

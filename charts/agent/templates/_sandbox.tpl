@@ -197,7 +197,9 @@ spec:
                   cp "${cm_file}" "${pvc_file}"
                 fi
               }
-              mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode
+              mkdir -p /opt/data/.codex /opt/data/.claude /opt/data/.config/opencode /opt/data/.config/git
+              # Keep linked task worktrees out of primary-clone status and broad file walks.
+              printf '.worktrees/\n' > /opt/data/.config/git/ignore
               reconcile_config codex toml /opt/data/.codex/config.toml /reload/codex-config/config.toml
               reconcile_config claude-settings json /opt/data/.claude/settings.json /reload/claude-config/settings.json
               reconcile_config claude-state json /opt/data/.claude/.claude.json /reload/claude-config/claude.json

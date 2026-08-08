@@ -62,9 +62,11 @@ agent_fzf_input() {
 
 agent_choose_directory() {
   local workspace_root="${VICEGERENT_WORKSPACE_ROOT:-/workspace}"
-  local preferred_repo="${1:-}" candidate top choice shortcut index line primary destination repo repo_name status worktree_listing worktree_name git_error
+  local preferred_repo="${1:-}" base_ref candidate top choice shortcut index line primary destination remote repo repo_name status worktree_listing worktree_name git_error
   local prune_index prune_path prune_branch prune_note confirm force_confirm pane_cwd in_use
   local -a repos=() paths=() branches=() worktree_names=()
+
+  AGENT_SESSION_NOTICE=""
 
   for candidate in "$workspace_root"/*; do
     [[ -d "$candidate" ]] || continue
@@ -276,7 +278,8 @@ agent_choose_directory() {
           fi
           if [[ -z "$worktree_name" || "$worktree_name" == /* || "$worktree_name" == . || "$worktree_name" == .. \
             || "$worktree_name" == */./* || "$worktree_name" == ./* || "$worktree_name" == */. \
-            || "$worktree_name" == */../* || "$worktree_name" == ../* || "$worktree_name" == */.. ]]; then
+            || "$worktree_name" == */../* || "$worktree_name" == ../* || "$worktree_name" == */.. ]] \
+            || ! git check-ref-format --branch "$worktree_name" >/dev/null 2>&1; then
             printf '%sInvalid worktree name: %s%s\n' "$UI_RED" "'$worktree_name'" "$UI_RESET" >&2
             return 1
           fi
@@ -296,8 +299,34 @@ agent_choose_directory() {
               "$UI_RED" "'$destination'" "$UI_RESET" >&2
             return 1
           fi
+          git -C "$primary" worktree prune || return 1
+          for remote in upstream origin; do
+            git -C "$primary" remote get-url "$remote" >/dev/null 2>&1 || continue
+            if ! git_error="$(git -C "$primary" fetch --prune --no-tags "$remote" 2>&1)"; then
+              printf '%sCannot refresh %s before creating the worktree: %s%s\n' \
+                "$UI_RED" "'$remote'" "$git_error" "$UI_RESET" >&2
+              return 1
+            fi
+          done
+          base_ref=""
+          for remote in upstream origin; do
+            git -C "$primary" remote get-url "$remote" >/dev/null 2>&1 || continue
+            git -C "$primary" remote set-head "$remote" --auto >/dev/null 2>&1 || continue
+            candidate="$(git -C "$primary" symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null || true)"
+            if [[ "$candidate" == "$remote/"* ]] \
+              && git -C "$primary" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
+              base_ref="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$base_ref" ]]; then
+            printf '%sNo freshly fetched upstream or origin default branch is available; refusing to create a stale worktree.%s\n' \
+              "$UI_RED" "$UI_RESET" >&2
+            return 1
+          fi
           mkdir -p "$(dirname "$destination")" || return
-          git -C "$primary" worktree add --detach "$destination" || return 1
+          git -C "$primary" worktree add --quiet -b "$worktree_name" "$destination" "$base_ref" || return 1
+          AGENT_SESSION_NOTICE="Branch '$worktree_name' is up to date with $base_ref."
           break
         done
         AGENT_SESSION_CWD="$destination"
@@ -354,7 +383,7 @@ agent_tmux_session() {
       ;;
   esac
 
-  local -a rows=() names=()
+  local -a rows=() names=() tmux_notice=()
   local row choice shortcut index session_name session_cwd session_windows session_state session_created status existing_choice
   local start_position=1
   mapfile -t rows < <(tmux -u list-sessions -F "$format" 2>/dev/null || true)
@@ -412,6 +441,10 @@ agent_tmux_session() {
       [[ "$status" -eq 0 ]] || return "$status"
       cwd="$AGENT_SESSION_CWD"
       default_name="$AGENT_SESSION_DEFAULT"
+      tmux_notice=()
+      if [[ -n "${AGENT_SESSION_NOTICE:-}" ]]; then
+        tmux_notice=(';' display-message -d 5000 "$AGENT_SESSION_NOTICE")
+      fi
       cd "$cwd" || return 1
       if ! tmux -u has-session -t "$default_name" 2>/dev/null; then
         break
@@ -431,12 +464,12 @@ agent_tmux_session() {
       [[ "$shortcut" == esc ]] && continue
       existing_choice="${existing_choice%%$'\t'*}"
       if [[ "$existing_choice" == resume ]]; then
-        exec "${tmux_bash[@]}" attach-session -t "$default_name"
+        exec "${tmux_bash[@]}" attach-session -t "$default_name" "${tmux_notice[@]}"
       fi
     done
     break
   done
-  exec "${tmux_bash[@]}" new-session -s "$default_name" -c "$cwd"
+  exec "${tmux_bash[@]}" new-session -s "$default_name" -c "$cwd" "${tmux_notice[@]}"
 }
 
 agent_ssh_entry() {

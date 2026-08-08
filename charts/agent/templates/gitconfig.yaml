@@ -16,4 +16,5 @@ data:
     	email = {{ .Values.git.userEmail }}
     [core]
     	hooksPath = /opt/vicegerent/git-hooks
+    excludesFile = /opt/data/.config/git/ignore
 {{- end }}
