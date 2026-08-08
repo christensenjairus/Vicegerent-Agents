@@ -307,7 +307,7 @@ backends:
 
         config = {
             "group": "vicegerent",
-            "servers": [{"name": "gitlab", "tools": ["get_project"]}],
+            "servers": [{"name": "gitlab", "enabled": True, "tools": ["get_project"]}],
         }
         with (
             patch.object(vicegerent_mcp, "thv", side_effect=fake_thv),
@@ -332,6 +332,46 @@ backends:
         self.assertNotIn("tools", operator["aggregation"])  # type: ignore[operator]
         self.assertEqual(operator["name"], "vicegerent-vmcp-operator")
         self.assertEqual(operator["backends"], scoped["backends"])
+
+    def test_scoped_config_excludes_disabled_backends_from_backends_and_filters(self) -> None:
+        init_yaml = """\\
+name: vicegerent-vmcp
+groupRef: vicegerent
+backends:
+  - name: enabled
+    url: http://127.0.0.1:9001/mcp
+    transport: streamable-http
+  - name: disabled
+    url: http://127.0.0.1:9002/mcp
+    transport: streamable-http
+"""
+
+        def fake_thv(*args: str) -> subprocess.CompletedProcess[str]:
+            if args[:2] == ("vmcp", "init"):
+                Path(args[args.index("--output") + 1]).write_text(init_yaml, encoding="utf-8")
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+        config = {
+            "group": "vicegerent",
+            "servers": [
+                {"name": "enabled", "enabled": True, "tools": ["get_enabled"]},
+                {"name": "disabled", "enabled": False, "tools": ["get_disabled"]},
+            ],
+        }
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp, "thv", side_effect=fake_thv),
+            patch.object(vicegerent_mcp, "load_server_state", return_value={}),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            scoped_path = vicegerent_mcp.generate_vmcp_config(config, Path(directory), validate=False)
+            scoped = json.loads(scoped_path.read_text(encoding="utf-8"))
+
+        self.assertEqual([backend["name"] for backend in scoped["backends"]], ["enabled"])
+        self.assertEqual(
+            scoped["aggregation"]["tools"],
+            [{"workload": "enabled", "filter": ["get_enabled"]}],
+        )
 
     def test_supervisor_block_is_opt_in(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -387,7 +427,7 @@ backends:
             self.assertEqual(vicegerent_mcp._stop_disabled_operator_vmcp(False, 4484), [123])
             self.assertEqual(vicegerent_mcp._stop_disabled_operator_vmcp(True, 4484), [])
 
-        kill.assert_called_once_with("127.0.0.1:4484")
+        kill.assert_called_once_with("127.0.0.1:4484", name="operator-vmcp")
 
     def test_stray_supervisor_cleanup_preserves_the_reachable_instance(self) -> None:
         completed = subprocess.CompletedProcess([], 0, stdout="10\n20\n", stderr="")
@@ -403,6 +443,223 @@ backends:
 
         self.assertEqual(killed, [10])
         terminate.assert_called_once_with([10], 10.0)
+
+
+class DurableStateTests(unittest.TestCase):
+    def test_legacy_runtime_state_migrates_once_to_durable_versioned_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime_dir = root / "runtime"
+            durable_path = root / "state" / "servers-state.json"
+            runtime_dir.mkdir()
+            (runtime_dir / "servers-state.json").write_text(
+                json.dumps({"enabled": {"github": True}, "params": {"github": {"url": "https://example.test"}}}),
+                encoding="utf-8",
+            )
+            with patch.object(vicegerent_mcp, "durable_state_path", return_value=durable_path):
+                state = vicegerent_mcp._read_state(runtime_dir)
+
+            self.assertEqual(state["version"], vicegerent_mcp.STATE_VERSION)
+            self.assertEqual(state["enabled"], {"github": True})
+            self.assertTrue(durable_path.exists())
+            self.assertFalse((runtime_dir / "servers-state.json").exists())
+
+    def test_malformed_durable_state_fails_visibly_without_resetting_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            durable_path = Path(directory) / "servers-state.json"
+            durable_path.write_text("not json", encoding="utf-8")
+            with patch.object(vicegerent_mcp, "durable_state_path", return_value=durable_path):
+                with self.assertRaisesRegex(SystemExit, "invalid durable MCP state"):
+                    vicegerent_mcp._read_state(Path(directory) / "runtime")
+
+    def test_corrupt_primary_recovers_previous_durable_intent_and_reports_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            durable_path = Path(directory) / "servers-state.json"
+            previous_path = durable_path.with_suffix(".json.previous")
+            durable_path.write_text('{"version": 1, "enabled": ', encoding="utf-8")
+            previous_path.write_text(
+                json.dumps({"version": 1, "enabled": {"github": True}, "params": {}, "fingerprints": {}}),
+                encoding="utf-8",
+            )
+            stderr = io.StringIO()
+            with (
+                patch.object(vicegerent_mcp, "durable_state_path", return_value=durable_path),
+                contextlib.redirect_stderr(stderr),
+            ):
+                state = vicegerent_mcp._read_state(Path(directory) / "runtime")
+
+            self.assertEqual(state["enabled"], {"github": True})
+            self.assertEqual(json.loads(durable_path.read_text(encoding="utf-8"))["enabled"], {"github": True})
+            self.assertIn("Recovered durable MCP state", stderr.getvalue())
+
+    def test_partial_write_does_not_replace_existing_durable_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            durable_path = Path(directory) / "servers-state.json"
+            original = {"version": 1, "enabled": {"github": True}, "params": {}, "fingerprints": {}}
+            durable_path.write_text(json.dumps(original), encoding="utf-8")
+            replacement = {"version": 1, "enabled": {"github": False}, "params": {}, "fingerprints": {}}
+            with patch.object(vicegerent_mcp.os, "replace", side_effect=OSError("interrupted")):
+                with self.assertRaisesRegex(OSError, "interrupted"):
+                    vicegerent_mcp._write_state_to(durable_path, replacement)
+
+            self.assertEqual(json.loads(durable_path.read_text(encoding="utf-8")), original)
+            self.assertEqual(json.loads(durable_path.with_suffix(".json.previous").read_text(encoding="utf-8")), original)
+
+    def test_missing_optional_legacy_fields_are_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            durable_path = Path(directory) / "servers-state.json"
+            durable_path.write_text(json.dumps({"version": 1, "enabled": {"github": True}}), encoding="utf-8")
+            with patch.object(vicegerent_mcp, "durable_state_path", return_value=durable_path):
+                state = vicegerent_mcp._read_state(Path(directory) / "runtime")
+
+            self.assertEqual(state, {"version": 1, "enabled": {"github": True}, "params": {}, "fingerprints": {}})
+
+    def test_malformed_values_and_incompatible_versions_fail_visibly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            durable_path = Path(directory) / "servers-state.json"
+            runtime_dir = Path(directory) / "runtime"
+            with patch.object(vicegerent_mcp, "durable_state_path", return_value=durable_path):
+                durable_path.write_text(json.dumps({"version": 1, "enabled": {"github": "yes"}}), encoding="utf-8")
+                with self.assertRaisesRegex(SystemExit, "enabled must map names to booleans"):
+                    vicegerent_mcp._read_state(runtime_dir)
+                durable_path.write_text(json.dumps({"version": 999, "enabled": {}, "params": {}, "fingerprints": {}}), encoding="utf-8")
+                with self.assertRaisesRegex(SystemExit, "unsupported durable MCP state version"):
+                    vicegerent_mcp._read_state(runtime_dir)
+
+
+class DiscoveryAndOwnershipTests(unittest.TestCase):
+    def test_reconcile_repairs_stale_tool_filters_when_backend_membership_matches(self) -> None:
+        config = {
+            "group": "vicegerent",
+            "servers": [{"name": "github", "enabled": True, "tools": ["new_tool"]}],
+        }
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_dir = Path(directory)
+            paths = vicegerent_mcp.runtime_paths(runtime_dir)
+            paths["vmcp_config"].write_text(json.dumps({
+                "backends": [{"name": "github"}],
+                "aggregation": {"tools": [{"workload": "github", "filter": ["old_tool"]}]},
+            }), encoding="utf-8")
+            with (
+                patch.object(vicegerent_mcp, "discover_workloads", return_value=vicegerent_mcp.WorkloadDiscovery({"github": "running"})),
+                patch.object(vicegerent_mcp, "load_server_state", return_value={}),
+                patch.object(vicegerent_mcp, "generate_vmcp_config") as generate,
+                patch.object(vicegerent_mcp, "supervisorctl", return_value=completed) as supervisor,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                reconciled = vicegerent_mcp.reconcile_vmcp_membership(config, runtime_dir)
+
+        self.assertTrue(reconciled)
+        generate.assert_called_once_with(config, runtime_dir)
+        supervisor.assert_called_once_with("restart", "vmcp", runtime_dir=runtime_dir)
+
+    def test_workload_discovery_error_is_preserved(self) -> None:
+        failed = subprocess.CompletedProcess([], 1, stdout="", stderr="daemon unavailable")
+        with patch.object(vicegerent_mcp, "thv", return_value=failed):
+            result = vicegerent_mcp.discover_workloads("vicegerent")
+
+        self.assertFalse(result.ok)
+        self.assertIn("daemon unavailable", result.error)
+
+    def test_unknown_listener_is_not_adopted_or_terminated(self) -> None:
+        with (
+            patch.object(vicegerent_mcp, "_listener_pids", return_value=[123]),
+            patch.object(vicegerent_mcp, "_managed_listener_pids", return_value=set()),
+            patch.object(vicegerent_mcp, "_terminate_pids") as terminate,
+        ):
+            with self.assertRaisesRegex(SystemExit, "unknown listener"):
+                vicegerent_mcp.require_managed_listener("127.0.0.1:4483", "vmcp")
+
+        terminate.assert_not_called()
+
+    def test_orphaned_ghostunnel_binary_is_recognized_after_ghostshell_backgrounds_it(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="/opt/homebrew/bin/ghostunnel server --listen 127.0.0.1:8453", stderr="")
+        with patch.object(vicegerent_mcp.subprocess, "run", return_value=completed):
+            self.assertTrue(vicegerent_mcp._listener_matches_service(123, "ghostunnel"))
+
+    def test_orphaned_rclone_binary_is_recognized_after_wrapper_execs_it(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="/opt/homebrew/bin/rclone serve s3 --addr 127.0.0.1:9899 /backups", stderr="")
+        with patch.object(vicegerent_mcp.subprocess, "run", return_value=completed):
+            self.assertTrue(vicegerent_mcp._listener_matches_service(123, "rclone-s3"))
+
+    def test_listener_identity_rejects_an_unrelated_process_with_service_words_in_argv(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="python3 -c 'print(\"ghostunnel server rclone serve s3\")'", stderr="")
+        with patch.object(vicegerent_mcp.subprocess, "run", return_value=completed):
+            self.assertFalse(vicegerent_mcp._listener_matches_service(123, "ghostunnel"))
+            self.assertFalse(vicegerent_mcp._listener_matches_service(123, "rclone-s3"))
+
+    def test_stop_stops_every_nonterminal_workload_state_before_terminal_verification(self) -> None:
+        config = {"group": "vicegerent", "servers": []}
+        first = vicegerent_mcp.WorkloadDiscovery({
+            "running": "running",
+            "unauthenticated": "unauthenticated",
+            "error": "error",
+            "starting": "starting",
+            "stopped": "stopped",
+            "removed": "removed",
+        })
+        final = vicegerent_mcp.WorkloadDiscovery({
+            "running": "stopped",
+            "unauthenticated": "stopped",
+            "error": "removed",
+            "starting": "stopped",
+            "stopped": "stopped",
+            "removed": "removed",
+        })
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp, "load_servers_config", return_value=config),
+            patch.object(vicegerent_mcp, "discover_workloads", side_effect=[first, final]),
+            patch.object(vicegerent_mcp, "thv", return_value=completed) as thv,
+            patch.object(vicegerent_mcp, "is_supervisor_running", return_value=False),
+            patch.object(vicegerent_mcp, "_kill_stray_supervisord", return_value=[]),
+            patch.object(vicegerent_mcp, "_kill_addr_listeners", return_value=[]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(vicegerent_mcp.stop_stack(Path(directory)), 0)
+
+        self.assertEqual(
+            {call.args for call in thv.call_args_list},
+            {("stop", "running"), ("stop", "unauthenticated"), ("stop", "error"), ("stop", "starting")},
+        )
+
+    def test_status_fails_for_an_unknown_reachable_listener(self) -> None:
+        tables = []
+
+        class FakeTable:
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                self.rows = []
+                tables.append(self)
+
+            def add_column(self, *args: object, **kwargs: object) -> None:
+                pass
+
+            def add_row(self, *row: str) -> None:
+                self.rows.append(row)
+
+        class FakeConsole:
+            def print(self, table: FakeTable) -> None:
+                pass
+
+        config = {"group": "vicegerent", "servers": [], "vmcp_port": 4483}
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp, "_require_rich", return_value=(FakeConsole(), FakeTable)),
+            patch.object(vicegerent_mcp, "load_servers_config", return_value=config),
+            patch.object(vicegerent_mcp, "list_workloads", return_value={}),
+            patch.object(vicegerent_mcp, "load_server_state", return_value={}),
+            patch.object(vicegerent_mcp, "get_supervisor_states", return_value={}),
+            patch.object(vicegerent_mcp, "_addr_reachable", return_value=True),
+            patch.object(vicegerent_mcp, "require_managed_listener", side_effect=SystemExit("unknown listener on 127.0.0.1:4483")),
+            patch.object(vicegerent_mcp, "_ui_error") as error,
+        ):
+            rc = vicegerent_mcp.status(Path(directory))
+
+        self.assertEqual(rc, 1)
+        self.assertIn(("vmcp", "[red]UNKNOWN[/red]"), tables[1].rows)
+        error.assert_any_call("unknown listener on 127.0.0.1:4483")
 
 
 if __name__ == "__main__":

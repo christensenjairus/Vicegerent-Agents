@@ -70,6 +70,10 @@ from typing import Any, Generator, Iterator
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RUNTIME_DIR = Path.home() / ".vicegerent" / "mcp"
+# Durable operator choices must not share a directory with generated configs, sockets,
+# logs, or pidfiles that may safely be removed during recovery.
+DEFAULT_STATE_DIR = Path.home() / ".vicegerent" / "mcp-state"
+STATE_VERSION = 1
 DEFAULT_GHOSTSHELL = REPO_ROOT / "scripts" / "ghostunnel" / "ghostshell.sh"
 DEFAULT_SERVERS_CONFIG = Path(__file__).resolve().parent / "toolhive-servers.json"
 
@@ -194,51 +198,109 @@ def _addr_port(addr: str) -> int:
         raise SystemExit(f"expected numeric port in address {addr!r}") from None
 
 
-def load_server_state(runtime_dir: Path) -> dict[str, bool]:
-    """Runtime enable/disable overrides written by `configure`.
+def durable_state_path() -> Path:
+    """Location for user MCP intent, outside disposable runtime artifacts."""
+    return Path(os.environ.get("VICEGERENT_MCP_STATE", DEFAULT_STATE_DIR / "servers-state.json"))
 
-    A server absent from this map falls back to its config default. This keeps
-    the tracked toolhive-servers.json declarative (all off by default) while the
-    user's opt-in choices live in disposable runtime state.
-    """
-    return {k: bool(v) for k, v in (_read_state(runtime_dir).get("enabled") or {}).items()}
+
+def _legacy_state_path(runtime_dir: Path) -> Path:
+    return runtime_paths(runtime_dir)["servers_state"]
+
+
+def _validate_state(data: Any, path: Path) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise SystemExit(f"invalid durable MCP state {path}: expected a JSON object")
+    version = data.get("version", STATE_VERSION)
+    if version != STATE_VERSION:
+        raise SystemExit(f"unsupported durable MCP state version in {path}: {version!r}")
+    enabled = data.get("enabled", {})
+    params = data.get("params", {})
+    fingerprints = data.get("fingerprints", {})
+    if not isinstance(enabled, dict) or not all(isinstance(k, str) and isinstance(v, bool) for k, v in enabled.items()):
+        raise SystemExit(f"invalid durable MCP state {path}: enabled must map names to booleans")
+    if not isinstance(params, dict) or not all(isinstance(k, str) and isinstance(v, dict) and all(isinstance(pk, str) and isinstance(pv, str) for pk, pv in v.items()) for k, v in params.items()):
+        raise SystemExit(f"invalid durable MCP state {path}: params must map names to string maps")
+    if not isinstance(fingerprints, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in fingerprints.items()):
+        raise SystemExit(f"invalid durable MCP state {path}: fingerprints must map names to strings")
+    return {"version": STATE_VERSION, "enabled": enabled, "params": params, "fingerprints": fingerprints}
+
+
+def load_server_state(runtime_dir: Path) -> dict[str, bool]:
+    """Runtime enable/disable overrides written by `configure`."""
+    return dict(_read_state(runtime_dir)["enabled"])
+
+
+def _recover_previous_state(path: Path, corruption: BaseException) -> dict[str, Any]:
+    """Restore the last valid intent after a malformed durable-state read."""
+    previous = path.with_suffix(path.suffix + ".previous")
+    if not previous.exists():
+        raise SystemExit(f"invalid durable MCP state {path}: {corruption}") from corruption
+    try:
+        recovered = _validate_state(json.loads(previous.read_text(encoding="utf-8")), previous)
+        tmp = path.with_suffix(f"{path.suffix}.recover{os.getpid()}")
+        shutil.copy2(previous, tmp)
+        tmp.chmod(0o600)
+        os.replace(tmp, path)
+    except OSError as exc:
+        raise SystemExit(f"invalid durable MCP state {path}: {corruption}; could not restore {previous}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid durable MCP state {path}: {corruption}; recovery file {previous} is invalid: {exc}") from exc
+    except SystemExit as exc:
+        raise SystemExit(f"invalid durable MCP state {path}: {corruption}; recovery file {previous} is unusable: {exc}") from exc
+    print(f"Recovered durable MCP state from {previous} after corruption in {path}.", file=sys.stderr)
+    return recovered
 
 
 def _read_state(runtime_dir: Path) -> dict[str, Any]:
-    path = runtime_paths(runtime_dir)["servers_state"]
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    path = durable_state_path()
+    if path.exists():
+        try:
+            return _validate_state(json.loads(path.read_text(encoding="utf-8")), path)
+        except OSError as exc:
+            raise SystemExit(f"could not read durable MCP state {path}: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            return _recover_previous_state(path, exc)
+        except SystemExit as exc:
+            if str(exc).startswith("unsupported durable MCP state version"):
+                raise
+            return _recover_previous_state(path, exc)
+
+    # One explicit migration from the former disposable location. Do not silently
+    # reset malformed legacy intent: make the recovery action visible to the user.
+    legacy = _legacy_state_path(runtime_dir)
+    if legacy.exists():
+        try:
+            migrated = _validate_state(json.loads(legacy.read_text(encoding="utf-8")), legacy)
+        except OSError as exc:
+            raise SystemExit(f"could not read legacy MCP state {legacy}: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"invalid legacy MCP state {legacy}: {exc}; repair or remove it explicitly") from exc
+        _write_state_to(path, migrated)
+        legacy.unlink()
+        print(f"Migrated MCP state from {legacy} to {path}.", file=sys.stderr)
+        return migrated
+    return {"version": STATE_VERSION, "enabled": {}, "params": {}, "fingerprints": {}}
+
+
+def _write_state_to(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(_validate_state(data, path), indent=2) + "\n"
+    tmp = path.with_suffix(f"{path.suffix}.tmp{os.getpid()}")
+    tmp.write_text(encoded, encoding="utf-8")
+    tmp.chmod(0o600)
+    if path.exists():
+        shutil.copy2(path, path.with_suffix(path.suffix + ".previous"))
+    os.replace(tmp, path)
 
 
 def _write_state(runtime_dir: Path, data: dict[str, Any]) -> None:
-    path = runtime_paths(runtime_dir)["servers_state"]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Write-then-rename so a reader (or a crash mid-write) never sees a torn file.
-    tmp = path.with_suffix(f"{path.suffix}.tmp{os.getpid()}")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    _write_state_to(durable_state_path(), data)
 
 
 @contextlib.contextmanager
 def _locked_state(runtime_dir: Path) -> Generator[dict[str, Any], None, None]:
-    """Read-modify-write servers-state.json as one atomic, cross-process critical
-    section: yields the current state for in-place mutation, writes it back on
-    clean exit.
-
-    `run_workloads` fires one thread per enabled server, each of which saves its
-    own fingerprint into this same file, and `enable`/`disable`/`configure` write
-    to it too. Locking only the write wouldn't help -- a writer's *read* can still
-    be stale from before it acquired the lock, so it'd write back a snapshot that's
-    missing whatever another writer committed in between, silently reverting it.
-    Locking the read+mutate+write together means each writer's read is always of
-    the latest committed state.
-    """
-    path = runtime_paths(runtime_dir)["servers_state"]
+    """Atomically update durable MCP intent across lifecycle processes."""
+    path = durable_state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(f"{path.name}.lock")
     with open(lock_path, "w") as lockfile:
@@ -389,21 +451,68 @@ def _terminate_pids(pids: list[int], timeout: float = 5.0) -> None:
                 pass
 
 
-def _kill_addr_listeners(addr: str, timeout: float = 5.0) -> list[int]:
-    """Kill whatever is listening on host:port (SIGTERM, then SIGKILL); returns
-    the pids killed.
-
-    `stop` uses this to clear vmcp/operator-vmcp/ghostunnel/rclone-s3 processes supervisord
-    wasn't tracking (orphaned by e.g. a killed supervisord) so the next `start`
-    always gets a fresh, fully supervisord-managed instance rather than one it
-    has to leave alone because the port's already taken.
-    """
+def _listener_pids(addr: str) -> list[int]:
+    """Return listener PIDs for an address; no ownership is implied."""
     _, _, port_s = addr.rpartition(":")
     result = subprocess.run(
         ["lsof", "-t", "-nP", f"-iTCP:{port_s}", "-sTCP:LISTEN"],
         capture_output=True, text=True,
     )
-    pids = sorted({int(p) for p in result.stdout.split() if p.strip()})
+    return sorted({int(p) for p in result.stdout.split() if p.strip()})
+
+
+def _managed_listener_pids(paths: dict[str, Path]) -> set[int]:
+    """PIDs descended from the supervisord instance using this generated config."""
+    conf = str(paths["supervisord_conf"])
+    result = subprocess.run(["pgrep", "-f", f"supervisord -c {conf}"], capture_output=True, text=True)
+    managed = {int(p) for p in result.stdout.split() if p.strip()}
+    frontier = set(managed)
+    while frontier:
+        children: set[int] = set()
+        for parent in frontier:
+            child_result = subprocess.run(["pgrep", "-P", str(parent)], capture_output=True, text=True)
+            children |= {int(p) for p in child_result.stdout.split() if p.strip()}
+        frontier = children - managed
+        managed |= frontier
+    return managed
+
+
+def _listener_matches_service(pid: int, name: str) -> bool:
+    """Recognize an orphaned service by the executable and its required argv prefix."""
+    result = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True)
+    try:
+        argv = shlex.split(result.stdout.strip())
+    except ValueError:
+        return False
+    if not argv:
+        return False
+    expected = {
+        "vmcp": ("thv", "vmcp", "serve"),
+        "operator-vmcp": ("thv", "vmcp", "serve"),
+        # ghostshell backgrounds ghostunnel, so the listener is the binary, not
+        # the wrapper; rclone-s3 execs rclone for the same reason.
+        "ghostunnel": ("ghostunnel", "server"),
+        "rclone-s3": ("rclone", "serve", "s3"),
+    }.get(name)
+    if not expected or Path(argv[0]).name != expected[0]:
+        return False
+    return tuple(argv[1:len(expected)]) == expected[1:]
+
+
+def require_managed_listener(addr: str, name: str, paths: dict[str, Path] | None = None) -> list[int]:
+    """Fail closed unless supervisor ancestry or process identity proves ownership."""
+    pids = _listener_pids(addr)
+    if not pids:
+        return []
+    managed = _managed_listener_pids(paths or runtime_paths(DEFAULT_RUNTIME_DIR))
+    if set(pids).issubset(managed) or all(_listener_matches_service(pid, name) for pid in pids):
+        return pids
+    raise SystemExit(f"unknown listener on {addr} for {name} (pid(s): {', '.join(map(str, pids))}); refusing to adopt or terminate it")
+
+
+def _kill_addr_listeners(addr: str, timeout: float = 5.0, *, name: str = "listener", paths: dict[str, Path] | None = None) -> list[int]:
+    """Terminate only listeners proven to belong to this controller."""
+    pids = require_managed_listener(addr, name, paths)
     if pids:
         _terminate_pids(pids, timeout)
     return pids
@@ -416,7 +525,7 @@ def _stop_disabled_operator_vmcp(operator_vmcp: bool, port: int) -> list[int]:
     addr = f"{DEFAULT_VMCP_HOST}:{port}"
     if not _addr_reachable(addr):
         return []
-    return _kill_addr_listeners(addr)
+    return _kill_addr_listeners(addr, name="operator-vmcp")
 
 
 def _kill_stray_supervisord(
@@ -470,18 +579,44 @@ def thv(
             [_thv_path(), *args], _TIMEOUT_RC, stdout="",
             stderr=f"thv {' '.join(args)} timed out after {timeout}s",
         )
+    except FileNotFoundError as exc:
+        return subprocess.CompletedProcess(
+            [_thv_path(), *args], 127, stdout="", stderr=f"thv executable not found: {exc}",
+        )
+
+
+class WorkloadDiscovery:
+    def __init__(self, workloads: dict[str, str], error: str = "") -> None:
+        self.workloads = workloads
+        self.error = error
+
+    @property
+    def ok(self) -> bool:
+        return not self.error
+
+
+def discover_workloads(group: str) -> WorkloadDiscovery:
+    """Discover group workloads without conflating ToolHive failure with empty state."""
+    result = thv("list", "--all", "--group", group, "--format", "json")
+    if result.returncode != 0:
+        return WorkloadDiscovery({}, result.stderr.strip() or f"thv list exited {result.returncode}")
+    if not result.stdout.strip():
+        return WorkloadDiscovery({}, "thv list returned empty output")
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return WorkloadDiscovery({}, f"thv list returned invalid JSON: {exc}")
+    if not isinstance(data, list):
+        return WorkloadDiscovery({}, "thv list returned a non-list JSON value")
+    return WorkloadDiscovery({w["name"]: w.get("status", "unknown") for w in data if isinstance(w, dict) and isinstance(w.get("name"), str)})
 
 
 def list_workloads(group: str) -> dict[str, str]:
-    """Return {workload_name: status} for all workloads in the group."""
-    result = thv("list", "--all", "--group", group, "--format", "json")
-    if result.returncode != 0 or not result.stdout.strip():
-        return {}
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return {}
-    return {w["name"]: w.get("status", "unknown") for w in data if "name" in w}
+    """Compatibility helper for non-converging status paths.
+
+    Lifecycle commands use discover_workloads directly and must surface failures.
+    """
+    return discover_workloads(group).workloads
 
 
 def workload_log_process(name: str) -> subprocess.Popen[str]:
@@ -811,6 +946,10 @@ def health_watch(
             notified -= aws_keys
             aws_notification_needs_reconcile = False
 
+        # Health transitions are also aggregation transitions: ToolHive's init
+        # snapshot omits unhealthy workloads, so reconcile the served membership
+        # after every poll rather than leaving a recovered backend unavailable.
+        reconcile_vmcp_membership(config, runtime_dir)
         time.sleep(interval)
 
 
@@ -1255,16 +1394,15 @@ def save_server_fingerprint(runtime_dir: Path, name: str, fingerprint: str) -> N
 def server_spec_changed(server: dict[str, Any], runtime_dir: Path) -> bool:
     """True if the server's declared spec differs from what was last applied.
 
-    A workload with no recorded fingerprint (first run under this feature, or a
-    workload created before it existed) is NOT treated as changed — there is
-    nothing to compare against, and forcing a needless recreate on upgrade would
-    re-trigger OAuth for every remote server. It gets a fingerprint recorded the
-    first time it's applied, so drift is detected from then on.
+    A workload with no recorded fingerprint is a legacy workload. Recreate it once
+    to establish a trustworthy baseline: merely recording today's declaration
+    would assert (without proof) that its baked ToolHive arguments match it.
+    OAuth secrets remain in ToolHive's durable secret provider.
     """
     name = server["name"]
     recorded = load_server_fingerprints(runtime_dir).get(name)
     if recorded is None:
-        return False
+        return True
     return recorded != server_spec_fingerprint(server, runtime_dir)
 
 
@@ -1443,6 +1581,54 @@ def wait_for_workloads_running(
           "— they will be omitted from the vMCP until healthy", file=sys.stderr)
 
 
+def reconcile_vmcp_membership(config: dict[str, Any], runtime_dir: Path) -> bool:
+    """Regenerate and restart scoped vMCP when desired-running membership drifts.
+
+    Startup remains warn-and-continue for unhealthy optional backends. This later
+    reconciliation closes the gap once ToolHive reports a backend healthy again.
+    """
+    discovery = discover_workloads(group_name(config))
+    if not discovery.ok:
+        _ui_warn(f"Cannot reconcile vMCP membership: {discovery.error}")
+        return False
+    desired_servers = enabled_servers(config, runtime_dir)
+    desired = {server["name"] for server in desired_servers}
+    running = {name for name in desired if discovery.workloads.get(name) == "running"}
+    expected_filters = [
+        {"workload": server["name"], "filter": server["tools"]}
+        for server in desired_servers
+        if server.get("tools") and server["name"] in running
+    ]
+    path = runtime_paths(runtime_dir)["vmcp_config"]
+    try:
+        current = json.loads(path.read_text(encoding="utf-8"))
+        served = {backend["name"] for backend in current.get("backends", [])}
+        served_filters = current.get("aggregation", {}).get("tools", [])
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        served = set()
+        served_filters = []
+    if running == served and expected_filters == served_filters:
+        return False
+    previous = path.read_bytes() if path.exists() else None
+    try:
+        generate_vmcp_config(config, runtime_dir)
+        restarted = supervisorctl("restart", "vmcp", runtime_dir=runtime_dir)
+    except SystemExit as exc:
+        if previous is not None:
+            path.write_bytes(previous)
+        _ui_warn(f"vMCP membership reconciliation failed: {exc}")
+        return False
+    if restarted.returncode != 0:
+        if previous is not None:
+            path.write_bytes(previous)
+        else:
+            path.unlink(missing_ok=True)
+        _ui_warn(f"vMCP membership reconciliation restart failed: {restarted.stderr.strip()}")
+        return False
+    _ui(f"Reconciled vMCP backends: {', '.join(sorted(running)) or 'none'}", "cyan")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # vMCP config generation
 # ---------------------------------------------------------------------------
@@ -1500,7 +1686,9 @@ def generate_vmcp_config(
         raise SystemExit(f"`thv vmcp init` failed: {result.stderr.strip()}")
 
     text = init_path.read_text(encoding="utf-8")
-    backends = _parse_init_backends(text)
+    desired_servers = enabled_servers(config, runtime_dir)
+    desired_names = {server["name"] for server in desired_servers}
+    backends = [backend for backend in _parse_init_backends(text) if backend["name"] in desired_names]
     for b in backends:
         if "/sse" in b["url"]:
             b["transport"] = "sse"
@@ -1508,7 +1696,7 @@ def generate_vmcp_config(
     present = {b["name"] for b in backends}
     tool_filters = [
         {"workload": s["name"], "filter": s["tools"]}
-        for s in config.get("servers", [])
+        for s in desired_servers
         if s.get("tools") and s["name"] in present
     ]
     aggregation = {
@@ -1877,10 +2065,12 @@ def status(
     console.print(wl_table)
 
     sup_states = get_supervisor_states(runtime_dir)
+    rc = 0
     not_running = not sup_states
-    # A program supervisord isn't managing (never started, or left autostart=false
-    # because `start` found it already running externally) shows as STOPPED here --
-    # probe its port so an inherited, actually-up process doesn't read as down.
+    # A reachable port is only a collision signal, not proof that this controller
+    # owns the listener. Report identity-proven orphans as degraded; fail closed
+    # and name unknown listeners instead of presenting arbitrary TCP services as
+    # healthy external processes.
     probe_addrs = {
         "vmcp": vmcp_target(config),
         "operator-vmcp": f"{DEFAULT_VMCP_HOST}:{operator_vmcp_port()}",
@@ -1893,10 +2083,18 @@ def status(
     for prog in ALL_PROGRAMS:
         state = sup_states.get(prog, "STOPPED" if not_running else "")
         if state in ("", "STOPPED") and prog in probe_addrs and _addr_reachable(probe_addrs[prog]):
-            state = "EXTERNAL"
+            try:
+                require_managed_listener(probe_addrs[prog], prog, runtime_paths(runtime_dir))
+            except SystemExit as exc:
+                state = "UNKNOWN"
+                _ui_error(str(exc))
+            else:
+                state = "ORPHANED"
+                _ui_error(f"managed {prog} listener is outside supervisord control")
+            rc = 1
         proc_table.add_row(prog, _style_proc(state))
     console.print(proc_table)
-    return 0
+    return rc
 
 
 def resolve_kind_context() -> str | None:
@@ -2238,16 +2436,19 @@ def start_stack(
         # program alone regardless of autostart, so this can just stay true.
         preexisting: frozenset[str] = frozenset()
     else:
-        # A prior supervisord could have died without stopping its children, leaving
-        # vmcp/ghostunnel/rclone-s3 orphaned but still bound to their ports. Starting a
-        # fresh instance for one of those would just lose the port race and go FATAL, so
-        # leave any already-reachable one alone instead (autostart=false in the conf).
+        # A listener without this supervisord ancestry is not evidence of a healthy
+        # stack. Refuse to adopt it; its protocol and ownership are unknown.
         probe_addrs = {"vmcp": target, "ghostunnel": effective_listen, "rclone-s3": rclone_addr}
         if operator_vmcp:
             probe_addrs["operator-vmcp"] = f"{DEFAULT_VMCP_HOST}:{operator_port}"
-        preexisting = frozenset(name for name, addr in probe_addrs.items() if _addr_reachable(addr))
-        if preexisting:
-            _ui_warn(f"Already running outside supervisord; leaving in place: {', '.join(sorted(preexisting))}")
+        occupied = [name for name, addr in probe_addrs.items() if _addr_reachable(addr)]
+        if occupied:
+            raise SystemExit(
+                "refusing to start over listener(s) not managed by this stack: "
+                + ", ".join(sorted(occupied))
+                + "; stop or move the owning service explicitly"
+            )
+        preexisting = frozenset()
 
     # mcp-health-watch reads the `aws` backend's cred_watch_profile param itself
     # (blank -> no --profile flag), so nothing AWS-specific is threaded here.
@@ -2369,17 +2570,35 @@ def stop_stack(
     """
     config = load_servers_config(servers_config)
     _ui_step("Stopping host stack")
+    rc = 0
+    workload_residuals: list[str] = []
     if stop_workloads:
         group = group_name(config)
-        running = [name for name, st in list_workloads(group).items() if st == "running"]
-        if running:
-            _ui(f"Stopping {len(running)} ToolHive workload(s): {', '.join(running)} …", "cyan")
-            # Concurrent: per-workload `thv` locks make parallel stops safe.
-            with ThreadPoolExecutor(max_workers=len(running)) as pool:
-                list(pool.map(lambda n: thv("stop", n), running))
+        discovery = discover_workloads(group)
+        if not discovery.ok:
+            _ui_error(f"Cannot verify ToolHive workload shutdown: {discovery.error}")
+            rc = 1
+        else:
+            nonterminal = [name for name, state in discovery.workloads.items() if state not in ("stopped", "removed")]
+            if nonterminal:
+                _ui(f"Stopping {len(nonterminal)} ToolHive workload(s): {', '.join(nonterminal)} …", "cyan")
+                with ThreadPoolExecutor(max_workers=len(nonterminal)) as pool:
+                    results = dict(zip(nonterminal, pool.map(lambda n: thv("stop", n), nonterminal)))
+                failures = [f"{name} (exit {result.returncode}: {result.stderr.strip()})" for name, result in results.items() if result.returncode != 0]
+                if failures:
+                    _ui_error("ToolHive stop failures: " + "; ".join(failures))
+                    rc = 1
+            final = discover_workloads(group)
+            if not final.ok:
+                _ui_error(f"Cannot verify terminal ToolHive workload state: {final.error}")
+                rc = 1
+            else:
+                workload_residuals = sorted(name for name, state in final.workloads.items() if state not in ("stopped", "removed"))
+                if workload_residuals:
+                    _ui_error("ToolHive workloads still active: " + ", ".join(workload_residuals))
+                    rc = 1
 
     paths = runtime_paths(runtime_dir)
-    rc = 0
     if is_supervisor_running(runtime_dir):
         result = supervisorctl("shutdown", runtime_dir=runtime_dir)
         _ui_ok(result.stdout.strip() or "Host services shutdown initiated")
@@ -2418,7 +2637,12 @@ def stop_stack(
         "rclone-s3": os.environ.get("RCLONE_ADDR", DEFAULT_RCLONE_ADDR),
     }
     for name, addr in port_addrs.items():
-        killed = _kill_addr_listeners(addr)
+        try:
+            killed = _kill_addr_listeners(addr, name=name, paths=paths)
+        except SystemExit as exc:
+            _ui_error(str(exc))
+            rc = 1
+            continue
         if killed:
             _ui_warn(f"Stopped orphaned {name} process(es): {', '.join(str(p) for p in killed)}")
 
