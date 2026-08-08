@@ -3,7 +3,7 @@
 # machine-plane (values.yaml) slicing, and the secret pre-flight.
 #
 # Sourced by install.sh (which owns the globals REPO_ROOT, KUBE_CONTEXT,
-# STAGES_FILE, VALUES_FILE, ASSUME_YES, and the $WORKDIR scratch dir).
+# DEFAULTS_FILE, VALUES_FILE, ASSUME_YES, and the $WORKDIR scratch dir).
 
 # shellcheck source=../../lib/cli-ui.sh
 source "$REPO_ROOT/scripts/lib/cli-ui.sh"

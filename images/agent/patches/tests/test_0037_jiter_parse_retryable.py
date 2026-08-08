@@ -9,10 +9,8 @@ independent call sites, and both must agree on what counts as retryable:
    post-retry-exhaustion fallback decision.
 2. ``run_agent.py::AIAgent._is_provider_stream_parse_error`` — gates the
    mid-stream silent-retry decision (tool call in-flight when the stream
-   dies). Incident 2026-07-22: this second classifier only recognized
-   "expected ident at line" and missed "expected value at line" (the shape
-   that actually fired), falling through to the eager-fallback path this
-   whole patch exists to prevent.
+   dies). Both the "expected ident at line" and "expected value at line"
+   jiter shapes must classify as retryable here.
 
 Usage: run this inside the agent image after the Hermes patch has been
 applied (i.e. against the live installed files), or against scratch copies
@@ -97,7 +95,6 @@ def _test_conversation_loop_classifier() -> tuple[int, list[str]]:
 
     cases: list[tuple[str, Exception, bool]] = []
 
-    # --- The exact live-incident shape: jiter's bare ValueError ---
     cases.append((
         "jiter 'expected value at line N column N' (live incident shape)",
         ValueError("expected value at line 1 column 87"),
@@ -119,7 +116,7 @@ def _test_conversation_loop_classifier() -> tuple[int, list[str]]:
         False,
     ))
 
-    # --- Real jiter, if importable, for maximum fidelity ---
+    # Real jiter, if importable, for maximum fidelity.
     try:
         import jiter  # type: ignore
 
@@ -134,7 +131,6 @@ def _test_conversation_loop_classifier() -> tuple[int, list[str]]:
     except ImportError:
         print("note: jiter not importable in this environment; skipping real-jiter case")
 
-    # --- Must NOT regress: genuine json.JSONDecodeError still excluded ---
     try:
         json.loads("not json")
     except json.JSONDecodeError as jde:
@@ -144,7 +140,6 @@ def _test_conversation_loop_classifier() -> tuple[int, list[str]]:
             False,
         ))
 
-    # --- Must NOT regress: UnicodeEncodeError still excluded ---
     try:
         "\ud800".encode("utf-8")
     except UnicodeEncodeError as uee:
@@ -154,22 +149,20 @@ def _test_conversation_loop_classifier() -> tuple[int, list[str]]:
             False,
         ))
 
-    # --- Must NOT regress: ssl.SSLError still excluded ---
     cases.append((
         "ssl.SSLError (pre-existing exclusion, must still work)",
         ssl.SSLError("some tls failure"),
         False,
     ))
 
-    # --- Must NOT regress: NoneType-not-iterable TypeError still excluded ---
     cases.append((
         "TypeError 'NoneType is not iterable' (pre-existing exclusion)",
         TypeError("'NoneType' object is not iterable"),
         False,
     ))
 
-    # --- A genuine local programming-bug ValueError must STILL be classified
-    #     as a local validation error (i.e. our new exclusion must be narrow) ---
+    # A genuine local programming-bug ValueError must still be classified as
+    # a local validation error -- the new exclusion above must stay narrow.
     cases.append((
         "genuine unrelated ValueError (must remain non-retryable/local)",
         ValueError("invalid literal for int() with base 10: 'abc'"),

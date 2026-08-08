@@ -1,8 +1,6 @@
 ---
-# Token values the committed policies/*_test.yaml fixtures are written against
-# (the operator's real work-cluster scoping). NOT machine config and NOT secret
-# -- these are public repo/project/team identifiers used only so validate.sh can
-# run `cerbos compile` WITH the test fixtures. See charts/cerbos-policies/tests/.
+# Public (not secret) repo/project/team identifiers the committed tests/*.yaml fixtures are
+# written against, needed for validate.sh's cerbos-compile run. See charts/cerbos-policies/tests/.
 policy:
   sourceControl:
     github:

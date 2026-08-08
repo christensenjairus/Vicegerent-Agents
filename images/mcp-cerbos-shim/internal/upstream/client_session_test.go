@@ -13,11 +13,9 @@ import (
 )
 
 // These tests cover the wire-level behaviour of the session cache against a
-// real httptest server, because that is the layer where the production bug
-// lived: every gate's decision logic was correct, and every existing test
-// passed, while the deployed path silently paid two round trips per lookup and
-// blew its deadline. The load-bearing assertions here are COUNTS of
-// initialize requests, which no other observable exposes.
+// real httptest server: a session must be established once and reused across
+// lookups, not re-established per call. The load-bearing assertions here are
+// COUNTS of initialize requests, which no other observable exposes.
 
 // mcpTestServer is a minimal streamable-HTTP MCP server: it counts
 // initialize/tools-call requests and can be told to reject session ids.
@@ -107,10 +105,8 @@ func (s *mcpTestServer) counts() (initializes, toolCalls int) {
 	return s.initializeCount, s.toolCallCount
 }
 
-// TestCallToolReusesSessionAcrossLookups is the regression test for the
-// outage: N sequential lookups must cost exactly ONE handshake. Before the
-// session cache this was N handshakes, which is what pushed a single gated
-// call to 4997ms against a 5000ms deadline.
+// TestCallToolReusesSessionAcrossLookups asserts that N sequential lookups
+// cost exactly ONE handshake, not N.
 func TestCallToolReusesSessionAcrossLookups(t *testing.T) {
 	srv := &mcpTestServer{}
 	ts := httptest.NewServer(srv.handler())
@@ -197,11 +193,9 @@ func TestCallToolDoesNotRetryForever(t *testing.T) {
 	}
 }
 
-// TestCallToolRespectsDeadline is the test class that was missing entirely and
-// is why the 5s timeout bug shipped: every other test injects an in-process
-// fake that returns instantly, so no test asserted what happens when a lookup
-// outruns its budget. A context deadline must surface as an error the gate can
-// fail closed on.
+// TestCallToolRespectsDeadline asserts that a context deadline surfaces as
+// an error the gate can fail closed on, rather than blocking past its
+// budget.
 func TestCallToolRespectsDeadline(t *testing.T) {
 	srv := &mcpTestServer{perCallDelay: 200 * time.Millisecond}
 	ts := httptest.NewServer(srv.handler())

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assert the agent Sandbox owns global git config in every Hermes HOME.
+"""Assert the agent Sandbox owns global git config in the agent's HOME.
 
 The protected-branch guard's global-scope rung depends on manifest facts, not on
 the shell scripts in images/agent/git-guard/: the ConfigMap must carry

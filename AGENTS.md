@@ -56,6 +56,8 @@ Vicegerent is a credential-isolated, egress-locked, harness-agnostic agent platf
 - `README.md`: overview and quickstart.
 - `docs/setup.md`: authoritative installation and operations walkthrough.
 - `docs/design.md`: architecture rationale.
+- `docs/backup-and-restore.md`: backup, restore, and agent-rename runbook.
+- `docs/secrets-and-pii-redaction.md`: secret and PII redaction enforcement points.
 - `host/mcp/README.md`: host-side MCP inventory and operation.
 - `images/mcp-cerbos-shim/README.md`: MCP authorization, live lookup, moderation, and response-guard behavior.
 - `images/<name>/README.md`: image-specific build and runtime details.

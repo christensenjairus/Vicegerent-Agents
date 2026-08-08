@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 
-# Static validation for the Helm-based install (no live cluster):
-#   - YAML syntax over the repo (excluding Helm template/policy sources)
-#   - helm lint every chart (values.defaults.yaml layered under values.example.yaml)
-#   - helm template each chart against values.defaults.yaml + values.example.yaml | kubeconform -strict
-#   - Cerbos two-pass compile: with-tests vs charts/cerbos-policies/test-values.yaml,
-#     compile-only vs values.example.yaml
-#   - egress-proxy scrub.py renders to valid Python + its redaction patterns pass
-#   - the vMCP AgentgatewayPolicy attaches exactly one well-formed Cerbos guardrail
+# Static validation for the Helm-based install (no live cluster). Runs Helm
+# lint/template/kubeconform and Cerbos compile checks across every chart, plus a
+# growing set of repo-specific guards (image tags, model pricing/routing, MCP and
+# LSP wiring, egress redaction, Homebrew reconciliation, and more). Each
+# check announces itself with an "echo \"INFO - ...\"" line below -- read those
+# for the current, authoritative list rather than relying on this header.
 
 set -o errexit
 set -o pipefail
@@ -26,10 +24,8 @@ SECRET_PATTERNS_FILE="$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-p
 KUBECONFORM_CACHE="${KUBECONFORM_CACHE:-/tmp/.kubeconform-cache}"
 kubeconform_flags=(-strict -ignore-missing-schemas -summary -cache "$KUBECONFORM_CACHE")
 
-# One parent-scope scratch dir, cleaned as a whole. The mktemp_* helpers run
-# inside $(...) command substitutions (subshells), so an array they appended to
-# there would never reach this scope -- putting everything under a single dir the
-# parent owns sidesteps that and leaves nothing to leak (and no empty-array trap).
+# One parent-scope scratch dir, cleaned as a whole: mktemp_* run inside
+# subshells, so an array they populated there would never reach this scope.
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 mktemp_f() { mktemp "$WORKDIR/f.XXXXXX"; }
@@ -301,10 +297,6 @@ python3 scripts/gen-vector-redactor.py --check
 echo "INFO - Asserting every image we build is deployed on the tag its Makefile defaults to"
 python3 scripts/validate-image-tags.py
 
-# Every model the chart can route to must have live pricing, or that model
-# silently records cost_status="unknown" and shows no cost in the Slack footer.
-# Self-skips where Hermes' agent.usage_pricing isn't importable (dev laptop),
-# and runs for real inside the sandbox image and in CI.
 echo "INFO - Asserting every configured model has live pricing"
 python3 scripts/validate-model-pricing.py
 

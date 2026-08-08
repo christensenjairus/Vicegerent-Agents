@@ -7,14 +7,14 @@
 # it can't split into both positionals; all three rules match against it. The op
 # sets are fixed AWS facts, hardcoded here (no cluster-var).
 #
-# WHY THIS IS REQUIRED (verified live, 2026): READ_OPERATIONS_ONLY only blocks
-# operations AWS classifies IsWrite=true. It does NOT stop credential/secret
-# reads — and the aws-api-mcp-server's own custom-readonly list even FORCE-ALLOWS
-# several credential minters (eks get-token, ecr get-login-password,
+# WHY THIS IS REQUIRED: READ_OPERATIONS_ONLY only blocks operations AWS
+# classifies IsWrite=true. It does NOT stop credential/secret reads — and
+# the aws-api-mcp-server's own custom-readonly list even FORCE-ALLOWS several
+# credential minters (eks get-token, ecr get-login-password,
 # rds generate-db-auth-token, s3 presign, codeartifact/codecommit creds, ...).
-# Confirmed by probing the live backend: `aws eks get-token` returned a real
-# Kubernetes ExecCredential bearer token. So a "read-only" AWS path is, without
-# this rule, a working path to a kubeconfig-equivalent token, assumed-role
+# `aws eks get-token` returns a real Kubernetes ExecCredential bearer token,
+# so a "read-only" AWS path is, without this rule, a working path to a
+# kubeconfig-equivalent token, assumed-role
 # credentials, registry/DB auth tokens, and Secrets Manager / SSM SecureString
 # values. This guardrail is enforced regardless of how the gate classifies an op
 # (defense-in-depth: even the ops the gate already blocks are denied here, so a

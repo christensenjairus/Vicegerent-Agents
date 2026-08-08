@@ -14,14 +14,10 @@ import (
 // cacheTTLByTool keeps the actual freshness decision explicit and fail-safe:
 // a future gate bypasses the cache until its result semantics are reviewed.
 //
-// It replaces a gate-specific memoization (the GitLab project-canonicalization
-// cache, which stored the parsed numeric id keyed on the raw spelling the
-// caller sent). Caching the raw tool RESULT instead of each gate's parsed
-// value is what generalizes: the key is the same thing every gate varies (the
-// tool plus its arguments), so two reviewed gates that happen to make the same
-// call -- the Notion ancestry gate and the Notion page-author gate both
-// fetching the same page id during one CheckRequest -- share one round trip
-// instead of each maintaining its own private map.
+// Caching the raw tool RESULT (rather than each gate's own parsed value)
+// generalizes across gates: two gates resolving the same (tool, arguments)
+// pair within one CheckRequest -- e.g. Notion ancestry and Notion
+// page-author both fetching the same page id -- share one round trip.
 //
 // SCOPE OF THE KEY: (tool, arguments) is a complete key ONLY because every
 // lookup runs with the same identity -- the shim's own vMCP credentials, over

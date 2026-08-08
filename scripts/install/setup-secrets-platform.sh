@@ -28,8 +28,9 @@
 #
 # The host ghostunnel material (ca.cert, ca.key, server.crt, server.key,
 # client.crt, client.key) is written to $GHOSTUNNEL_HOST_DIR (default
-# ~/.vicegerent/ghostunnel). The server key never enters Kubernetes; the CA key
-# stays host-only so leaf certs can be re-issued without rebuilding the chain.
+# ~/.vicegerent/ghostunnel). The CA private key never enters Kubernetes; the
+# server cert+key are mirrored into agentgateway-system/ghostunnel-server as a
+# host-recovery copy.
 #
 # The Velero S3 credentials are generated once and mirrored to both the
 # velero/velero-credentials Secret and $RCLONE_S3_HOST_DIR/auth-key (default
@@ -165,8 +166,9 @@ ensure_velero_credentials() {
   info "Applied velero/velero-credentials Secret + host auth-key ($hostfile)."
 }
 
-# Every cert/key generation runs through here so a failure names itself. Bare
-# `openssl ... >/dev/null 2>&1` under `set -e` aborted the script silently.
+# Wraps openssl so a failure names the specific subcommand and its captured stderr;
+# called bare, `openssl ... >/dev/null 2>&1` still aborted under `set -e`, but with
+# no diagnostic output at all.
 ossl() {
   local err; err="$(mktemp)"
   if ! openssl "$@" >/dev/null 2>"$err"; then
@@ -202,8 +204,9 @@ done
 info "Target namespaces present."
 
 # --- ghostunnel mTLS -------------------------------------------------------
-# Host-only CA + server cert (laptop) and a client cert (cluster). The cluster
-# never sees the server or CA private key.
+# Host-only CA (laptop) plus a server cert (mirrored into the cluster for
+# recovery) and a client cert (cluster). Only the CA private key stays
+# host-only; the cluster never sees it.
 step "Ghostunnel mTLS material"
 mkdir -p "$GHOSTUNNEL_HOST_DIR"
 chmod 700 "$GHOSTUNNEL_HOST_DIR"
@@ -282,11 +285,11 @@ ensure_literal_secret vicegerent-openai-secrets agentgateway-system Authorizatio
 
 step "DeepSeek API key (optional)"
 ensure_literal_secret vicegerent-deepseek-secrets agentgateway-system Authorization \
-  DEEPSEEK_API_KEY "DeepSeek API key — DeepSeek models stay unavailable until set and providers.deepseek.enabled is true." 0
+  DEEPSEEK_API_KEY "DeepSeek API key — DeepSeek models stay unavailable until set and models.deepseek.enabled is true." 0
 
 step "Z.ai / GLM API key (optional)"
 ensure_literal_secret vicegerent-zai-secrets agentgateway-system Authorization \
-  ZAI_API_KEY "Z.ai/GLM standard (metered) API key — Z.ai models stay unavailable until set and providers.zai.enabled is true." 0
+  ZAI_API_KEY "Z.ai/GLM standard (metered) API key — Z.ai models stay unavailable until set and models.zai.enabled is true." 0
 
 # --- SearXNG secret key ----------------------------------------------------
 # Signs SearXNG session/limiter tokens. Generated once and reused so the value
@@ -301,13 +304,9 @@ else
 fi
 
 # --- mcp-cerbos-shim self-token --------------------------------------------
-# High-entropy token the shim presents on its own re-entrant lookups (to the
-# dedicated :81 vmcp-internal route), so that route's CheckRequest gate can
-# authenticate the shim and deny any other caller -- the app-layer half of the
-# two locks that reserve that route for the shim (the :81 CiliumNetworkPolicy
-# is the network half; together they break the shim<->agentgateway circular
-# dependency). Lives only in the cerbos namespace (unreadable by agents), so the
-# header can't be forged. Generate-once so it stays stable across restarts.
+# App-layer half of the shim's vmcp-internal auth lock; generate-once,
+# cerbos-namespace-only (see images/mcp-cerbos-shim/README.md, "Re-Entrant
+# Lookup Path").
 step "MCP shim self-token"
 if secret_has mcp-cerbos-shim-self-token cerbos token; then
   info "cerbos/mcp-cerbos-shim-self-token (token) already set; reusing."

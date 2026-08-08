@@ -6,7 +6,8 @@ metadata:
   namespace: agent-sandbox
 data:
   approval-policy.yaml: |-
-    # Approval silence list — patterns dropped before haiku pre-screening.
+    # Approval silence list — patterns dropped before the approval auxiliary
+    # model (auxiliary.approval) screens them.
     # Tirith findings and uncancellable patterns are always kept.
     # Edit in git and redeploy to change.
     pattern_silence:

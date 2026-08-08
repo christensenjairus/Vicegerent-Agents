@@ -21,8 +21,8 @@ func TestDeployedGithubMapping_MappedToolsReachCerbos(t *testing.T) {
 	}
 
 	// One tool per category toolhive-servers.json's `tools` allowlist enables
-	// now that it's PR-only (no issue tools, no generic git file/branch-write
-	// tools -- those were removed entirely, see
+	// now that it's PR-only (no issue WRITE tools, no generic git
+	// file/branch-write tools -- those were removed entirely, see
 	// TestDeployedGithubMapping_RemovedToolsAreUnmapped below).
 	cases := []struct {
 		tool string
@@ -94,10 +94,11 @@ func TestDeployedGithubMapping_AllowedRepoPasses(t *testing.T) {
 	}
 }
 
-// GitHub's tool set is deliberately PR-only now: no issue tools at all (this
-// operator doesn't use GitHub issues at work) and no generic git
-// file/branch-write tools (the bot has direct SSH access to github.com, so
-// routine git operations go through git itself, not a GitHub-API tool).
+// GitHub's tool set is deliberately PR-only now: no issue WRITE tools (the
+// issue surface is read-only; issue_read/list_issues/search_issues remain
+// allowlisted) and no generic git file/branch-write tools (the bot has direct
+// SSH access to github.com, so routine git operations go through git itself,
+// not a GitHub-API tool).
 // add_reply_to_pull_request_comment is also removed -- it carries no author
 // info the shim could use to distinguish a reply to a human's comment from a
 // reply to the bot's own, so the honest fallback is to remove the whole

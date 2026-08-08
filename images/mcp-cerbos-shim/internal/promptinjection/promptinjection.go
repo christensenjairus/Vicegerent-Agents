@@ -3,10 +3,10 @@
 // webpage via Firecrawl/Tavily, a fetched Notion/Jira/Confluence page body, a
 // GitHub file, a GitLab merge-request diff, ...). Untrusted content flowing
 // INTO the agent's context from a tool RESULT is a different risk than
-// HAH-106's outbound content-moderation gate, which checks free-text
-// arguments of WRITE calls flowing OUT to Notion/Linear/GitHub/etc. before
-// they reach Cerbos -- this package has no relationship to that one beyond
-// sharing the "registry of regexes run over free text" shape (see
+// internal/moderation's outbound content-moderation gate, which checks
+// free-text arguments of WRITE calls flowing OUT to Notion/Linear/GitHub/etc.
+// before they reach Cerbos -- this package has no relationship to that one
+// beyond sharing the "registry of regexes run over free text" shape (see
 // secrets_redact.go's secretPatternRegistry, this package's closest
 // structural sibling in this codebase) for its first stage.
 //
@@ -19,9 +19,8 @@
 // expensive stage 2 (judge.go) LLM-judge call down to the rare subset that
 // actually matched something. Stage 2 is what filters that recall down to
 // a confirmed detection worth blocking on -- see judge.go's doc comment.
-// Blocking behavior itself (HAH-107, upgraded from log-only) lives in
-// server.go's checkPromptInjection/CheckResponse wiring, not in this
-// package.
+// Blocking behavior itself (as opposed to log-only) lives in server.go's
+// checkPromptInjection/CheckResponse wiring, not in this package.
 package promptinjection
 
 import "regexp"

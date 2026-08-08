@@ -1,22 +1,10 @@
 #!/usr/bin/env bash
 # Centralized kube-context resolution for the vicegerent CLI and its scripts.
 #
-# vicegerent only ever operates on a local Kind cluster. By default it targets the
-# canonical `kind-vicegerent` context, so a normal single-cluster user never has to
-# know about kubectl contexts or remember to select one — `./vicegerent install` just
-# works regardless of whatever ambient context happens to be active. The undocumented
-# VICEGERENT_USE_CURRENT_CONTEXT escape hatch (set it to any non-empty value) instead
-# targets whatever context kubectl is currently on, for a developer juggling several
-# Kind clusters at once (e.g. a throwaway test cluster beside the real one); switch
-# between them with `kubectl config use-context`.
-#
-# Either way the resolved context must be a Kind context (name starts with 'kind-'),
-# so a stray or production context can never be targeted. The env var is inherited by
-# every child process the CLI exec's, so this one function is the single source of
-# truth across all bash entrypoints.
-#
-# require_kind_context sets the global KUBE_CONTEXT, or aborts (exit 1). Call it at
-# statement scope (never inside $(...)), since it may exit.
+# Defaults to kind-vicegerent; the undocumented VICEGERENT_USE_CURRENT_CONTEXT escape
+# hatch targets the active kubectl context instead, but the result must still start with
+# 'kind-' or this aborts. require_kind_context sets the global KUBE_CONTEXT, or exits 1 --
+# call it at statement scope (never inside $(...)), since it may exit.
 # shellcheck source=cli-ui.sh
 if ! declare -F ui_error >/dev/null 2>&1; then
   _vicegerent_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

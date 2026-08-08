@@ -8,8 +8,8 @@
 # re-run delivers upgrades with no gaps.
 #
 # Secrets are NOT created here — the setup scripts own them as Kubernetes Secrets.
-# The platform/agents stages pre-flight the Secrets their workloads block on and
-# fail fast with a pointer instead of a 10-minute --wait hang.
+# The controllers/platform/agents stages pre-flight the Secrets their workloads
+# block on and fail fast with a pointer instead of a 10-minute --wait hang.
 #
 # Usage: install.sh [flags]
 #   -y, --yes            auto-approve every prompt (non-interactive)

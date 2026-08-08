@@ -38,7 +38,9 @@ host/mcp/             host-side MCP control plane (ToolHive + vMCP) — see docs
 images/               source-built container images (agent, mcp-cerbos-shim, kubernetes-mcp-server, aws-api-mcp-server, aws-profiles-mcp)
 scripts/              install, secrets, validation, and test scripts driven by ./vicegerent
 docs/                 design rationale (docs/design.md), full setup walkthrough (docs/setup.md),
-                      and backup/restore runbook (docs/backup-and-restore.md)
+                      backup/restore runbook (docs/backup-and-restore.md), secret/PII redaction
+                      reference (docs/secrets-and-pii-redaction.md), and generated MCP tool
+                      catalogs (docs/available-mcp-tools/)
 ```
 
 `AGENTS.md` (symlinked as `CLAUDE.md`/`HERMES.md`) is the authoritative conventions doc for anyone — human or agent — changing this repo; read it before opening an MR.
@@ -50,7 +52,7 @@ Every extension point has a working example already in the repo to copy, not jus
 - **A new agent** — add an entry to the `agents:` list in your `values.yaml` (copy the example one); each entry becomes one `charts/agent` release. **A new model route** — copy a model template under `charts/platform/templates/models/`, add its values to `values.defaults.yaml`, and enable it in `values.yaml`; the existing provider templates show the required backend, route, and policy resources.
 - **A new machine** — a second machine is a second clone with its own gitignored `values.yaml` and its own `kind-vicegerent` cluster; see [`docs/setup.md`](docs/setup.md).
 - **A new MCP server** — add an entry to `host/mcp/toolhive-servers.json` alongside the 17 already there (kubernetes, github, gitlab, jira, grafana, notion, linear, etc.); see [`host/mcp/README.md`](host/mcp/README.md) for the workload shape, tool-scoping via `aggregation.tools`, and how secrets/OAuth are wired per server.
-- **A new argument-authorization rule** — add a tool mapping to `charts/mcp-cerbos-shim/files/mapping.yaml` (CEL expressions; the ~80 entries already there are the reference, and `images/mcp-cerbos-shim/mapping.example.yaml` is a two-tool schema sketch) and a matching Cerbos policy under `charts/cerbos-policies/policies/`; the existing `resource_github.yaml`, `resource_linear.yaml`, etc. are working deny-by-resource examples; most carry a paired `*_test.yaml` under `charts/cerbos-policies/tests/` you can copy for the new rule. See [`images/mcp-cerbos-shim/README.md`](images/mcp-cerbos-shim/README.md) for the CEL helper mechanism if the new resource needs one (e.g. normalizing a field name across spellings).
+- **A new argument-authorization rule** — add a tool mapping to `charts/mcp-cerbos-shim/files/mapping.yaml` (CEL expressions; the ~115 entries already there are the reference, and `images/mcp-cerbos-shim/mapping.example.yaml` is a two-tool schema sketch) and a matching Cerbos policy under `charts/cerbos-policies/policies/`; the existing `resource_github.yaml`, `resource_linear.yaml`, etc. are working deny-by-resource examples; most carry a paired `*_test.yaml` under `charts/cerbos-policies/tests/` you can copy for the new rule. See [`images/mcp-cerbos-shim/README.md`](images/mcp-cerbos-shim/README.md) for the CEL helper mechanism if the new resource needs one (e.g. normalizing a field name across spellings).
 - **A mutation instead of a deny** — same mapping file, a `force` block on the tool entry (see the GitHub PR draft-forcing and Notion parent-folder-pinning entries already there for the pattern).
 
 ## Quickstart

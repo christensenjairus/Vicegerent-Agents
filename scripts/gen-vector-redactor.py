@@ -12,8 +12,8 @@ sentinel comments and guarded by `--check` in scripts/validate.sh so it can neve
 silently drift from the canonical source.
 
 Modes:
-  (default) / --write   rewrite the interior of the sentinel block in-place
-  --check               exit non-zero (with a diff) if the block is stale
+  (no flags)   rewrites the block in-place
+  --check      verifies without writing
 """
 import argparse
 import difflib

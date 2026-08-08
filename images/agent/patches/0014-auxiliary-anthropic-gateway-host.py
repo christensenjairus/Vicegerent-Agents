@@ -53,15 +53,11 @@ which Hermes's own capacity-error classifier (``_is_connection_error``)
 correctly but confusingly treats as "provider unreachable" and fails over
 to the configured OpenAI fallback (``fallback_providers`` in config.yaml)
 — burning fallback capacity and OpenAI quota on a problem that was never
-an Anthropic outage. Traced live via agent.log on both paths:
-- Auxiliary: `provider=anthropic base_url=https://api.anthropic.com
-  ... error_type=APIConnectionError` at title_generation/approval moments,
-  immediately followed by a fallback to `custom/gpt-5.4`.
-- Main/subagent: the same signature on ``delegate_task()`` subagent turns,
-  immediately followed by `Fallback activated: claude-sonnet-5 -> gpt-5.4
-  (custom)`, then the fallback itself exhausting OpenAI's quota (HTTP 429
-  `insufficient_quota`) — the subagent never got as far as taking the
-  gateway route to begin with.
+an Anthropic outage. Observed on both paths: an ``APIConnectionError``
+against the bare ``api.anthropic.com`` default, immediately followed by a
+fallback to the configured OpenAI provider -- on the main/subagent path,
+that fallback then exhausts OpenAI's own quota before the subagent ever
+takes the gateway route.
 
 The intent behind the auxiliary-client allowlist (see upstream issue
 #52608, referenced in the surrounding comment) is real and worth keeping:

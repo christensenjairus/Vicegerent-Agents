@@ -52,8 +52,8 @@ schedules:
       snapshotVolumes: true
       defaultVolumesToFsBackup: false
       # Full-cluster backup so a bad upgrade can be recovered by nuke-and-restore
-      # (docs/setup.md "Restore the cluster"); '*' + includeClusterResources also
-      # captures CRDs/ClusterRoles/StorageClasses/PVs, not just namespaced objects.
+      # (docs/backup-and-restore.md "Restore the whole cluster"); '*' + includeClusterResources
+      # also captures CRDs/ClusterRoles/StorageClasses/PVs, not just namespaced objects.
       includedNamespaces: ['*']
       includeClusterResources: true
       # This only covers the schedule; pass --exclude-namespaces velero on

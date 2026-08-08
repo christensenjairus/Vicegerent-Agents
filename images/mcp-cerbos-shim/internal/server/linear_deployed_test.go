@@ -11,16 +11,17 @@ import (
 // These tests run the SHIPPED mapping (not a fixture) through the request path.
 // linear_save_issue is always mapped (unlike linear_save_comment/
 // linear_save_project below, or the old create_issue/update_issue split),
-// so every call reaches Cerbos — what varies is whether a teamId attr is
-// present at all. `team` is required on create, so a create call always
-// carries a verifiable teamId. An update call (an `id` arg names an existing
-// issue) carries no `team` of its own unless the caller is deliberately
-// reassigning it — an ordinary update omits `team`, and the linearIssueAttr
-// helper (helpers_linear.go) omits the teamId attr entirely so Cerbos's
-// has()-based check falls through to allow-all instead of tripping on an
-// empty value; an update that DOES set `team` is checked exactly like a
-// create. The deny *decision* for the DEVOPS-only boundary is proven by
-// defs/linear_test.yaml.
+// so every call reaches Cerbos — what varies is how the teamId attr is
+// produced. `team` is required on create, so a create call always carries a
+// verifiable teamId straight from the request. An update call (an `id` arg
+// names an existing issue) carries no `team` of its own unless the caller is
+// deliberately reassigning it — an ordinary update omits `team`, so the
+// linearIssueAttr helper (helpers_linear.go) resolves the issue's CURRENT
+// team via a live upstream lookup (WithLinearIssueTeam) before Cerbos is
+// consulted, and fails closed if that gate errors or isn't configured; an
+// update that DOES set `team` bypasses the lookup and is checked exactly
+// like a create. The deny *decision* for the DEVOPS-only boundary is proven
+// by defs/linear_test.yaml.
 
 func TestDeployedLinearMapping_CreateIssueReachesCerbos(t *testing.T) {
 	m := deployedMapping(t)

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Run the host-side ghostunnel server in the foreground, reading its mTLS
 # material from the local host directory that setup-secrets-platform.sh writes.
-# The cluster gets the matching client cert + CA cert as Kubernetes Secrets; the
-# server key never enters Kubernetes. These files are the source of truth for the
-# laptop side and are disposable — re-run setup-secrets-platform.sh to regenerate.
+# The CA private key never enters Kubernetes -- the server cert/key are also
+# mirrored into the ghostunnel-server Secret solely so a host missing this
+# directory can recover them via ensure_ghostunnel_material (./vicegerent
+# start). These files are the source of truth for the laptop side and are
+# disposable — re-run setup-secrets-platform.sh to regenerate.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -23,7 +23,7 @@ type pagerdutyIncidentResult struct {
 //
 // Returns an error on any lookup failure (timeout, non-200, malformed
 // result, tool-reported error, or an incident with no resolvable service
-// id) so the caller can fail closed -- mirrors IssueTeam/ProjectTeams's
+// id) so the caller can fail closed -- mirrors GetIssueDetails/ProjectTeams's
 // contract in linear.go.
 func IncidentServiceID(ctx context.Context, getIncidentTool string, client ToolCaller, incidentID string) (string, error) {
 	result, err := client.CallTool(ctx, getIncidentTool, map[string]any{"incident_id": incidentID})

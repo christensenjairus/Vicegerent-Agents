@@ -15,37 +15,12 @@ func init() {
 	registerHelper("pagerdutyManageAttr", pagerdutyManageAttrOption)
 }
 
-// pagerdutyManageAttrOption: manage_incidents' single arg (manage_request) is
-// this MCP tool's own flat IncidentManageRequest body -- {"incident_ids":
-// [...], "status": "acknowledged"|"resolved"|null, "urgency": ..., "escalation_level":
-// ..., "assignement": ...} (note: "assignement" is the upstream tool
-// schema's own spelling -- see pagerduty-mcp 1.1.0's models/incidents.py).
-// This is NOT PagerDuty's raw REST API body -- there is no "incidents"
-// array, no "priority", no "resolution", no "incident_type", no
-// "conference_bridge" field on this call at all.
-//
-// The operator only wants ack/resolve via this tool -- incident_ids and
-// status are the only two keys manage_request should ever legitimately
-// carry. This is deliberately an ALLOWLIST of that shape (deny the presence
-// of any OTHER key at all) rather than a denylist of specific field names
-// to avoid. Two separate incidents already proved a denylist is the wrong
-// shape for this check: an earlier version of this helper assumed the
-// general PagerDuty REST API shape (a batch "incidents" array of
-// per-incident objects) instead of this MCP tool's actual flat schema, so
-// its per-field checks against that assumed shape never ran at all --
-// hasOutOfScopeChange was always "false", letting urgency/escalation_level
-// through unchecked in production. Separately, pagerduty-mcp 1.1.0's tool
-// description was reworded to call the reassignment field "assignment"
-// while the actual wire field stayed "assignement" -- a caller trusting the
-// description over the real schema needed its own denylist entry added by
-// hand to stay caught. An allowlist of the two fields actually wanted needs
-// no such per-field maintenance: any key that isn't incident_ids/status is
-// out of scope regardless of its name, known or not -- including a future
-// field this helper has never heard of.
-//
-// status's own VALUE still needs a dedicated check: the KEY is allowed, but
-// only "acknowledged"/"resolved"/absent are legitimate values for it
-// ("triggered" reopens a resolved incident).
+// pagerdutyManageAttrOption allowlists manage_request to exactly
+// {incident_ids, status} (status limited to acknowledged/resolved) rather than
+// denylisting specific fields -- a denylist missed urgency/escalation_level in
+// production, and the wire field for reassignment is spelled "assignement" in
+// the upstream schema despite the tool's docs saying "assignment". status's
+// value still needs its own check since the key itself is allowed.
 func pagerdutyManageAttrOption() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Function("pagerdutyManageAttr",

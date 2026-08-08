@@ -55,7 +55,6 @@ def main() -> int:
 
     cases: list[tuple[str, dict, dict, dict]] = []
 
-    # --- Explicitly disabled reasoning must not emit the unsupported think field ---
     cases.append((
         "reasoning disabled",
         {"enabled": False},
@@ -63,7 +62,7 @@ def main() -> int:
         {"reasoning_effort": "none"},  # top_level must be exactly this
     ))
 
-    # --- effort == 'none' string form (same semantic, different config path) ---
+    # effort == 'none' string form: same semantic, different config path.
     cases.append((
         "reasoning effort explicitly 'none'",
         {"enabled": True, "effort": "none"},
@@ -71,7 +70,6 @@ def main() -> int:
         {"reasoning_effort": "none"},
     ))
 
-    # --- enabled with an explicit effort level (GLM/ARK style) ---
     cases.append((
         "reasoning enabled with effort='high' (GLM/ARK style)",
         {"enabled": True, "effort": "high"},
@@ -79,7 +77,6 @@ def main() -> int:
         {"reasoning_effort": "high"},
     ))
 
-    # --- enabled with no effort set: must omit both fields ---
     cases.append((
         "reasoning enabled, no effort set (must omit top-level reasoning_effort)",
         {"enabled": True},
@@ -87,7 +84,6 @@ def main() -> int:
         {},
     ))
 
-    # --- reasoning_config is None: must be a pure no-op ---
     cases.append((
         "reasoning_config is None (no reasoning-aware model)",
         None,

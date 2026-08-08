@@ -8,8 +8,9 @@
 #   0019 runs first. It deletes mnemosyne-memory's stray site-packages/tools/
 #   namespace-package directory, which otherwise shadows Hermes' real `tools`
 #   package. Every patch that locates its target via
-#   importlib.util.find_spec("tools.<mod>") -- 0008, 0011, 0012, 0018, 0022,
-#   0023, 0027 -- would resolve against the wrong `tools` without it.
+#   importlib.util.find_spec("tools.<mod>") -- 0008, 0009, 0011, 0012, 0018,
+#   0022, 0023, 0025, 0027 -- would resolve against the wrong `tools` without
+#   it.
 #
 #   0016 and 0020 must follow 0014 (they import helpers it adds).
 #   0039 must follow 0028 and 0036 (it rewrites their shared call site).

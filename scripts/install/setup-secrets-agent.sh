@@ -5,7 +5,8 @@
 # Usage: setup-secrets-agent.sh <agent-name> [-y|--yes]
 #
 # Applies these Kubernetes Secrets in namespace agent-sandbox:
-#   <name>-secrets                 password, signing-secret, public-key,
+#   <name>-secrets                 password, signing-secret (always);
+#                                  public-key (once an SSH key exists);
 #                                  SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
 #                                  SLACK_ALLOWED_USERS, SLACK_HOME_CHANNEL (Slack optional)
 #   <name>-ssh-key                 agent_ed25519  (ed25519 private key)

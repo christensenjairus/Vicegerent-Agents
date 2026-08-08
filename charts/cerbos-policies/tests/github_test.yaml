@@ -85,7 +85,6 @@ resources:
     kind: github_repo
     attr: {owner: someoneelse, repo: some-repo, branch: main}
   create_pr_with_reviewers:
-    # create_pull_request setting reviewers is denied outright.
     id: christensenjairus/vicegerent-agents
     kind: github_repo
     attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', hasReviewers: 'true'}
@@ -94,7 +93,6 @@ resources:
     kind: github_repo
     attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', hasReviewers: 'true'}
   create_pr_no_reviewers:
-    # No reviewers set at all -- must stay allowed.
     id: christensenjairus/vicegerent-agents
     kind: github_repo
     attr: {owner: christensenjairus, repo: vicegerent-agents, branch: '', hasReviewers: 'false'}
@@ -105,7 +103,6 @@ resources:
     kind: github_repo
     attr: {owner: moveworks-emu, repo: moveworks, branch: '', head: some-feature-branch}
   create_pr_moveworks_fork_qualified:
-    # head qualified with the allowed fork owner -- allowed.
     id: moveworks-emu/moveworks
     kind: github_repo
     attr: {owner: moveworks-emu, repo: moveworks, branch: '', head: jchristensen_movester:some-feature-branch}
@@ -131,7 +128,6 @@ resources:
       title: '[TEAM-1234] Update deployment configuration'
       isPrCreate: 'true'
   create_moveworks_bad_title:
-    # moveworks-emu/moveworks must reject a title without a ticket prefix.
     id: moveworks-emu/moveworks
     kind: github_repo
     attr:
@@ -141,7 +137,6 @@ resources:
       title: Update deployment configuration
       isPrCreate: 'true'
   update_moveworks_bad_title:
-    # Updating moveworks PR titles must preserve the ticket prefix too.
     id: moveworks-emu/moveworks
     kind: github_repo
     attr:
@@ -151,7 +146,6 @@ resources:
       title: Update deployment configuration
       isPrCreate: 'false'
   create_k8s_manifests_good_title_and_body:
-    # moveworks-emu/k8s-manifests create with a compliant title+body -- allowed.
     id: moveworks-emu/k8s-manifests
     kind: github_repo
     attr:
@@ -162,7 +156,6 @@ resources:
       body: See https://bannertech.atlassian.net/browse/CHANGE-1234 for context
       isPrCreate: 'true'
   create_k8s_manifests_bad_title:
-    # Title has no ticket-ref prefix -- denied.
     id: moveworks-emu/k8s-manifests
     kind: github_repo
     attr:
@@ -173,7 +166,6 @@ resources:
       body: https://bannertech.atlassian.net/browse/CHANGE-1234
       isPrCreate: 'true'
   create_k8s_manifests_missing_body_link:
-    # Body has no change-ticket link -- denied.
     id: moveworks-emu/k8s-manifests
     kind: github_repo
     attr:
@@ -201,7 +193,6 @@ resources:
     kind: github_repo
     attr: {owner: moveworks-emu, repo: k8s-manifests, branch: '', isPrCreate: 'false'}
   update_k8s_manifests_sets_bad_title:
-    # update_pull_request that sets a non-compliant title -- denied.
     id: moveworks-emu/k8s-manifests
     kind: github_repo
     attr:
@@ -211,7 +202,6 @@ resources:
       title: some random title
       isPrCreate: 'false'
   update_k8s_manifests_sets_bad_body:
-    # update_pull_request that sets a body with no change-ticket link -- denied.
     id: moveworks-emu/k8s-manifests
     kind: github_repo
     attr:
@@ -221,7 +211,6 @@ resources:
       body: no link here
       isPrCreate: 'false'
   update_k8s_manifests_sets_good_body:
-    # update_pull_request that sets a compliant body -- allowed.
     id: moveworks-emu/k8s-manifests
     kind: github_repo
     attr:

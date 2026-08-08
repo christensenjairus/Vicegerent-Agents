@@ -33,14 +33,9 @@ const gitlabDraftTitlePrefix = "Draft: "
 // agent-opened merge request shipped ready-for-review rather than draft.
 //
 // Returns an EMPTY title when the override does not apply, which
-// ForceOverrides drops rather than forwarding: two cases need that.
-//   - A title already prefixed (any casing, and GitLab also accepts the
-//     legacy "WIP:" marker) must not be double-prefixed into
-//     "Draft: Draft: x".
-//   - update_merge_request's title is OPTIONAL. An update that doesn't touch
-//     the title must not have one invented here: forcing a title would
-//     overwrite the MR's real title with the string "Draft: ", destroying it.
-//     Only rewrite a title the call actually carries.
+// ForceOverrides drops rather than forwarding: this is needed for a title
+// already prefixed (any casing, and GitLab also accepts the legacy "WIP:"
+// marker), which must not be double-prefixed into "Draft: Draft: x".
 func gitlabDraftTitleForceOption() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Function("gitlabDraftTitleForce",

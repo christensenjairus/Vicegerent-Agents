@@ -12,12 +12,12 @@
 #   kubectl-k `kubectl apply -k`     -> path (a stages/kustomize/* overlay)
 #
 # Fields:
-#   namespace       target namespace (helm/local); `--create-namespace` is always passed
+#   namespace       target namespace (every type except kubectl-k); `--create-namespace` is always passed
 #   values          upstream-chart values file under stages/values/ (helm/helm-oci/helm-git)
 #   crds: true      run apply_crds() first -- Helm never upgrades crds/-dir CRDs, so this
-#                   templates + server-side-applies them
-#   machineValues   local charts: full = whole values.yaml;
-#                   egress = the values.yaml egress: block re-rooted as the chart's values
+#                   extracts + server-side-applies them
+#   machineValues   local charts: full = values.defaults.yaml + values.yaml layered (only
+#                   supported value; forEach: agents is the other local-chart path)
 #   forEach: agents local charts: install once per values.yaml agents[] entry
 #   gate            kubectl-k readiness gate: established (CRDs) | rollout (+ waitResource/waitNamespace)
 stages:
@@ -123,12 +123,8 @@ stages:
         version: 0.53.0
         namespace: cerbos
         values: cerbos.yaml
-        # Upstream chart has no per-machine values.yaml layering (a single fixed
-        # -f is passed); this key names the machine value read out of
-        # $VALUES_FILE/$DEFAULTS_FILE (via yq) and passed as `--set
-        # replicaCount=<n>` (upstream's own values.yaml key, confirmed against
-        # the pinned version's deploy/charts/cerbos/values.yaml above). See
-        # install.sh's run_action (type helm-oci) and helm_oci's extraSet param.
+        # Cerbos chart has no per-machine values layering; this maps values.yaml's
+        # .replicas.cerbos to --set replicaCount=<n> (see install.sh helm_oci).
         replicasValuePath: .replicas.cerbos
         replicasSetKey: replicaCount
       - name: mcp-cerbos-shim

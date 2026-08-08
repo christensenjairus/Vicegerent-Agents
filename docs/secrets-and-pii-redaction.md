@@ -9,7 +9,7 @@ There is no single central scrubber because there is no single pipe to tap. Thre
 - **The agent sandbox** makes its own HTTP(S) calls (curl, git-over-HTTP, MCP and model calls to agentgateway, searxng). Every one is forced through the egress-proxy by the `http_proxy`/`https_proxy` env vars set on the sandbox container (`charts/agent/templates/_sandbox.tpl`). That env var only binds the sandbox's own processes — it does nothing for any other pod.
 - **agentgateway** makes a gRPC ExtProc call to `mcp-cerbos-shim` for every `tools/call` (the guardrail). This call originates from agentgateway, so it never touches the egress-proxy.
 - **agentgateway** makes its own HTTPS call to the model provider (Anthropic/OpenAI). Also from agentgateway, also never through the egress-proxy.
-- **Every pod** writes stdout/stderr, which Vector (the `victoria-logs` chart's log agent, a cluster-wide DaemonSet) scrapes unconditionally via a `kubernetes_logs` source with no namespace/pod filter. This is the one leg that isn't a network call at all — Tetragon's `PROCESS_EXEC`/`PROCESS_KPROBE` events (full command-line arguments for every process executed in `agent-sandbox`) land here via Tetragon's own stdout, and any component that logs a secret-shaped string at any log level lands here too.
+- **Every pod** writes stdout/stderr, which Vector (the `victoria-logs` chart's log agent, a cluster-wide DaemonSet) scrapes unconditionally via a `kubernetes_logs` source with no namespace/pod filter. This is the one leg that isn't a network call at all — Tetragon's `PROCESS_EXEC` events (full command-line arguments for every process executed in `agent-sandbox`) land here via Tetragon's own stdout, and any component that logs a secret-shaped string at any log level lands here too.
 
 The two agentgateway legs are provably disjoint from the sandbox's egress path: the gateway's egress policy (`charts/platform/templates/gateway-egress-networkpolicy.yaml`) allows it to reach the model providers directly (`toEntities: [world]` on 443) and the shim directly (cerbos namespace, 4445), with no hop through the egress-proxy; and its ingress policy (`charts/platform/templates/gateway-networkpolicy.yaml`) accepts the egress-proxy and the shim as two *separate*, independently-allowed sources. A scrubber sitting on the sandbox's egress path structurally cannot see either agentgateway-originated call, no matter how it is configured — so each leg carries its own enforcement point.
 
@@ -43,7 +43,7 @@ The two agentgateway legs are provably disjoint from the sandbox's egress path: 
 
 ### 4. victoria-logs Vector agent (VRL remap, cluster-wide DaemonSet)
 
-- **Covers:** every pod's stdout/stderr cluster-wide, ingested by Vector's `kubernetes_logs` source with no namespace/pod filter (`stages/values/victoria-logs.yaml`). This is not a network call the other three legs could ever see — it's log scraping, a structurally different mechanism. Notably this is what carries Tetragon's `PROCESS_EXEC`/`PROCESS_KPROBE` events (full command-line arguments for every process executed in `agent-sandbox`) into VictoriaLogs, since Tetragon's own stdout is one of the pods Vector scrapes.
+- **Covers:** every pod's stdout/stderr cluster-wide, ingested by Vector's `kubernetes_logs` source with no namespace/pod filter (`stages/values/victoria-logs.yaml`). This is not a network call the other three legs could ever see — it's log scraping, a structurally different mechanism. Notably this is what carries Tetragon's `PROCESS_EXEC` events (full command-line arguments for every process executed in `agent-sandbox`) into VictoriaLogs, since Tetragon's own stdout is one of the pods Vector scrapes.
 - **Catches:** the same 41 canonical patterns as the other legs (`redactor` transform in `stages/values/victoria-logs.yaml`), ported to VRL/Rust-regex-crate syntax. Runs after the `parser` transform that flattens Tetragon's JSON event shape into `.message`, so exec arguments are redacted before the sink ships them. VRL cannot build a regex from a runtime string, so this leg cannot inject the JSON at render time like legs 1 and 3 — instead its statements are **generated** from the canonical JSON by `scripts/gen-vector-redactor.py` and committed between sentinel comments, with `validate.sh` running the generator in `--check` mode to fail closed on any drift.
 - **Where the patterns live:** the `redactor` transform's `source:` block in `stages/values/victoria-logs.yaml`, generated from the canonical `secret-patterns.json` by `scripts/gen-vector-redactor.py` (drift-guarded in `validate.sh`).
 - **Action:** redact-and-forward, like egress-proxy and the shim — a match replaces the substring with `<masked>` in `.message` and the (now-redacted) log line still ships to VictoriaLogs. There is no reject/drop path for logs; the point is to scrub before retention, not to block observability.
@@ -75,7 +75,7 @@ flowchart LR
     SHIM --> VMCP
     AGW -->|"HTTPS model call — NOT via egress-proxy<br/>③regex, MASK"| LLM
     H -.->|"bypass — NOT scrubbed (accepted risk)"| DIRECT
-    TETRA -->|"PROCESS_EXEC/KPROBE args, agent-sandbox exec events"| ALLPODS
+    TETRA -->|"PROCESS_EXEC args, agent-sandbox exec events"| ALLPODS
     ALLPODS -->|"kubernetes_logs, no namespace filter<br/>④regex, REDACT"| VECTOR
     VECTOR --> VLOGS
 ```

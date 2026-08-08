@@ -1,6 +1,6 @@
 # Patch regression tests
 
-Run **inside a built agent image**, not in CI: each test imports the real patched files out of the installed Hermes package, so it needs `/opt/hermes/.venv` and the upstream sources on disk. There is no GitLab CI job for them and there shouldn't be — the CI runners have no Hermes install to test against.
+Run **inside a built agent image**, not in CI: most tests in this directory import the real patched files out of the installed Hermes package, so they need `/opt/hermes/.venv` and the upstream sources on disk. There is no GitLab CI job for them and there shouldn't be — the CI runners have no Hermes install to test against.
 
 Run them after `make -C images/agent image` and before pushing a rebuilt artifact. Set `AGENT_IMAGE` to the image produced by that build:
 
@@ -24,11 +24,14 @@ docker run --rm -v "$PWD/images/agent/patches/tests:/tests" \
 
 `test_hermes_home_migration.py` needs no Hermes install. It exercises the exact-release state inventory, one-time PVC migration, recoverable destination-wins collision handling, the obsolete split-home layout, preservation of post-migration generic state, the shared-skills compatibility link, custom-home opt-out, and rejection of a root migration target. `scripts/validate.sh` runs it in CI.
 
-`test_shared_skills_sync.py` is the exception to the rule above: it needs no Hermes install, only bash + python3 + PyYAML, because it reads `images/agent/skills-scripts/sync-shared-skills.sh` and runs it against throwaway fixture trees. Safe to run anywhere, including CI:
+`test_shared_skills_sync.py`, `test_skills_scripts_baked.py`, `test_skills_snapshot.py`, and `test_skills_snapshot_retention.py` are the exceptions to the rule above: none needs a Hermes install, only bash + python3, because they read the in-repo shell scripts, Dockerfile, and chart templates directly. Safe to run anywhere, including CI:
 
 ```sh
 python3 images/agent/patches/tests/test_shared_skills_sync.py
 VICEGERENT_SYNC_SCRIPT=/path/to/sync.sh python3 images/agent/patches/tests/test_shared_skills_sync.py
+python3 images/agent/patches/tests/test_skills_scripts_baked.py
+python3 images/agent/patches/tests/test_skills_snapshot.py
+python3 images/agent/patches/tests/test_skills_snapshot_retention.py
 ```
 
 `test_provider_reasoning_overrides.py` renders `charts/agent` with `helm template` and verifies that every enabled provider with a configured model and `reasoningEffort` appears under `agent.reasoning_overrides`. It needs the repository mounted, `helm` on `PATH`, and PyYAML importable.

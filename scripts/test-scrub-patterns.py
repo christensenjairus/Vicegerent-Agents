@@ -215,8 +215,8 @@ def main():
 
     # 3. _redact runs the single regex layer and returns (text, count, breakdown).
     #    Assert a known secret is redacted, counted, and named in the breakdown.
-    #    scrub.py has no second (gitleaks) layer and no network hop anymore, so there
-    #    is no fail-open contract left to exercise — just the one-layer path.
+    #    scrub.py redacts via one regex layer with no fallback network call, so
+    #    this is the only path that needs a test.
     secret = "AKIA" + "Q" * 16  # pragma: allowlist secret
     try:
         out, n, bd = ns["_redact"]("key=" + secret)

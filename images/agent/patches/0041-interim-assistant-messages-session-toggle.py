@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Vicegerent patch: add a new native Hermes slash command, ``/chatter``
 (dispatchable in Slack as the bang-command ``!chatter`` via the existing
-``!``->``/`` rewrite in patch 0031), that toggles
+native ``!``->``/`` rewrite in the Slack gateway adapter -- no
+corresponding local patch), that toggles
 ``display.interim_assistant_messages`` for the CURRENT SESSION ONLY.
 
 Context
@@ -39,8 +40,8 @@ This patch touches seven places across four files:
    ``COMMAND_REGISTRY``, the single source of truth every consumer (CLI
    help, gateway dispatch, autocomplete, Slack's ``!``->``/`` bang-rewrite
    via ``is_gateway_known_command()``) derives from. This is BOTH necessary
-   and sufficient for patch 0031's bang-rewrite to recognize ``!chatter`` --
-   no change to patch 0031 itself is needed (``GATEWAY_KNOWN_COMMANDS``
+   and sufficient for the native bang-rewrite to recognize ``!chatter`` --
+   no change to the rewrite logic itself is needed (``GATEWAY_KNOWN_COMMANDS``
    filters on ``cli_only``/``gateway_config_gate``, not ``gateway_only``).
    ``gateway_only=True`` because only the gateway
    (gateway/slash_commands.py::_handle_chatter_command) implements this

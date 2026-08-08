@@ -157,17 +157,12 @@ resources:
     kind: gitlab_project
     attr: {projectId: '148', hasReviewers: 'false', branch: production, isMrCreate: 'false'}
   mr_created_against_protected_branch:
-    # create_merge_request INTO main — allowed. Opening an MR against the
-    # default branch is the normal shape of nearly every merge request; only a
-    # retarget of an existing MR is the risk deny-protected-branch guards.
-    # Regression fixture: the rule originally omitted the isMrCreate guard and
-    # denied this, blocking essentially all agent MR creation.
+    # create_merge_request into a protected branch is allowed; only a retarget (update) of an existing MR is denied -- isMrCreate distinguishes the two.
     id: '148'
     kind: gitlab_project
     attr: {projectId: '148', hasReviewers: 'false', branch: main, isMrCreate: 'true'}
   mr_created_against_production_branch:
-    # Same, for a project whose DEFAULT branch is 'production' (project 7,
-    # Flux-Kubernetes) — the case that surfaced this bug in production.
+    # Same, but for project 7 whose default branch is 'production' rather than 'main'.
     id: '7'
     kind: gitlab_project
     attr: {projectId: '7', hasReviewers: 'false', branch: production, isMrCreate: 'true'}

@@ -251,12 +251,18 @@ func TestDeployedGitlabMapping_CreateMergeRequestDoesNotTriggerAuthorGate(t *tes
 }
 
 // TestDeployedGitlabMapping_CommentAndReadToolsDoNotTriggerAuthorGate proves the
-// deliberate scope of this gate. Every one of these shares the same
-// gitlab_project/access resource/action pair as update_merge_request, but none is
-// gated: the note/thread/discussion/draft-note tools comment on an MR without
-// mutating its own fields, and reviewing merge requests the agent does NOT own is
-// exactly why they stay in the tool allowlist (unlike GitHub, where the operator
-// removed every PR-comment tool outright).
+// deliberate scope of this gate. gitlab_get_merge_request and
+// gitlab_mr_discussions share the same gitlab_project/access resource/action
+// pair as update_merge_request but are read-only, so they pass without ever
+// reaching the gate. The note/thread/discussion/draft-note WRITE tools below
+// (gitlab_create_note, gitlab_create_merge_request_thread,
+// gitlab_create_merge_request_note, gitlab_resolve_merge_request_thread,
+// gitlab_create_draft_note) have been removed from the GitLab allowlist
+// entirely, matching GitHub's removal of every PR-comment tool (see
+// TestForgeParity_DangerousToolsAbsentOnBothForges in
+// forge_parity_deployed_test.go). They are absent from mapping.yaml, so these
+// cases merely confirm they fall through as unmapped, nonexistent tools
+// rather than being deliberately gated but kept.
 func TestDeployedGitlabMapping_CommentAndReadToolsDoNotTriggerAuthorGate(t *testing.T) {
 	cases := []struct {
 		tool string

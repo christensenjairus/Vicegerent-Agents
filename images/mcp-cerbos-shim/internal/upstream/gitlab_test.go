@@ -110,10 +110,8 @@ func TestMRAuthor_LookupFailurePropagates(t *testing.T) {
 // errCanonicalLookup stands in for any upstream transport failure.
 var errCanonicalLookup = errors.New("upstream exploded")
 
-// CanonicalProjectID is what lets ${gitlabAllowedProjects} carry one value per
-// project. The wrapper renders ids as JSON strings (verified live), but accept
-// a bare number too rather than fail closed on a shape change that still
-// unambiguously names the project.
+// TestCanonicalProjectID_StringID covers the wrapper's usual JSON-string id
+// shape (see gitlabProjectResult).
 func TestCanonicalProjectID_StringID(t *testing.T) {
 	c := &fakeCaller{text: `{"id":"148","path_with_namespace":"jchristensen/vicegerent-agents"}`}
 	got, err := CanonicalProjectID(context.Background(), c, "JChristensen%2FVicegerent-Agents")

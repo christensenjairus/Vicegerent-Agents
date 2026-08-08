@@ -308,7 +308,7 @@ def emit_yaml(obj, indent=0):
 
 
 def write_yaml(out, group, results):
-    """results: list of (server, tools-list). Emit the available-tools.yaml tree."""
+    """results: list of (server, tools-list). Emit the servers -> tool_count/tools tree."""
     total_tools = sum(len(t) for _, t in results)
     servers = ", ".join(s for s, _ in results) or "(none)"
     out.write("# Catalog of every tool exposed by the running vicegerent MCP backend(s),\n")

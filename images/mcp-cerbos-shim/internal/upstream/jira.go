@@ -26,38 +26,18 @@ import (
 const jiraGetIssueTool = "jira_jira_get_issue"
 
 // jiraIssueResult is the subset of jira_jira_get_issue's JSON result this
-// package needs. mcp-atlassian (sooperset/mcp-atlassian) does NOT pass
-// through Jira Cloud's raw REST shape -- it flattens the issue to its own
-// simplified dict, with assignee (or a null assignee when the issue is
-// unassigned) at the TOP LEVEL, not nested under a "fields" object, and
-// snake_case member names -- live-verified 2026-07-24 against a real
-// assigned issue: {"id":"...","key":"...","assignee":{"account_id":"...",
-// "display_name":"...","name":"...","email":"...","avatar_url":"..."}}. An
-// earlier version of this struct assumed the raw REST fields.assignee.
-// {accountId,emailAddress,displayName} shape (inferred, never verified) --
-// that mismatch made json.Unmarshal silently leave Assignee nil on every
-// real assignee (Go doesn't error on an absent field), so every assigned
-// issue resolved as "unassigned" and got denied by
-// deny-write-unassigned-issue instead of deny-assignee-outside-allowed --
-// same net deny, wrong reason, a debugging trap for anyone reading shim
-// logs.
+// package needs. mcp-atlassian (sooperset/mcp-atlassian) flattens the issue
+// to its own simplified dict, with assignee (or null when unassigned) at the
+// TOP LEVEL, not nested under "fields", using snake_case names -- live-
+// verified 2026-07-24: {"assignee":{"account_id":...,"display_name":...,
+// "email":...}}. Do not assume the raw REST fields.assignee.{accountId,
+// emailAddress,displayName} shape; json.Unmarshal won't error on that
+// mismatch, it will silently leave Assignee nil.
 //
-// A genuinely UNASSIGNED issue is NOT represented as a null/absent assignee
-// -- mcp-atlassian hardcodes a sentinel object instead: exactly
-// {"display_name": "Unassigned"}, with account_id/email/name all absent
-// (confirmed against its own source, jira/formatting.py: `"display_name":
-// "Unassigned"` with no other keys, emitted whenever the raw Jira payload's
-// assignee is null). Live-verified 2026-07-24 against a real unassigned
-// ticket: {"id":"...","key":"...","assignee":{"display_name":"Unassigned"}}.
-// jiraIssueResult's DisplayName-priority fallback (used when Email is
-// suppressed by org privacy settings -- a real, needed case) previously
-// matched this sentinel too, resolving it as if "Unassigned" were a real
-// user's display name. That produced a non-empty, assigneeVerified=true
-// result Cerbos could only evaluate via deny-assignee-outside-allowed
-// (nobody has "Unassigned" in ${jiraAllowedAssignees}, so the net effect was
-// still a deny) rather than deny-write-unassigned-issue -- same class of
-// bug as the shape mismatch above: still denies, wrong rule, wrong reason
-// surfaced to the caller and to anyone reading shim logs.
+// A genuinely unassigned issue is NOT a null/absent assignee -- mcp-atlassian
+// hardcodes the sentinel object {"display_name": "Unassigned"} instead (its
+// own jira/formatting.py), with account_id/email/name absent. Treat this
+// sentinel as "no assignee", never as a real user's display name.
 const jiraUnassignedSentinelDisplayName = "Unassigned"
 
 type jiraIssueResult struct {

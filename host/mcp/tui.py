@@ -117,11 +117,12 @@ class HelpScreen(ModalScreen):
 | Key | Tab |
 |-----|-----|
 | `1` | vmcp |
-| `2` | ghostunnel |
-| `3` | rclone-s3 |
-| `4` | mcp-health-watch |
-| `5` | supervisord |
-| `6` | caffeinate |
+| `2` | operator-vmcp |
+| `3` | ghostunnel |
+| `4` | rclone-s3 |
+| `5` | mcp-health-watch |
+| `6` | supervisord |
+| `7` | caffeinate |
 
 ## General
 | Key | Action |

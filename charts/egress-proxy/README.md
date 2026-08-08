@@ -11,15 +11,7 @@ The egress proxy is an mitmproxy instance that sits between **every agent sandbo
 ### Secrets scrubbing
 Applied to every request — headers and body — before forwarding to any destination, internal (agentgateway, searxng) or external (internet). A single regex registry (`REDACT_PATTERNS`) runs on each scrubbed string, compiled at render time from the canonical `images/mcp-cerbos-shim/internal/server/secret-patterns.json` injected via `helm --set-file secretPatterns=…`. That same JSON is embedded into `mcp-cerbos-shim` via `//go:embed`, so the proxy and the shim derive from one source of truth — no hand-sync.
 
-| Pattern | What it catches |
-|---|---|
-| `-----BEGIN ... PRIVATE KEY-----` | SSH private keys — RSA, EC, Ed25519, OpenSSH, PKCS#8 encrypted |
-| `xox[bpraescd]-...` / `xapp-...` | Slack tokens — bot, app-level, user, refresh, socket, client, app-config |
-| `Bearer <token>` / `Basic <creds>` | auth values wherever they appear in the URL or body |
-| AWS / GitHub / GitLab / Google | `AKIA…`, `gh?_…`, `glpat-…`, `AIza…` |
-| OpenAI / Anthropic / Stripe | `sk-…` / `sk-proj-…`, `sk-ant-…`, `sk_live_…` / `rk_test_…` |
-| Notion / Twilio / npm / JWT | `ntn_…`, `SK<32 hex>`, `npm_…`, `eyJ….eyJ….…` |
-| PII | US SSN, Visa/Mastercard/Amex/Discover card numbers, US phone numbers |
+Coverage spans SSH private keys; Slack tokens; HTTP `Bearer`/`Basic` auth values; cloud and SaaS provider credentials (AWS, GitHub — classic and fine-grained — GitLab, Google, OpenAI, Anthropic, Stripe, Notion, Twilio, npm, Okta, Atlassian, Databricks, Azure Storage/Entra, Elastic, database/broker connection URIs with an inline password, JFrog, Grafana, Docker Hub, PyPI, Hugging Face, 1Password, Linear, PagerDuty); generic JWTs; and PII (US SSN, Visa/Mastercard/Amex/Discover card numbers, US phone numbers). The canonical `images/mcp-cerbos-shim/internal/server/secret-patterns.json` is the authoritative per-pattern list — read it directly for exact names and regexes rather than relying on this summary.
 
 Header stripping is separate from the registry and unconditional — no regex has to match. The `Authorization` header is scrubbed on every request regardless of destination (agentgateway injects the real upstream provider key on its own outbound leg, so an auth header on an agent request is only ever a secret), and so are the `x-api-key` and `api-key` headers.
 
@@ -38,7 +30,7 @@ GET and HEAD requests with a non-empty body to external destinations → 403. GE
 `Upgrade: websocket` headers → 403 in the `request()` hook. `websocket_start` hook kills any connection that slips through. Applies everywhere.
 
 ### SSRF protection
-Requests to RFC1918, link-local (169.254/16), loopback, and CGNAT (100.64/10) ranges → 403. Defence-in-depth alongside Cilium's `egressDeny` rules.
+Requests to RFC1918, link-local (169.254/16), loopback, CGNAT (100.64/10), and their IPv6 counterparts (`::1/128`, `fc00::/7`, `fe80::/10`) → 403. Defence-in-depth alongside Cilium's `egressDeny` rules.
 
 ### Audit log
 Every request/response emits a JSON log line (one object per line, `message` carries the same content the pre-JSON format used):
@@ -126,9 +118,9 @@ For a service the **proxy fetches** (GET/HEAD through the egress proxy):
 3. If the service holds credentials, add its token format to `images/mcp-cerbos-shim/internal/server/secret-patterns.json` — see [Adding a new secret pattern](#adding-a-new-secret-pattern).
 4. If the service is multi-tenant (object storage, a CDN), add an `EXTERNAL_PATH_SCOPES` entry so the host-only FQDN allowlist doesn't grant every tenant's path.
 
-For a service the sandbox reaches **direct** (bypassing the proxy, e.g. Slack):
-1. Add the FQDN to the agent's `directEgress.slackFQDNs` in `values.yaml` (rendered by `charts/agent/templates/networkpolicy.yaml`)
-2. Add it to `no_proxy`/`NO_PROXY` in `charts/agent/templates/_sandbox.tpl`
+For a service the sandbox reaches **direct** (bypassing the proxy — needed when the service requires POST or WebSocket the GET-only proxy can't relay, e.g. Slack or edge-tts):
+1. Add a new `directEgress.<service>FQDNs` field in `values.yaml`, defaulting to an empty list (opt-in), and a matching `toFQDNs` block in `charts/agent/templates/networkpolicy.yaml` — see `directEgress.slackFQDNs` and `directEgress.edgeTtsFQDNs` for the pattern; each direct-bypass channel gets its own field and its own Cilium block.
+2. If the client library honors the proxy env vars, add the FQDN(s) to `no_proxy`/`NO_PROXY` in `charts/agent/templates/_sandbox.tpl` (see the Slack entry there). If it doesn't respect `NO_PROXY` at all (like `slack_sdk`, which also auto-loads `HTTPS_PROXY`), add a build patch under `images/agent/patches/` to force the bypass instead — see `0007-slack-bypass-egress-proxy.py`.
 
 ---
 
