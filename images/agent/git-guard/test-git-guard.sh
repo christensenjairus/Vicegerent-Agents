@@ -226,6 +226,26 @@ blocked "config core.hooksPath (local)"  git config core.hooksPath /dev/null
 allowed "config --get core.hooksPath"         git config --get core.hooksPath
 allowed "config --show-origin core.hooksPath" git config --show-origin core.hooksPath
 
+echo "== process audit noise (must not execute /usr/bin/[) =="
+PROBE_BIN="${WORK}/probe-bin"
+BRACKET_EXEC_LOG="${WORK}/bracket-execs"
+mkdir -p "${PROBE_BIN}"
+# shellcheck disable=SC2016 # The probe must preserve these variables for its child shell.
+printf '%s\n' \
+    '#!/bin/sh' \
+    'printf "%s\n" "$*" >> "${BRACKET_EXEC_LOG:?}"' \
+    'exec /usr/bin/[ "$@"' > "${PROBE_BIN}/["
+printf 'enable -n "["\n' > "${WORK}/disable-bracket.sh"
+chmod +x "${PROBE_BIN}/["
+: > "${BRACKET_EXEC_LOG}"
+BASH_ENV="${WORK}/disable-bracket.sh" BRACKET_EXEC_LOG="${BRACKET_EXEC_LOG}" \
+    PATH="${PROBE_BIN}:${PATH}" git worktree list --porcelain >/dev/null
+if [[ -s "${BRACKET_EXEC_LOG}" ]]; then
+    no "worktree list avoids external test" "wrapper executed: $(tr '\n' ';' < "${BRACKET_EXEC_LOG}")"
+else
+    ok "worktree list avoids external test"
+fi
+
 echo "== legitimate operations (must be ALLOWED) =="
 "${REAL_GIT}" checkout -q feature/work
 allowed "push feature branch"         git push -q origin feature/work
