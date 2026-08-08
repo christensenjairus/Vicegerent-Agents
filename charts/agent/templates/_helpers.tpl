@@ -51,6 +51,11 @@ Keep repository authorship neutral. Use the repository's configured git identity
 All pull requests and merge requests are forcibly kept as drafts by the platform. This is expected.
 {{- end -}}
 
+{{- /* Shared KISS instruction for every agent and coding harness. */ -}}
+{{- define "vicegerent-agent.kissPrinciple" -}}
+Apply the KISS principle: break work into simple, focused pieces and prefer the simplest solution that satisfies the stated requirements. Simplicity means less incidental structure, not less rigor — never drop investigation, tests, error handling, or correctness, security, reliability, and operational safeguards to make a change look smaller. Explore alternatives freely when reasoning, then converge on one simple design rather than a configurable or speculative one. Do not undertake a large rewrite unless the user asked for one or the existing approach cannot meet the requirements; preferring a simpler design is not authorization to rewrite working code.
+{{- end -}}
+
 {{- /* The common prompt shared by Hermes and every standalone coding harness. */ -}}
 {{- define "vicegerent-agent.sharedSystemPrompt" -}}
 {{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
@@ -64,6 +69,8 @@ All pull requests and merge requests are forcibly kept as drafts by the platform
 {{ include "vicegerent-agent.neutralAuthorship" . | trim }}
 
 {{ include "vicegerent-agent.draftPullRequestExpectation" . | trim }}
+
+{{ include "vicegerent-agent.kissPrinciple" . | trim }}
 {{- end -}}
 
 {{- /* codingHarnessSystemPrompt = sharedSystemPrompt plus a web-tooling-only
