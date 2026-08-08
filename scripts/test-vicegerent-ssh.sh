@@ -251,6 +251,21 @@ git -C "$repo" config user.email test@example.invalid
 printf 'seed\n' > "$repo/README.md"
 git -C "$repo" add README.md
 git -C "$repo" commit -qm initial
+git -C "$repo" branch -m vicegerent
+repo_branch="$(git -C "$repo" branch --show-current)"
+origin="$WORK/example-origin.git"
+git init --bare -q "$origin"
+git -C "$origin" symbolic-ref HEAD "refs/heads/$repo_branch"
+git -C "$repo" remote add origin "$origin"
+/usr/bin/git -C "$origin" fetch -q "$repo" "$repo_branch:refs/heads/$repo_branch"
+fresh_clone="$WORK/example-fresh"
+git clone -q "$origin" "$fresh_clone"
+git -C "$fresh_clone" config user.name test
+git -C "$fresh_clone" config user.email test@example.invalid
+printf 'fresh\n' >> "$fresh_clone/README.md"
+git -C "$fresh_clone" commit -qam fresh
+/usr/bin/git -C "$origin" fetch -q "$fresh_clone" "$repo_branch:refs/heads/$repo_branch"
+fresh_head="$(git -C "$fresh_clone" rev-parse HEAD)"
 
 : > "$TEST_LOG"
 TERM=xterm-256color TEST_TMUX_SESSIONS="solo"$'\t'"$repo"$'\t1 windows\tdetached\tcreated today' \
@@ -294,7 +309,8 @@ assert_log_has "binds the repository shortcuts" "<--expect=esc,ctrl-w> <--prompt
 assert_log_has "repository shortcut selects the workspace" "$expected_tmux_prefix <new-session> <-s> <main> <-c> <$VICEGERENT_WORKSPACE_ROOT>"
 
 : > "$TEST_LOG"
-TEST_FZF_WORKTREE_KEY=ctrl-n TEST_FZF_BRANCH_QUERY=shortcut-branch "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
+creation_output="$(TEST_FZF_WORKTREE_KEY=ctrl-n TEST_FZF_BRANCH_QUERY=shortcut-branch \
+  "$REPO_ROOT/vicegerent" ssh alpha 2>&1)"
 assert_log_has "shows the worktree actions first" "fzf-first <Worktree> > <new"
 assert_log_has "keeps the worktree actions visible without changing the default" "<--height=100%> <--bind=start:pos(4)>"
 assert_log_has "binds the worktree shortcuts" "<--expect=esc,ctrl-n,ctrl-p,ctrl-w> <--prompt=Worktree> >"
@@ -306,10 +322,27 @@ else
   ok "does not show a fake input candidate"
 fi
 shortcut_worktree="$repo/.worktrees/shortcut-branch"
-if [[ -d "$shortcut_worktree" ]]; then
-  ok "creates a worktree with the worktree shortcut"
+if [[ -d "$shortcut_worktree" ]] \
+  && [[ "$(git -C "$shortcut_worktree" rev-parse HEAD)" == "$fresh_head" ]] \
+  && [[ "$(git -C "$shortcut_worktree" branch --show-current)" == shortcut-branch ]] \
+  && [[ "$(git -C "$repo" rev-parse HEAD)" != "$fresh_head" ]]; then
+  ok "creates a named branch from the freshly fetched default branch"
 else
-  no "creates a worktree with the worktree shortcut" "missing $shortcut_worktree"
+  no "creates a named branch from the freshly fetched default branch" "worktree branch did not use $fresh_head while leaving the primary checkout stale"
+fi
+if [[ "$(< "$TEST_LOG")" == *"<display-message> <-d> <5000> <Branch 'shortcut-branch' is up to date with origin/vicegerent.>"* \
+  && "$creation_output" != *"Branch 'shortcut-branch' is up to date"* ]]; then
+  ok "shows branch freshness inside tmux"
+else
+  no "shows branch freshness inside tmux" "output=$creation_output log=$(tr '\n' ' ' < "$TEST_LOG")"
+fi
+if [[ "$creation_output" != *"do not pull"* \
+  && "$creation_output" != *"Publish it with"* \
+  && "$(< "$TEST_LOG")" != *"do not pull"* \
+  && "$(< "$TEST_LOG")" != *"Publish it with"* ]]; then
+  ok "reports branch status without Git instructions"
+else
+  no "reports branch status without Git instructions" "output=$creation_output log=$(tr '\n' ' ' < "$TEST_LOG")"
 fi
 
 : > "$TEST_LOG"
@@ -429,14 +462,29 @@ else
   no "preserves interactive error output after restoring the terminal" "$terminal_error_output"
 fi
 
+upstream="$WORK/example-upstream.git"
+git clone --bare -q "$origin" "$upstream"
+git -C "$upstream" symbolic-ref HEAD "refs/heads/$repo_branch"
+git -C "$repo" remote add upstream "$upstream"
+upstream_clone="$WORK/example-upstream-fresh"
+git clone -q "$upstream" "$upstream_clone"
+git -C "$upstream_clone" config user.name test
+git -C "$upstream_clone" config user.email test@example.invalid
+printf 'upstream fresh\n' >> "$upstream_clone/README.md"
+git -C "$upstream_clone" commit -qam 'upstream fresh'
+/usr/bin/git -C "$upstream" fetch -q "$upstream_clone" "$repo_branch:refs/heads/$repo_branch"
+upstream_head="$(git -C "$upstream_clone" rev-parse HEAD)"
+
 : > "$TEST_LOG"
 TEST_FZF_WORKTREE_MATCH='create a new worktree' TEST_FZF_BRANCH_QUERY=feature/test \
   "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
 worktree="$repo/.worktrees/feature/test"
-if [[ -d "$worktree" ]] && ! git -C "$worktree" symbolic-ref --quiet HEAD >/dev/null; then
-  ok "creates the requested repository worktree"
+if [[ -d "$worktree" ]] \
+  && [[ "$(git -C "$worktree" branch --show-current)" == feature/test ]] \
+  && [[ "$(git -C "$worktree" rev-parse HEAD)" == "$upstream_head" ]]; then
+  ok "creates the requested branch and worktree from freshly fetched upstream"
 else
-  no "creates the requested repository worktree" "missing detached worktree at $worktree"
+  no "creates the requested branch and worktree from freshly fetched upstream" "missing feature/test branch at $upstream_head"
 fi
 assert_log_has "starts the worktree session with usable terminal defaults" "$expected_tmux_prefix <new-session> <-s> <example-feature-test> <-c> <$worktree>"
 
@@ -513,7 +561,7 @@ assert_log_has "finds a session whose pane moved inside its worktree" "$expected
 
 : > "$TEST_LOG"
 prune_output="$(TEST_FZF_WORKTREE_KEY=ctrl-p TEST_FZF_WORKTREE_KEY_AFTER=ctrl-w TEST_FZF_PRUNE_MATCH='feature/test' TEST_FZF_CONFIRM_MATCH=cancel TERM=xterm-256color capture_tty '' "$REPO_ROOT/vicegerent" ssh alpha 2>&1)"
-if grep -Fq "<--prompt=Confirm prune> > <--header=Prune 'detached' at '$worktree'" "$TEST_LOG" && [[ -d "$worktree" ]]; then
+if grep -Fq "<--prompt=Confirm prune> > <--header=Prune 'feature/test' at '$worktree'" "$TEST_LOG" && [[ -d "$worktree" ]]; then
   ok "confirms before pruning a selected worktree"
 else
   no "confirms before pruning a selected worktree" "$prune_output"
@@ -560,11 +608,11 @@ git -C "$worktree" restore README.md
 
 : > "$TEST_LOG"
 prune_output="$(TEST_FZF_WORKTREE_MATCH='prune a linked worktree' TEST_FZF_WORKTREE_MATCH_AFTER='/workspace' TEST_FZF_PRUNE_MATCH='feature/test' TEST_FZF_CONFIRM_MATCH='prune worktree' "$REPO_ROOT/vicegerent" ssh alpha 2>&1)"
-if [[ ! -e "$worktree" ]] &&
-   [[ "$prune_output" == *"Pruned worktree '$worktree'. No branch was deleted."* ]]; then
-  ok "prunes the selected detached worktree"
+if [[ ! -e "$worktree" ]] && git -C "$repo" show-ref --verify --quiet refs/heads/feature/test &&
+   [[ "$prune_output" == *"Pruned worktree '$worktree'. The branch 'feature/test' was kept."* ]]; then
+  ok "prunes the selected worktree and keeps its branch"
 else
-  no "prunes the selected detached worktree" "$prune_output"
+  no "prunes the selected worktree and keeps its branch" "$prune_output"
 fi
 
 force_worktree="$repo/.worktrees/force-test"

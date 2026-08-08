@@ -20,6 +20,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 TRUSTED_HOOKS = "/opt/vicegerent/git-hooks"
+GLOBAL_EXCLUDES = "/opt/data/.config/git/ignore"
 GITCONFIG_PATH = "/opt/data/.gitconfig"
 LEGACY_GITCONFIG_PATH = "/opt/data/home/.gitconfig"
 
@@ -68,12 +69,14 @@ def main() -> None:
         env = {"GIT_CONFIG_GLOBAL": str(cfg), "GIT_CONFIG_NOSYSTEM": "1",
                "HOME": tmp, "PATH": "/usr/bin:/bin"}
         got = {}
-        for key in ("core.hooksPath", "user.name", "user.email"):
+        for key in ("core.hooksPath", "core.excludesFile", "user.name", "user.email"):
             out = subprocess.run(["/usr/bin/git", "config", "--get", key],
                                  capture_output=True, text=True, env=env, cwd=tmp)
             got[key] = out.stdout.strip()
     if got["core.hooksPath"] != TRUSTED_HOOKS:
         die(f"ConfigMap core.hooksPath is {got['core.hooksPath']!r}, want {TRUSTED_HOOKS!r}")
+    if got["core.excludesFile"] != GLOBAL_EXCLUDES:
+        die(f"ConfigMap core.excludesFile is {got['core.excludesFile']!r}, want {GLOBAL_EXCLUDES!r}")
     for key in ("user.name", "user.email"):
         if not got[key]:
             die(f"ConfigMap does not set {key}; git identity would be lost")
@@ -133,10 +136,18 @@ def main() -> None:
                         die(f"container {c['name']!r} still runs `git config --global` "
                             f"({line.strip()!r}); identity must come from the ConfigMap mount")
 
+        seed = next((c for c in inits if c.get("name") == "seed-data"), None)
+        if seed is None:
+            die("seed-data init container is missing")
+        assert seed is not None
+        seed_script = "\n".join(seed.get("args", []))
+        if "printf '.worktrees/\\n' > /opt/data/.config/git/ignore" not in seed_script:
+            die("seed-data does not reconcile the shared .worktrees ignore file")
+
     print(
         "OK - agent global git config is a readOnly ConfigMap mount at "
         f"{GITCONFIG_PATH}, pinning core.hooksPath={TRUSTED_HOOKS}; "
-        "no imperative git config --global remains"
+        f"core.excludesFile={GLOBAL_EXCLUDES}; no imperative git config --global remains"
     )
 
 
