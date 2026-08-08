@@ -32,13 +32,12 @@ RUN GOBIN=/out GOTOOLCHAIN=auto go install "golang.org/x/tools/gopls@${GOPLS_VER
 # in the main stage against the real target ABI -- see below). This stage
 # uses debian:trixie-slim (glibc 2.41) rather than bookworm-slim (glibc
 # 2.36) because the real bazel(1) binary bazelisk downloads below to warm
-# its cache IS executed here and is itself glibc-linked. Hit exactly this
-# class of failure with rtk's arm64 build needing GLIBC_2.39 against
-# bookworm's 2.36 -- fixed by removing rtk's version-check from this stage
-# entirely (this stage's glibc was never relevant to rtk's compatibility
-# with the final image; the main stage's re-verification catches any real
-# incompatibility). Bumping to trixie is extra headroom for the one thing
-# that does execute here (bazelisk's real download-and-run).
+# its cache IS executed here and is itself glibc-linked. rtk's release
+# binary needs glibc >= 2.39, which this stage's base doesn't guarantee to
+# match; that's fine because nothing here executes rtk -- the main stage's
+# own `rtk --version` check is the real ABI verification. Bumping to trixie
+# is extra headroom for the one thing that does execute here (bazelisk's
+# real download-and-run).
 FROM debian:trixie-slim AS tools
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tar unzip \
@@ -560,7 +559,7 @@ RUN mkdir -p /opt/data/.hermes /opt/data/skills \
     && chown -R 10000:10000 /opt/data
 VOLUME [ "/opt/data" ]
 
-# requirements.txt tools (pre-commit, detect-secrets, yamlfix) live in the
+# requirements.txt tools (pre-commit, detect-secrets, yamllint) live in the
 # Hermes venv but are not on PATH upstream. The Docker ENV covers every process;
 # the profile.d entry preserves the same ordering for base variants that source
 # it. The exec shim must stay ahead of the real venv binary so root invocations
@@ -618,15 +617,11 @@ RUN test -f /opt/hermes/mnemosyne-seed/mnemosyne/models/MiniCPM5-1B-Q4_K_M.gguf 
     && find /opt/hermes/mnemosyne-seed -type f -exec sha256sum {} + \
       | sort -k2 | sha256sum | cut -d' ' -f1 > /opt/hermes/mnemosyne-seed.sha256
 
-# bazelisk + buildifier/buildozer so agents can build/run Bazel targets in
-# repos that use Bazel (e.g. k8s-manifests' helm_charts renders), and reformat/
-# edit BUILD files, entirely offline in the egress-locked sandbox. The
-# pre-warmed bazelisk cache (BAZELISK_HOME, baked in the `tools` stage against
-# BAZEL_PINNED_VERSION) is copied verbatim so the sandbox never has to dial
-# releases.bazel.build at runtime for that one pinned version. Pinned to the
+# bazelisk + buildifier/buildozer binaries and the pre-warmed bazelisk cache
+# (BAZELISK_HOME, baked in the `tools` stage against BAZEL_PINNED_VERSION --
+# see there) are copied verbatim; COPY --from preserves modes, so no
+# `chmod -R` here avoids duplicating the whole bazel cache. Pinned to the
 # target repos' .bazelversion, so it moves about as rarely as the model seed.
-# No `chmod -R` here either -- the tools stage already did it and COPY --from
-# preserves modes, so repeating it would duplicate the whole bazel cache.
 ENV BAZELISK_HOME=/opt/hermes/.cache/bazelisk
 COPY --from=tools "${BAZELISK_HOME}" "${BAZELISK_HOME}"
 COPY --from=tools /usr/local/bin/bazelisk /usr/local/bin/bazelisk

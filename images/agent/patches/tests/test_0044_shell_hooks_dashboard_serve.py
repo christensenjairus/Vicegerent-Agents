@@ -166,7 +166,8 @@ def check_hook_dispatch() -> None:
 
 
 def check_sync_script_contract() -> None:
-    """The HAH-133 hook's script must emit JSON on stdout, not a log line."""
+    """The hook's script must emit JSON on stdout, not a log line, or the
+    post_tool_call wire protocol logs a warning."""
     path = os.environ.get(
         "VICEGERENT_SYNC_SCRIPT", "/reload/shared-skills/sync-shared-skills.sh"
     )

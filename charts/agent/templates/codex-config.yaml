@@ -1,9 +1,8 @@
 ---
 {{/*
 Codex speaks the OpenAI wire protocol, so it follows openai -> deepseek -> zai
-(the OpenAI-compatible providers, in that order) rather than the deepseek-first
-order opencode-config.yaml uses; deepseek and zai serve chat completions, not the
-responses API. An agent with openai disabled but a compatible provider enabled
+(the OpenAI-compatible providers, in that order); deepseek and zai serve chat
+completions, not the responses API. An agent with openai disabled but a compatible provider enabled
 used to get a config pointed at the /openai route the platform chart never
 rendered. An anthropic-only agent still does -- codex cannot speak that wire
 protocol at all, and _sandbox.tpl mounts this ConfigMap unconditionally, so there

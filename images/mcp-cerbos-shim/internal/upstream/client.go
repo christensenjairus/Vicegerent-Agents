@@ -16,11 +16,12 @@
 // passes straight through Cerbos and there is no loop. If a future Cerbos
 // policy or mapping.yaml entry ever adds a deny rule (or any check requiring
 // another lookup) for notion_notion-fetch, this call could start getting
-// denied, silently breaking every ancestry check that depends on it (they
-// fail closed -- see PageIsUnderAnyAncestor -- so the failure mode is "always
-// deny", not silent-allow, but it will look like an unrelated regression).
-// Keep notion_notion-fetch unmapped, or if it ever needs a policy, make sure
-// this package's calls are exempted or the ancestry check is redesigned.
+// denied, silently breaking every check that depends on it (they fail closed
+// -- see PageIsUnderAnyAncestor and PageAuthoredByOperator/notion_author.go
+// -- so the failure mode is "always deny", not silent-allow, but it will
+// look like an unrelated regression). Keep notion_notion-fetch unmapped, or
+// if it ever needs a policy, make sure this package's calls are exempted or
+// the ancestry check is redesigned.
 //
 // CheckResponse leg: the prompt-injection gate (server.checkPromptInjection)
 // runs on the RESULT of this package's own lookups too. A lookup that fetches
@@ -94,8 +95,8 @@ type Client struct {
 	selfToken  string
 
 	// mu guards sessionID. Lookups run concurrently (one per in-flight
-	// gated tools/call, across two shim replicas' worth of goroutines), and
-	// they all share this Client.
+	// gated tools/call, across many goroutines within this one shim
+	// process), and they all share this Client.
 	mu sync.Mutex
 	// sessionID is the cached MCP session, reused across CallTool
 	// invocations so the initialize -> notifications/initialized handshake
@@ -177,8 +178,8 @@ type CallToolResult struct {
 	IsError bool `json:"isError"`
 }
 
-// Text concatenates every text content block, which is all the ancestry
-// walk needs from a notion_notion-fetch response.
+// Text concatenates every text content block -- the shape every lookup in
+// this package parses its JSON result from.
 func (r *CallToolResult) Text() string {
 	var b strings.Builder
 	for _, c := range r.Content {

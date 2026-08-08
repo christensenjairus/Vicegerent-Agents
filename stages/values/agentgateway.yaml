@@ -1,5 +1,5 @@
 ---
-# https://github.com/agentgateway/agentgateway/blob/main/controller/install/helm/agentgateway/values.yaml
+# https://github.com/agentgateway/agentgateway/blob/v1.4.1/controller/install/helm/agentgateway/values.yaml
 controller:
   image:
     registry: cr.agentgateway.dev

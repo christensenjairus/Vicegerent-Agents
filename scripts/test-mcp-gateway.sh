@@ -21,8 +21,7 @@ source "$SCRIPT_DIR/lib/cli-ui.sh"
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 API_KEY="${API_KEY:-agent}"
 SERVERS_CONFIG="${SERVERS_CONFIG:-$SCRIPT_DIR/../host/mcp/toolhive-servers.json}"
-# Optional free-form keyword: search find_tool for matching tools instead of
-# enumerating every backend (e.g. 'kubernetes', 'context', 'notion').
+# See usage above: empty QUERY enumerates, a keyword searches.
 QUERY="${1:-}"
 
 # MCP endpoints — all backends are aggregated behind the single ToolHive vMCP,

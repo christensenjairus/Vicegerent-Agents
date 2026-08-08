@@ -29,7 +29,8 @@ type deployedResult struct {
 	err     error
 }
 
-// loadDeployedMapping renders the chart once for the whole package (~71 callers).
+// loadDeployedMapping renders the chart once for the whole package, shared by
+// every deployed-mapping test.
 // The mapping now lives at charts/mcp-cerbos-shim/files/mapping.yaml as a Helm
 // template ({{ ... }}), so it is only loadable after rendering — we mirror
 // scripts/validate.sh's invocation and read the ConfigMap's mapping.yaml key.

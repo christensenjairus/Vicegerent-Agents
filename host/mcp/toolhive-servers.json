@@ -36,7 +36,7 @@
     },
     {
       "name": "gitlab",
-      "description": "GitLab issues and merge-request lifecycle (create/update/review/comment/labels, pipeline status/logs, retry a failed job) \u2014 the MR-object actions that plain git over SSH can't do.",
+      "description": "GitLab issues and merge-request lifecycle (create/update/review/labels, pipeline status/logs, retry a failed job) \u2014 the MR-object actions that plain git over SSH can't do, short of leaving comments.",
       "enabled": false,
       "type": "npx",
       "package": "@zereight/mcp-gitlab@2.1.46",
@@ -391,7 +391,7 @@
       "description": "AWS access via aws-api-mcp-server \u2014 read-only, multi-profile AWS CLI execution (call_aws) and natural-language command suggestions across the operator's configured profiles.",
       "enabled": false,
       "type": "registry",
-      "registry": "harbor.hahomelabs.com/vicegerent/aws-api-mcp-server:v0.1.1",
+      "registry": "harbor.hahomelabs.com/vicegerent/aws-api-mcp-server:v0.1.2",
       "transport": "stdio",
       "env": {
         "READ_OPERATIONS_ONLY": "true",

@@ -10,8 +10,8 @@ copy during development:
 
 The bug this guards: the doctor validates config, allowlist, mtime drift and
 script health, but never whether the running entrypoint registers hooks at
-all. A hook can pass every check and still be a silent no-op -- which is
-exactly what happened on HAH-133 under ``dashboard``/``serve``.
+all. A hook can pass every check and still be a silent no-op -- which
+previously happened under ``dashboard``/``serve``.
 
 Asserts the coverage report reads the REAL gate predicate from
 hermes_cli.main (so it cannot drift), and that it flags an excluded

@@ -25,9 +25,6 @@ func TestParseAlertmanagerDuration(t *testing.T) {
 	for _, c := range cases {
 		got := parseAlertmanagerDuration(c.in)
 		if c.in == "" {
-			// empty string has no unit suffix; treated as malformed, not 2h default
-			// (the 2h default is applied by alertmanagerAttrOption via lookupCI's
-			// default arg, not by this parser).
 			if got != 1<<40 {
 				t.Errorf("parseAlertmanagerDuration(%q) = %d, want sentinel", c.in, got)
 			}

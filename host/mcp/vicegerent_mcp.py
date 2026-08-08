@@ -18,15 +18,9 @@ Owns the full local ToolHive stack that backs the cluster's MCP access:
   rclone-s3            `rclone serve s3` on 127.0.0.1:9899 backing the cluster's
                        Velero BackupStorageLocation from <repo>/velero-backups;
                        reached from pods via host.docker.internal.
-  mcp-health-watch     polls every enabled workload's own `thv list` status and
-                       fires a macOS notification the first time one drops out of
-                       "running" (e.g. an OAuth-backed remote losing its token and
-                       going unauthenticated/error -- observed live: the workload
-                       drops out of vMCP entirely until `start` brings it back).
-                       When the `aws` server is enabled it also watches that
-                       backend's AWS credentials, warning BEFORE they expire (and
-                       again once expired). Detection only -- never restarts or
-                       refreshes anything itself.
+  mcp-health-watch     watches workload status (and, when enabled, the `aws`
+                       server's credential expiry) and notifies on regressions.
+                       Detection only; see `health_watch()` below for details.
   operator-vMCP       optional unscoped loopback vMCP for manually supervised
                       native host harnesses (127.0.0.1:4484); started with
                       --operator-vmcp and reuses the same ToolHive workloads.
@@ -34,8 +28,8 @@ Owns the full local ToolHive stack that backs the cluster's MCP access:
                        stack is up (enable per-start with --caffeinate).
 
 vMCP, ghostunnel, rclone-s3, and mcp-health-watch (plus operator-vMCP and
-caffeinate when enabled) run under supervisord with autorestart. The workloads are brought up by `start`
-(idempotent) before it starts.
+caffeinate when enabled) run under supervisord with autorestart. `start` brings
+up the workloads first, then starts/reconciles the supervised processes above.
 
 Two authorization concerns split across the host and the cluster. Tool SELECTION
 is here: `generate_vmcp_config` emits an `aggregation.tools` allowlist from each
@@ -513,8 +507,8 @@ def list_all_workload_names() -> set[str]:
 
 
 def _notify(title: str, message: str, group: str | None = None) -> None:
-    """Fire one macOS notification via terminal-notifier. Two gotchas, all
-    verified live, are baked in here so every caller inherits them:
+    """Fire one macOS notification via terminal-notifier. Two gotchas are
+    baked in here so every caller inherits them:
 
     A `group` tags the notification so a later `_notify_clear(group)` can pull
     it from Notification Center once the underlying issue clears, and so a
@@ -529,10 +523,9 @@ def _notify(title: str, message: str, group: str | None = None) -> None:
       process's own parent) can lose its connection to the current GUI login
       session over many hours' uptime, and every process it forks afterward
       inherits that same stale session regardless of how freshly *they* were
-      spawned -- confirmed live: restarting just this program stayed silent,
-      only fully restarting supervisord itself fixed it. Routing the actual
-      notification through the CURRENT session's bootstrap namespace instead of
-      this process's own (possibly stale) one is the standard fix.
+      spawned. Routing the actual notification through the CURRENT session's
+      bootstrap namespace instead of this process's own (possibly stale) one
+      is the standard fix.
     """
     subprocess.run(
         [
@@ -1295,11 +1288,10 @@ def _apply_workload(
     network-isolation ingress-proxy port allocator is a shared, global resource,
     and issuing two of those calls at once can race — both pick the same free
     host port, one bind wins and the other's ingress container is left
-    permanently stuck in `Created` (seen with grafana/grafana_secondary colliding on
-    port 8001). This does mean `thv run`/`thv restart` calls (and any image pull
-    they trigger) now run one at a time rather than overlapping — correctness
-    over the pull-overlap speedup, since a lost race leaves a workload down
-    until someone notices and manually restarts it.
+    permanently stuck in `Created`. This does mean `thv run`/`thv restart` calls
+    (and any image pull they trigger) now run one at a time rather than
+    overlapping — correctness over the pull-overlap speedup, since a lost race
+    leaves a workload down until someone notices and manually restarts it.
     """
     name = server["name"]
     state = in_group.get(name)
@@ -2249,13 +2241,11 @@ def start_stack(
         # own startup -- none of that is part of the command/env string
         # `update` diffs above, so a content-only change (editing
         # vicegerent_mcp.py for mcp-health-watch, or regenerating vmcp_cfg) is
-        # invisible to it and an already-running process keeps whatever it read
-        # at ITS OWN start forever. Worse, confirmed live: editing a file out
-        # from under an already-running interpreter loop doesn't reliably fail
-        # loudly -- it can keep reporting RUNNING while silently no-opping
-        # instead of picking up the change. Restart every expected program
-        # explicitly, every time, so each one always re-reads its current file
-        # from a clean start -- cheap (a few seconds) and safe for a host dev stack.
+        # invisible to that diff, and a process that already loaded the old
+        # file can keep reporting RUNNING while silently ignoring the update.
+        # Restart every expected program explicitly, every time, so each one
+        # always re-reads its current file from a clean start -- cheap (a few
+        # seconds) and safe for a host dev stack.
         for prog in expected:
             if prog in preexisting:
                 continue

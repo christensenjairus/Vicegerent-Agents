@@ -101,8 +101,8 @@ func ownerPropertyMentionsOperator(propertiesJSON, operatorUserID string) bool {
 // the filtered results) denies a legitimate write, which is the
 // fail-closed-safe direction; it can never produce a false positive (a
 // non-operator page being reported as operator-authored), since the filter
-// itself is a hard server-side exclusion, not a ranking signal. This is the
-// Owner-property check also permits pages reassigned after creation without
+// itself is a hard server-side exclusion, not a ranking signal. The
+// Owner-property check also permits pages reassigned after creation, without
 // an extra network call. Returns an error
 // (fail closed) only on an actual lookup failure -- a fetch/search error, or
 // a page with no resolvable title to search on -- never on the Owner-property

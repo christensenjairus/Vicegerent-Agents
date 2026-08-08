@@ -247,13 +247,6 @@ def main() -> int:
             "re-verify the ContextVar/mark/has_read/reset block)"
         )
 
-    if "from typing import" in src and "Optional" not in src.split("\n\n", 1)[0]:
-        # Best-effort sanity check only; the module already imports Optional
-        # for its own type hints elsewhere (verified at authoring time), so
-        # this is not treated as a hard precondition -- just documented here
-        # in case a future upstream refactor drops that import.
-        pass
-
     src = src.replace(ANCHOR, REPLACEMENT, 1)
 
     with open(path, "w", encoding="utf-8") as f:

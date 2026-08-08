@@ -1,32 +1,20 @@
 #!/usr/bin/env python3
 """Assert every model this repo can actually route to has live pricing.
 
-Why this exists
----------------
 Model prices live in Hermes' own tables (patched by
-images/agent/patches/0043-model-pricing.py). Nothing previously connected the
-models this chart *configures* to the prices Hermes actually *has*, so a model
-could be wired up and silently record cost_status="unknown" forever -- the
-Slack runtime footer just omits the cost line, which looks like a display quirk
-rather than a billing gap. That is exactly how three models were found unpriced
-(openai/gpt-5.4 -- the OpenAI primary AND failover target, zai/glm-4.7-flash,
-anthropic/claude-opus-5), plus a whole-surface bug where every failover session
-was unbillable because the chart hardcoded `provider: custom`.
+images/agent/patches/0043-model-pricing.py); nothing else connects the models
+this chart configures to the prices Hermes has, so a model could be wired up
+and silently record cost_status="unknown" forever. This check renders the
+agent chart across every provider/failover/mnemosyne permutation and asserts
+each (provider, model) pair it can route to resolves to a real price.
 
-This check closes that loop: it renders the agent chart across every provider /
-failover / mnemosyne permutation, harvests every (provider, model) pair the
-rendered output can route to, and asserts each one resolves to a real price
-through Hermes' own resolve_billing_route() + get_pricing_entry().
-
-Being priced requires BOTH halves, which is the subtle part:
-  1. a price entry exists for (provider, model), and
-  2. resolve_billing_route() returns billing_mode != "unknown" for it.
-A provider with prices but no route branch is "priced on paper, unbillable in
-practice" -- that was true of deepseek (4 entries, no branch) until 0043.
+Being priced requires BOTH a price entry for (provider, model) AND a
+resolve_billing_route() branch that returns billing_mode != "unknown" --
+a model can have one without the other.
 
 Skipped by design when Hermes' agent.usage_pricing is not importable (i.e.
-outside the sandbox image), so this is a no-op on a developer laptop rather
-than a false failure. Inside the sandbox and in CI it runs for real.
+outside the sandbox image); runs for real inside a live agent-sandbox pod or a
+built agent image. No current CI job gives it Hermes access before merge.
 
 Usage:  python3 scripts/validate-model-pricing.py [--verbose]
 """
@@ -377,13 +365,9 @@ def main() -> int:
     _log(f"OK - {len(pairs)} configured (provider, model) routes across "
          f"{scenario_count} scenarios all have live pricing")
 
-    # Second sink: agentburn/prices.py drives burn_report/burn_why. It is a
-    # SEPARATE table from usage_pricing, so a model can bill correctly live and
-    # still be invisible to burn_report -- which is exactly what happened when
-    # an earlier cut of 0043 hand-listed this sink and silently dropped 13
-    # models (claude-haiku-4-5, gpt-5.6-sol, ...) that the retired 0004 used to
-    # cover. Live billing stayed green, so only checking usage_pricing above
-    # would have missed it entirely.
+    # Second sink: agentburn/prices.py drives burn_report/burn_why and is a
+    # SEPARATE table from usage_pricing, so a model can bill correctly live yet
+    # be invisible to burn_report if this mirroring breaks.
     burn = _load_agentburn_prices()
     if burn is None:
         _log("INFO - agentburn.prices not importable; skipping burn_report sink check")

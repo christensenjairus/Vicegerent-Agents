@@ -90,9 +90,8 @@ func TestDeployedPagerdutyMapping_ManageIncidentsTriggeredStatusFlagged(t *testi
 }
 
 func TestDeployedPagerdutyMapping_ManageIncidentsUrgencyFlagged(t *testing.T) {
-	// Regression test for the live bug found in production: urgency was not
-	// checked by the previous (incidents[]-array-shaped) helper at all, so it
-	// passed through Cerbos unchecked and reached PagerDuty's real API.
+	// Cerbos must deny an urgency change alongside an ack, independent of
+	// PagerDuty's own API-side validation.
 	m := deployedMapping(t)
 	e, err := eval.Compile(m)
 	if err != nil {
@@ -122,11 +121,8 @@ func TestDeployedPagerdutyMapping_ManageIncidentsUrgencyFlagged(t *testing.T) {
 }
 
 func TestDeployedPagerdutyMapping_ManageIncidentsEscalationLevelFlagged(t *testing.T) {
-	// Regression test: escalation_level was only caught live by luck (PagerDuty
-	// itself rejected the call because the target incident was already
-	// resolved) -- against a triggered/acknowledged incident it would have
-	// gone through. Cerbos must deny it directly regardless of PagerDuty's own
-	// API-side validation.
+	// Cerbos must deny an escalation-level change alongside an ack, independent
+	// of PagerDuty's own API-side validation.
 	m := deployedMapping(t)
 	e, err := eval.Compile(m)
 	if err != nil {

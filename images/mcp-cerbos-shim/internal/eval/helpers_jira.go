@@ -15,51 +15,15 @@ func init() {
 	registerHelper("jiraFieldsAttr", jiraFieldsAttrOption)
 }
 
-// jiraFieldsAttrOption closes two follow-up gaps on top of the earlier
-// project-scoping widen:
-//
-//   - jira_create_issue's additional_fields and jira_update_issue's
-//     fields/additional_fields are raw JSON strings, invisible to the
-//     existing deny-write-outside-allowed-projects rule -- that rule only
-//     inspects the top-level project_key/issue_key/epic_key args
-//     mapping.yaml already captures as plain strings. But the tool's own
-//     docs show additional_fields can carry {"epicKey": "OTHER-123"},
-//     {"epic_link": "OTHER-123"}, or {"parent": "OTHER-456"} referencing a
-//     DIFFERENT project's issue -- an actual bypass of the project-scoping
-//     control, not just an unmapped extra arg (same severity class as a
-//     documented security boundary being routed around via a side channel).
-//   - Assignee scoping, mirroring Linear's teamId allowlist pattern.
-//     Note there is NO reporter field on either jira_create_issue or
-//     jira_update_issue at all (confirmed directly against
-//     docs/available-mcp-tools/jira.yaml's real argument schema) -- the
-//     ticket's title mentions "assignee/reporter" but only assignee exists
-//     on this tool, so reporter scoping is out of scope, not merely
-//     deferred. assignee is a plain top-level arg on create, but only
-//     reachable via the fields JSON string on update (fields is REQUIRED
-//     there, so it's always present) -- this helper surfaces both shapes
-//     as a single assignee attr.
-//
-// This parses BOTH raw-JSON args (additional_fields on create; fields AND
-// additional_fields on update) with encoding/json (a real parse, not CEL
-// string matching, which the original proposal correctly flagged as
-// too fragile for JSON-in-a-string) and surfaces any embedded epicKey/
-// epic_link/parent value as extraEpicKey/extraParentKey, so the existing
-// Cerbos rule's has()-guarded prefix check can inspect it exactly like it
-// already does epicKey. Malformed JSON is swallowed (empty attrs) rather
-// than failing the call -- Cerbos's own deny rule only fires on a
-// *populated* key, so a field the shim can't parse simply isn't checked,
-// matching every other helper's fail-open-when-unverifiable posture across
-// this shim -- this is a strict widening of what's checked, never a
-// narrowing.
-//
-//   - Issue-type scoping. jira_create_issue's top-level issue_type
-//     arg (required -- 'Task', 'Bug', 'Story', 'Epic', 'Subtask', per the
-//     tool's own docs) is surfaced as issueType, same side channel risk as
-//     epicKey/parent: jira_update_issue has NO top-level issue_type arg at
-//     all (confirmed against docs/available-mcp-tools/jira.yaml), so an
-//     'issuetype'/'issueType' key inside its required fields JSON (or
-//     create's additional_fields) is the only way to change/set it there,
-//     and is parsed the same way epicKey/parent already are.
+// jiraFieldsAttrOption parses the raw-JSON `additional_fields` (create) and
+// `fields`/`additional_fields` (update) args to surface fields the top-level
+// schema hides: a smuggled epicKey/epic_link/parent project reference (a real
+// bypass of project-scoping, not just an unmapped arg), plus assignee and
+// issueType, each present at the top level only on create and only inside the
+// JSON string on update. Malformed JSON yields empty attrs rather than
+// failing the call, matching linearIssueAttr's fail-open-when-unverifiable
+// posture (not every helper in this shim: e.g. awsSecretReadAttr and
+// urlIsInternalTarget fail closed on unverifiable input).
 func jiraFieldsAttrOption() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Function("jiraFieldsAttr",

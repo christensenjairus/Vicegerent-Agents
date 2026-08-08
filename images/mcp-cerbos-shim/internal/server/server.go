@@ -249,12 +249,10 @@ func isModeratedWriteTool(toolName string, verbs []string) bool {
 // open meanwhile).
 //
 // 15s, not 5s. The old budget was set when CallTool re-handshook on EVERY
-// lookup, so it had to cover initialize + tools/call back-to-back. Measured
-// live against the deployed stack: initialize 0.5s-2.7s plus a 0.9s-3.3s
-// tools/call totalled 4997ms against the 5000ms deadline. It lost by 3ms and
-// the GitLab project-canonicalization gate failed closed on every non-numeric
-// project_id spelling. Every live-resolved gate shares this constant, so they
-// all sat on the same knife edge.
+// lookup, so it had to cover initialize + tools/call back-to-back; that was
+// too tight and let the GitLab project-canonicalization gate fail closed on
+// non-numeric project_id spellings. Every live-resolved gate shares this
+// constant, so they all sat on the same knife edge.
 //
 // upstream.Client now reuses its MCP session, so the steady-state lookup is
 // ONE round trip and typically finishes in ~1-3s. The budget is nonetheless
@@ -327,8 +325,8 @@ type Server struct {
 	// notionAllowedParentIDs is a caller-scoped allowlist of parent folders
 	// (e.g. Scratchpad plus a set of team folders — HAH's multi-parent
 	// scoping); a page passes the gate if it descends from ANY of them.
-	// notion-create-pages is NOT covered by this list — it stays pinned to
-	// Scratchpad-only via its own, narrower Cerbos deny rule.
+	// notion-create-pages is deliberately excluded (see the
+	// notionAncestryGatedActions comment above).
 	notionAncestry         upstream.ToolCaller
 	notionAllowedParentIDs []string
 

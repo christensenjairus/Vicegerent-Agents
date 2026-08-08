@@ -17,7 +17,7 @@ func TestAwsSecretReadHelperSelfRegisters(t *testing.T) {
 // TestAwsSecretReadAttrEval drives awsSecretReadAttr end-to-end through
 // Compile/Eval, covering the AWS CLI grammar parse: plain commands, interleaved
 // global options (value-taking + boolean + = form), quoted option values, the
-// batch []string cli_command, and the fail-open no-command case.
+// batch []string cli_command, and the fail-closed no-command case.
 func TestAwsSecretReadAttrEval(t *testing.T) {
 	m := &config.Mapping{Backends: map[string]config.Backend{
 		"vmcp": {

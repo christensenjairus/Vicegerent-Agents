@@ -21,15 +21,10 @@ agentburn/adapters/hermes.py only ever reads `sessions`, so
 agentburn/analyze.py's by_model breakdown groups every SessionRec by its
 single sessions.model value -- crediting/blaming a session's ENTIRE cost to
 whichever model it happened to start with, and silently dropping the cost of
-every model switched to mid-session. Confirmed live on this deployment: three
-sessions that used `/model opus` this week had real, non-zero
-session_model_usage rows for claude-opus-4-8 (totaling ~$3.10), but
-`agentburn_burn_report`'s by_model breakdown reported claude-opus-4-8 cost as
-exactly $0.00 -- because those three sessions' sessions.model was
-claude-sonnet-5, so 100% of their cost (opus included) was bucketed under
-sonnet, and the one legacy session that WAS opus-only from creation (with an
-unrelated cost_status='unknown' row) was the only one that showed up under
-opus at all.
+every model switched to mid-session. Any session that switches models via
+`/model` or a model_aliases entry has its post-switch model's real,
+non-zero session_model_usage cost misattributed entirely to its starting
+model instead.
 
 Fix
 ---
@@ -56,11 +51,10 @@ already applies to closely-related multi-part fixes):
    by_source, total, and night buckets are untouched -- they were never
    wrong; only the per-model split was.
 
-Verified end-to-end against this deployment's live state.db (not a synthetic
-fixture): patched by_model sums to exactly total.cost (97.3882 == 94.2906 +
-3.0976), and the previously-invisible ~$3.10 of real opus spend now shows up
-correctly under claude-opus-4-8 with 27 calls across 4 sessions (up from 1
-session / $0.00 pre-patch).
+Verified end-to-end against live state.db (not a synthetic fixture):
+patched by_model now sums to exactly total.cost, and real cross-model spend
+that model switches previously hid now shows up correctly under the model
+that actually incurred it.
 
 Remove once agentburn's own Hermes adapter reads session_model_usage
 natively.

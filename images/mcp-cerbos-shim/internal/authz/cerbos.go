@@ -41,9 +41,9 @@ func New(addr string, opts ...cerbos.Opt) (*CerbosClient, error) {
 // We use CheckResources (not the simpler IsAllowed helper) because only
 // CheckResources's response carries per-rule `outputs`; the SDK's IsAllowed
 // convenience method discards them. See:
-// https://raw.githubusercontent.com/cerbos/cerbos-sdk-go/v0.2.0/cerbos/grpc.go
+// https://raw.githubusercontent.com/cerbos/cerbos-sdk-go/v0.4.2/cerbos/grpc.go
 // (GRPCClient.CheckResources vs GRPCClient.IsAllowed) and
-// https://raw.githubusercontent.com/cerbos/cerbos-sdk-go/v0.2.0/cerbos/model.go
+// https://raw.githubusercontent.com/cerbos/cerbos-sdk-go/v0.4.2/cerbos/model.go
 // (ResourceResult.Output, keyed by the output's `src`, i.e.
 // "resource.<kind>.v<version>#<rule-name>").
 func (cc *CerbosClient) IsAllowed(ctx context.Context, principalID string, roles []string,

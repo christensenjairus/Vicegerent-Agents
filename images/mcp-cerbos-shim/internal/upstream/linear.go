@@ -12,8 +12,8 @@ import (
 // as. Kept unmapped in Cerbos for the same recursion-safety reason
 // notion_notion-fetch is documented in client.go's package doc: a future
 // deny rule on this tool would make every save_comment team lookup fail
-// closed (not silently allow -- IssueTeam already returns an error on any
-// lookup failure), but it would look like an unrelated regression if
+// closed (not silently allow -- GetIssueDetails already returns an error on
+// any lookup failure), but it would look like an unrelated regression if
 // someone maps it without reading this comment first.
 const linearGetIssueTool = "linear_get_issue"
 
@@ -122,7 +122,7 @@ type linearProjectResult struct {
 // every team it currently belongs to, via ONE linear_get_project call.
 // Returns an error on any lookup failure (timeout, non-200, malformed
 // result, tool-reported error) so the caller can fail closed -- mirrors
-// IssueTeam's contract above. A project with zero teams is a genuine
+// GetIssueDetails's contract above. A project with zero teams is a genuine
 // Linear API invariant violation (every project requires at least one team
 // on creation), so an empty result also fails closed rather than silently
 // passing an empty teams list through as "nothing to check."

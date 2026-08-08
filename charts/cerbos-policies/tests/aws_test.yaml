@@ -12,7 +12,6 @@ principals:
     id: agent
     roles: [agent]
 resources:
-  # --- credential / access minting (deny) ---
   eks_get_token:
     id: call_aws
     kind: aws_command
@@ -63,7 +62,6 @@ resources:
     kind: aws_command
     attr:
       awsOps: [iam/create-login-profile]
-  # --- secret-value reads (deny) ---
   get_secret_value:
     id: call_aws
     kind: aws_command
@@ -84,7 +82,6 @@ resources:
     kind: aws_command
     attr:
       awsOps: [s3/list-buckets, eks/get-token]
-  # --- allowed (metadata / inventory / recon) ---
   get_caller_identity:
     id: call_aws
     kind: aws_command
@@ -110,8 +107,7 @@ resources:
     kind: aws_command
     attr:
       awsOps: [s3/list-buckets]
-  # --- unparseable (deny): the helper emits the sentinel so a command it can't
-  # split into service+operation can't dodge the two denies above ---
+  # <unparsed>: the helper's sentinel for a command it couldn't split into service/op, so it can't dodge the two denies above.
   unparsed:
     id: call_aws
     kind: aws_command

@@ -32,34 +32,17 @@ or "expected ident at line 1 column 2" — that does NOT inherit from
     >>> import jiter; jiter.from_json(b'garbage')
     ValueError: expected ident at line 1 column 1
 
-Live incident 1 (2026-07-21): a Slack turn's primary Anthropic call
-returned HTTP 200 (confirmed via agentgateway's own access log — 3932ms,
-202 output tokens) but Hermes's client raised ``ValueError: expected value
-at line 1 column 87`` parsing it. ``conversation_loop.py``'s
-``is_local_validation_error`` classifier misrouted this to the ``gpt-5.4``
-fallback, which then hard-400'd on an unrelated ``reasoning_effort``-on-
-``/chat/completions`` bug (fixed separately, MR !604). This patch's first
-half fixes that decision.
-
-Live incident 2 (2026-07-22, SAME turn shape recurring, different code
-path): another turn hit ``ValueError: expected value at line 1 column 98``
-mid-stream, this time via a SECOND, narrower classifier that this patch
-originally missed: ``run_agent.py::_is_provider_stream_parse_error``, which
-gates the silent-mid-stream-retry decision in
-``agent/chat_completion_helpers.py`` (the ``deltas_were_sent`` branch, used
-when a tool call is in-flight when the stream dies). That function only
-recognized the literal substring "expected ident at line" -- not "expected
-value at line" (what actually fired) nor the other jiter parse-failure
-shapes. Missing the match, it fell through to the "not retrying" stub path,
-which in turn feeds ``conversation_loop.py``'s eager-fallback logic
-("empty/malformed responses are a common rate-limit symptom, switch to
-fallback immediately") -- reproducing the exact same failure class MR !604
-was supposed to close, because the actual TRIGGER (jiter parse error
-misclassified as non-retryable) was never fixed at its source; only the
-fallback's own crash-on-400 (a downstream symptom) was. This patch's
-second half fixes ``_is_provider_stream_parse_error`` to use the SAME
-marker list as ``is_local_validation_error``, so both classifiers agree on
-what counts as a retryable jiter hiccup.
+Two separate classifiers get this wrong the same way. ``conversation_loop.py``'s
+``is_local_validation_error`` doesn't recognize jiter's bare ValueError as
+retryable, so it misroutes the turn to the ``gpt-5.4`` fallback.
+``run_agent.py::_is_provider_stream_parse_error``, which gates the silent-
+mid-stream-retry decision in ``agent/chat_completion_helpers.py`` (the
+``deltas_were_sent`` branch, used when a tool call is in-flight when the
+stream dies), independently only recognizes the literal substring "expected
+ident at line" -- not "expected value at line" or jiter's other
+parse-failure shapes -- so a miss there falls through to the same eager-
+fallback path. This patch fixes both classifiers to use the same marker
+list, so they agree on what counts as a retryable jiter hiccup.
 
 There's a partial, disconnected acknowledgment of jiter's error shape
 already in the codebase: ``run_agent.py``'s ``_summarize_api_error`` special-
@@ -76,8 +59,7 @@ together because they're the same root cause and the same fix pattern --
 message-substring jiter-parse-error detection -- just at two call sites):
 
 1. ``agent/conversation_loop.py::is_local_validation_error`` — add the
-   jiter-parse-error exclusion (unchanged from the original 0037; documented
-   above as "live incident 1").
+   jiter-parse-error exclusion (unchanged from the original 0037).
 2. ``run_agent.py::_is_provider_stream_parse_error`` — widen its single
    hardcoded substring check ("expected ident at line") to the same 4-marker
    list used above, so a jiter parse error hit mid-stream (tool call

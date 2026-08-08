@@ -56,7 +56,7 @@ pass() { ui_success "$*"; ((PASS++)); }
 fail() { ui_error "$*"; ((FAIL++)); }
 section() { ui_section "$*"; }
 
-# ── exec-curl helper ─────────────────────────────────────────────────────────
+# exec-curl helper
 # Runs curl inside the sandbox pod so the request goes through the real
 # http_proxy/https_proxy env vars and trusted egress-proxy CA baked into the
 # container — not a laptop-side shortcut that would bypass the Cilium policy
@@ -80,8 +80,6 @@ ui_header "Egress proxy redaction test suite"
 ui_key_value "Pod" "${NAMESPACE}/${POD}"
 ui_key_value "Container" "$CONTAINER"
 
-# ── Section 1: baseline reachability ────────────────────────────────────────
-
 section "1. httpbin.io reachable through the egress proxy"
 
 ui_info "Probing GET https://httpbin.io/get…"
@@ -93,7 +91,7 @@ else
   echo "    body: ${BODY:0:200}"
 fi
 
-# ── Section 2: header secret redaction ──────────────────────────────────────
+# Header secret redaction
 # httpbin.io/headers echoes back exactly the headers it received, as JSON.
 
 section "2. secrets in request headers are redacted before forwarding"
@@ -158,10 +156,10 @@ else
   echo "    body: ${BODY:0:300}"
 fi
 
-# Expanded REDACT_PATTERNS registry — probe a couple of the shapes added when the
-# proxy's regex list was brought to parity with mcp-cerbos-shim's. Fixtures are
-# fake and assembled at runtime (no full literal token in the source) plus a
-# pragma allowlist, matching the fake-fixture convention above.
+# AWS access key and GitHub token shapes (parity with mcp-cerbos-shim's
+# pattern registry). Fixtures are fake and assembled at runtime (no full
+# literal token in the source) plus a pragma allowlist, matching the
+# fake-fixture convention above.
 AWS_KEY="AKIA$(printf 'Q%.0s' $(seq 16))"  # pragma: allowlist secret (fake AWS access key id)
 ui_info "Probing an AWS access key ID in a custom header…"
 run "https://httpbin.io/headers" -H "X-Test-Secret: ${AWS_KEY}"
@@ -186,8 +184,7 @@ else
   echo "    body: ${BODY:0:300}"
 fi
 
-# PII patterns (SSN / credit card / US phone) added for parity with the
-# agentgateway promptGuard PII builtins. Fake fixtures assembled at runtime.
+# PII shapes: SSN, credit card, US phone. Fake fixtures assembled at runtime.
 SSN_FAKE="123-45-6789"  # pragma: allowlist secret (fake SSN)
 ui_info "Probing a US SSN in a custom header…"
 run "https://httpbin.io/headers" -H "X-Test-Secret: ${SSN_FAKE}"
@@ -224,7 +221,7 @@ else
   echo "    body: ${BODY:0:300}"
 fi
 
-# ── Section 3: URL path/query redaction ─────────────────────────────────────
+# URL path/query redaction
 # The proxy scrubs flow.request.path (path + query string) before forwarding,
 # so httpbin.io/get's echoed "url"/"args" fields reflect the redacted value.
 
@@ -242,7 +239,7 @@ else
   echo "    body: ${BODY:0:300}"
 fi
 
-# ── Section 4: negative controls — enforcement still active on the new host ─
+# Negative controls — enforcement still active on the new host
 # Guards against a too-broad allowlist entry accidentally opening up more
 # than GET/HEAD, or the FQDN allowlist being effectively a wildcard.
 
@@ -257,15 +254,9 @@ else
   echo "    body: ${BODY:0:200}"
 fi
 
-# A non-allowlisted HTTPS host is blocked at the CONNECT stage (http_connect()
-# hook), not inside a tunnel like the POST check above (request() hook) — there
-# is no tunnel to carry an in-band 403 back for the original GET, so curl's
-# `-w "%{http_code}"` reports 000 (transfer never completed) even though the
-# proxy DID respond 403 to the CONNECT itself (confirmed via proxy logs: "BLOCKED
-# connect-fqdn-not-allowlisted host=example.com", and via `curl -v` showing
-# "CONNECT tunnel failed, response 403"). A real allowlist-wildcard regression
-# would show up as 200 with a real response body, not 000 — so this still
-# catches that failure mode.
+# A non-allowlisted HTTPS host is blocked at the CONNECT stage, so curl has no
+# tunnel to report an in-band 403 through and shows 000 instead. Only a 200
+# here would indicate an allowlist regression.
 ui_info "Probing GET https://example.com/ — expect blocked…"
 run "https://example.com/"
 if [[ "$STATUS" == "403" || "$STATUS" == "000" ]]; then
@@ -275,7 +266,7 @@ else
   echo "    body: ${BODY:0:200}"
 fi
 
-# ── Section 5: git-upload-pack exception is narrow, not a github.com POST bypass ──
+# git-upload-pack exception is narrow, not a github.com POST bypass
 # Guards against the exception widening into "any POST to github.com is fine".
 
 section "5. git-upload-pack exception is narrow (other POSTs to github.com still blocked)"
@@ -289,7 +280,7 @@ else
   echo "    body: ${BODY:0:200}"
 fi
 
-# ── Section 6: response-body redaction ──────────────────────────────────────
+# Response-body redaction
 # Every other test above proves REQUEST-side scrubbing (the secret is in a header
 # or URL we send, and the request hook redacts it before httpbin echoes it back).
 # To isolate RESPONSE-side scrubbing we need a secret that originates server-side,
@@ -301,11 +292,10 @@ fi
 # the decoded secret then only ever exists in the response, where the response()
 # hook must scrub it.
 #
-# Caveat (confirm on first live run): this depends on httpbin.io/base64 returning a
-# text/* (or application/json) Content-Type — the response scrubber deliberately
-# skips binary bodies. If httpbin serves this as application/octet-stream the
-# secret will pass through and this test will fail on content-type grounds, not a
-# real redaction regression.
+# Caveat: this depends on httpbin.io/base64 returning a text/* or
+# application/json Content-Type — the response scrubber deliberately skips
+# binary bodies, so a non-text response would fail this test on content-type
+# grounds, not a real redaction regression.
 
 section "6. secrets in the RESPONSE body are redacted (echo-attack guard)"
 
@@ -324,8 +314,6 @@ else
   fail "Response body neither carried the token nor a <masked> marker — unexpected /base64 response"
   echo "    status: ${STATUS} body: ${BODY:0:300}"
 fi
-
-# ── Summary ──────────────────────────────────────────────────────────────────
 
 ui_section "Summary"
 ui_key_value "Passed" "$PASS"

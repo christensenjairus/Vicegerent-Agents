@@ -51,15 +51,9 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "$1 is required but not found — install Homebrew first"
 }
 
-# ---------------------------------------------------------------------------
-# 0. Sanity
-# ---------------------------------------------------------------------------
 need_cmd brew
 need_cmd python3
 
-# ---------------------------------------------------------------------------
-# 1. Homebrew packages
-# ---------------------------------------------------------------------------
 step "Homebrew packages"
 
 # Every managed formula is an immutable, version-qualified formula in this repo's
@@ -72,9 +66,6 @@ if [[ "$ASSUME_YES" == "1" ]]; then
 fi
 python3 "$BREW_RECONCILER" "${BREW_ARGS[@]}"
 
-# ---------------------------------------------------------------------------
-# 2. Python deps
-# ---------------------------------------------------------------------------
 step "Python venv + dependencies"
 
 REQ="$REPO_ROOT/host/mcp/requirements-host.txt"
@@ -102,9 +93,6 @@ else
   info "Python dependencies installed into host/mcp/.venv"
 fi
 
-# ---------------------------------------------------------------------------
-# 3. ToolHive secrets provider + required secrets
-# ---------------------------------------------------------------------------
 step "ToolHive secrets"
 
 if command -v thv >/dev/null 2>&1 && thv secret list >/dev/null 2>&1; then
@@ -114,9 +102,6 @@ else
   ui_command "thv secret setup" "Choose the encrypted provider"
 fi
 
-# ---------------------------------------------------------------------------
-# 4. Configure MCP servers (enable/skip each + set its secrets)
-# ---------------------------------------------------------------------------
 step "Configure MCP servers"
 if [[ "$ASSUME_YES" == "1" ]]; then
   echo
@@ -131,9 +116,6 @@ else
   "$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" configure
 fi
 
-# ---------------------------------------------------------------------------
-# 5. Doctor check
-# ---------------------------------------------------------------------------
 step "Doctor check"
 echo
 # Reported, not fatal: the remaining steps (CLI symlink, next-steps) are still
@@ -141,9 +123,6 @@ echo
 "$REPO_ROOT/host/mcp/.venv/bin/python" "$REPO_ROOT/host/mcp/vicegerent_mcp.py" doctor \
   || warn "doctor reported missing prerequisites (above); fix them, then re-run './vicegerent mcp doctor'."
 
-# ---------------------------------------------------------------------------
-# 6. Link the vicegerent CLI onto PATH (~/.local/bin)
-# ---------------------------------------------------------------------------
 step "CLI symlink (~/.local/bin/vicegerent)"
 
 LINK_DIR="$HOME/.local/bin"

@@ -36,7 +36,7 @@ type githubPRResult struct {
 // pull_request_read (method: "get") call. Returns an error on any lookup
 // failure (timeout, non-200, malformed result, tool-reported error, or a PR
 // with no resolvable author login) so the caller can fail closed -- mirrors
-// IssueTeam/ProjectTeams/IncidentServiceID's contract elsewhere in this
+// GetIssueDetails/ProjectTeams/IncidentServiceID's contract elsewhere in this
 // package.
 func PRAuthor(ctx context.Context, client ToolCaller, owner, repo string, pullNumber float64) (string, error) {
 	result, err := client.CallTool(ctx, githubPullRequestReadTool, map[string]any{

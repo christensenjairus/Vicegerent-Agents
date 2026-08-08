@@ -18,16 +18,16 @@ import (
 // That makes the gate STRUCTURALLY recursive -- the canonicalization gate
 // resolves a project by calling this tool, and this tool is gated by that same
 // gate -- so the shim's own lookup must be short-circuited before it reaches the
-// gate. Two independent mechanisms in server.go do that, both keyed on the
-// secret self-token internal/upstream stamps on every re-entrant request:
-// isInternalLookup (skips the whole gating path) and the selfLookupTools
-// recursion backstop (skips it again on the tool name alone).
+// gate. server.go's CheckRequest does that by recognizing the shim's own
+// self-token (internal/upstream stamps it on every re-entrant request) on the
+// reserved vmcp-internal backend and admitting the request before it reaches
+// Cerbos -- see isInternalBackend/isSelfRequest.
 //
 // Do not assume the routing alone prevents this. It does not: the reserved
 // vmcp-internal backend was originally trusted to identify these lookups by
 // name, but service_names carries the MCP target name -- `vmcp` for BOTH
-// backends -- so that match never fired and this recursion reached production
-// (40+ re-entries per agent call). See internalBackendName.
+// backends -- so that match never fired and this recursion reached
+// production. See internalBackendName.
 const gitlabGetProjectTool = "gitlab_get_project"
 
 // gitlabProjectResult is the subset of get_project's JSON result this package
@@ -50,7 +50,7 @@ type gitlabProjectResult struct {
 //
 // Returns an error on any lookup failure (timeout, non-200, malformed result,
 // tool-reported error, or a project with no resolvable id) so the caller can
-// fail closed -- same contract as MRAuthor above. A 404 for a project that
+// fail closed -- same contract as MRAuthor below. A 404 for a project that
 // genuinely doesn't exist is therefore a deny, which is correct: an
 // unresolvable project is not an allowlisted one.
 func CanonicalProjectID(ctx context.Context, client ToolCaller, projectID string) (string, error) {

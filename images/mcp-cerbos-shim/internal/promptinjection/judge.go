@@ -156,9 +156,8 @@ func (c *Client) Confirm(ctx context.Context, patternName, text string) (bool, e
 
 // parseYesNo extracts a clear yes/no signal from the judge's free-text
 // reply. Anything ambiguous (empty, neither yes nor no, both present) is
-// conservatively treated as "no" -- this is a successful HTTP call with a
-// non-error response, so the fail-open-on-service-error path does not apply
-// here; only a clean, unambiguous "yes" confirms a block.
+// conservatively treated as "no" -- see Confirm's doc for why this doesn't
+// trigger the fail-open path.
 func parseYesNo(s string) bool {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.Trim(s, ".! ")
@@ -167,8 +166,8 @@ func parseYesNo(s string) bool {
 
 // WindowAround returns up to judgeWindow characters of s centered on
 // offset, so the judge is given a bounded slice of surrounding context
-// rather than an entire scraped document. offset outside s's bounds yields
-// the whole string (capped to judgeWindow) as a safe fallback.
+// rather than an entire scraped document. offset outside s's bounds falls
+// back to the first judgeWindow/2 characters of s.
 func WindowAround(s string, offset int) string {
 	if offset < 0 || offset > len(s) {
 		offset = 0

@@ -10,7 +10,7 @@ host/mcp/.venv/
 # Anchored to repo root so chart-internal charts/*/values.yaml stay tracked.
 /values.yaml
 
-# Git worktrees for branch work (see AGENTS.md worktree convention)
+# Git worktrees for branch work (see AGENTS.md Workflow section)
 .worktrees/
 
 # Host-side rclone serve s3 backing dir for Velero backups (never committed)

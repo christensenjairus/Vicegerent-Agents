@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Assert load-bearing agent runtime ownership in the rendered Sandbox."""
+"""Assert platform naming/identity contracts (Dockerfile, Renovate, CI, retired-identifier
+scan) and load-bearing agent runtime ownership in the rendered Sandbox."""
 
 from __future__ import annotations
 

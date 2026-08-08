@@ -37,8 +37,8 @@ fi
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 API_KEY="${MY_KEY:-agent}"
 # Random secret name so the test is self-describing in k8s audit logs. `od`
-# reads a fixed byte count, avoiding the SIGPIPE that `tr | head` produces
-# under pipefail (which used to append the fallback xxxxxxxx to valid output).
+# reads a fixed byte count; avoid `tr | head`, which SIGPIPEs under pipefail
+# and can silently truncate the value.
 SECRET_NAME="policy-test-$(od -An -N4 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"  # pragma: allowlist secret
 [[ "$SECRET_NAME" != "policy-test-" ]] || SECRET_NAME="policy-test-xxxxxxxx"  # pragma: allowlist secret
 
@@ -51,7 +51,7 @@ fail() { ui_error "$*"; ((FAIL++)); }
 skip() { ui_warn "$*"; ((SKIP++)); }
 section() { ui_section "$*"; }
 
-# ── MCP session helpers ─────────────────────────────────────────────────────
+# MCP session helpers
 
 SESSION_ID=""
 mcp_post() {
@@ -241,15 +241,11 @@ policy_probe() {
   : "$resource"
 }
 
-# ── Setup ────────────────────────────────────────────────────────────────────
-
 ui_header "MCP policy enforcement test suite"
 ui_key_value "Gateway" "$GATEWAY_URL"
 ui_key_value "Secret probe" "$SECRET_NAME"
 
 VMCP_URL="${GATEWAY_URL}/mcp/vmcp"
-
-# ── Section 1: vMCP tool surface ──────────────────────────────────────────────
 
 section "1. vMCP tool surface — aggregated at the gateway"
 
@@ -293,7 +289,7 @@ for must_have in "kubernetes_resources_get" "kubernetes_resources_list"; do
   fi
 done
 
-# ── Section 2: Cerbos Secret block ──────────────────────────────────────────
+# Cerbos Secret block
 # All probes are READ-ONLY. Secret probes use a randomly generated name that
 # almost certainly does not exist — even if policy fails, there is nothing to
 # return. The non-secret control probe uses a namespace that certainly exists
@@ -378,7 +374,7 @@ if [[ "$KUBE_LIST_ENABLED" -ne 0 ]]; then
   fi
 fi
 
-# ── Section 3: complete enabled-policy coverage ─────────────────────────────
+# Complete enabled-policy coverage
 # These calls are all guaranteed denials. They use nonexistent/out-of-scope
 # identifiers, empty target sets, internal-only URLs, or values above a hard
 # cap. A regression therefore cannot create, update, delete, acknowledge, or
@@ -482,8 +478,6 @@ if command -v kubectl &>/dev/null; then
 else
   ui_warn "kubectl is not available — skipping the live guardrail attachment check."
 fi
-
-# ── Summary ──────────────────────────────────────────────────────────────────
 
 ui_section "Summary"
 ui_key_value "Passed" "$PASS"

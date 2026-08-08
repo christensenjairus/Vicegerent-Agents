@@ -7,7 +7,9 @@
 # durationSeconds, defaulting an omitted duration to Alertmanager's own
 # documented 2h rather than bypassing the cap.
 #
-# getAlerts/getSilences/etc. are unmapped and pass.
+# getSilences and other read tools are unmapped and pass; getAlerts is
+# mapped to the alertmanager_alert_query resource instead (see
+# resource_alertmanager_alert_query.yaml), which requires a filterLabel.
 #
 # deny-not-own-silence: mapping.yaml forces every created silence's createdBy
 # to this machine's fixed ${alertmanagerCreatedBy} identity

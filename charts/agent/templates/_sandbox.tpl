@@ -206,8 +206,7 @@ spec:
               reconcile_config claude-plugins json /opt/data/.claude/plugins/installed_plugins.json /reload/claude-config/plugins-installed.json
               cp -f /reload/claude-config/CLAUDE.md /opt/data/.claude/CLAUDE.md
               reconcile_config opencode json /opt/data/.config/opencode/opencode.json /reload/opencode-config/opencode.json
-              # OpenCode's documented global-rules location (opencode.ai/docs/rules); see
-              # opencode-config.yaml's AGENTS.md key for the anomalyco/opencode#22020 caveat.
+              # OpenCode's documented global-rules location (opencode.ai/docs/rules).
               cp -f /reload/opencode-config/AGENTS.md /opt/data/.config/opencode/AGENTS.md
               # kanban init: pre-create SQLite schema on PVC; || true because self-inits on first call anyway.
               mkdir -p /opt/data/tmp
@@ -449,7 +448,7 @@ spec:
                 -Djavax.net.ssl.trustStore=/opt/data/certs/java-cacerts.p12
                 -Djavax.net.ssl.trustStoreType=PKCS12
                 -Djavax.net.ssl.trustStorePassword=changeit
-            # BAZELISK_HOME: read-only image bake, no PVC copy needed (see MR).
+            # BAZELISK_HOME: read-only image bake, no PVC copy needed.
             - name: BAZELISK_HOME
               value: /opt/hermes/.cache/bazelisk
             # Slack bypasses the proxy — Socket Mode + Web API require POST + WebSocket.

@@ -38,8 +38,10 @@ func init() {
 // query saying "Snowflake" still matches) and only non-empty values are
 // appended. A call with no target arg at all yields no `targets` key, so the
 // has()-guarded deny rule simply falls through to allow — never denies on a
-// missing signal, matching every other helper's fail-open-when-unverifiable
-// posture across this shim.
+// missing signal, matching linearIssueAttr/linearProjectAttr's
+// fail-open-when-unverifiable posture (not every helper in this shim: e.g.
+// awsSecretReadAttr and urlIsInternalTarget fail closed on unverifiable
+// input).
 func elasticTargetsAttrOption() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Function("elasticTargetsAttr",

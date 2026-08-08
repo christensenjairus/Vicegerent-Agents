@@ -120,69 +120,68 @@ func main() {
 		log.Printf("WARNING: NOTION_USER_ID unset/empty; notion update-page/create-comment will fail closed")
 	}
 
-	// Linear save_comment team-resolution gate: unlike the Notion
-	// gate above, this needs no allowlist of its own -- it resolves
-	// issueId->team and hands that off to the SAME ${linearAllowedTeams}
-	// Cerbos rule save_issue already uses (resource_linear.yaml), so it's
-	// unconditionally enabled whenever the shim can reach vMCP. No env var
-	// to gate on; a lookup failure at call time fails closed on its own
-	// (checkLinearIssueTeam), same posture as the Notion gate's per-call
-	// failure path.
-	opts = append(opts, server.WithLinearIssueTeam(newUpstream()))
-	log.Printf("linear issue team-resolution gate enabled (save_comment always; save_issue updates without an explicit team arg)")
+	// Live-resolution ownership/scoping gates (Linear team+assignee,
+	// PagerDuty service, GitHub/GitLab author, GitLab project id, Jira
+	// assignee, Alertmanager owner): each resolves live upstream state via a
+	// single vMCP call and hands it to its own Cerbos rule below. Every one
+	// is unconditionally enabled whenever the shim can reach vMCP -- none
+	// has an allowlist or env var of its own -- and each fails closed
+	// independently at call time if its lookup fails.
 
-	// Linear save_project UPDATE team-resolution gate: same
-	// unconditional-enable posture as the issue gate above -- no allowlist
-	// of its own, hands off to the same ${linearAllowedTeams} Cerbos rule
-	// via the teams attr save_project already populates via linearProjectAttr
-	// when the call sets addTeams/setTeams itself.
+	// Linear save_comment/save_issue team+assignee-resolution gate: resolves
+	// issueId to its current team AND assignee in one linear_get_issue call,
+	// feeding both ${linearAllowedTeams} (save_comment always; save_issue
+	// updates without an explicit team arg) and the assignee-outside-
+	// allowed/unassigned-issue rules in resource_linear.yaml.
+	opts = append(opts, server.WithLinearIssueTeam(newUpstream()))
+	log.Printf("linear issue team+assignee-resolution gate enabled (save_comment always; save_issue updates without an explicit team arg)")
+
+	// Linear save_project UPDATE team-resolution gate: hands off to the same
+	// ${linearAllowedTeams} Cerbos rule via the teams attr save_project
+	// already populates via linearProjectAttr when the call sets
+	// addTeams/setTeams itself.
 	opts = append(opts, server.WithLinearProjectTeam(newUpstream()))
 	log.Printf("linear project team-resolution gate enabled (save_project updates without addTeams/setTeams)")
 
-	// PagerDuty incident service-resolution gate: same
-	// unconditional-enable posture as the Linear gates above -- no allowlist
-	// of its own, hands off to the ${pagerdutyAllowedServiceIds} Cerbos rule
-	// (resource_pagerduty.yaml) via the serviceIds attr this gate resolves
-	// for every manage_incidents/add_note_to_incident call.
+	// PagerDuty incident service-resolution gate: hands off to the
+	// ${pagerdutyAllowedServiceIds} Cerbos rule (resource_pagerduty.yaml) via
+	// the serviceIds attr this gate resolves for every
+	// manage_incidents/add_note_to_incident call.
 	opts = append(opts, server.WithPagerdutyIncidentService(newUpstream()))
 	log.Printf("pagerduty incident service-resolution gate enabled (manage_incidents, add_note_to_incident)")
 
-	// GitHub existing-PR-write author-resolution gate: same unconditional-
-	// enable posture as the gates above -- no allowlist of its own, hands off
-	// to the ${githubUsername} Cerbos rule (resource_github.yaml) via the
-	// prAuthor attr this gate resolves for every update_pull_request/
+	// GitHub existing-PR-write author-resolution gate: hands off to the
+	// ${githubUsername} Cerbos rule (resource_github.yaml) via the prAuthor
+	// attr this gate resolves for every update_pull_request/
 	// update_pull_request_branch/request_copilot_review call.
 	opts = append(opts, server.WithGithubPRAuthor(newUpstream()))
 	log.Printf("github PR author-resolution gate enabled (update_pull_request, update_pull_request_branch, request_copilot_review)")
 
-	// GitLab existing-MR-write author-resolution gate: same unconditional-
-	// enable posture as the gates above -- no allowlist of its own, hands off
-	// to the ${gitlabUsername} Cerbos rule (resource_gitlab.yaml) via the
-	// mrAuthor attr this gate resolves for every update_merge_request call.
+	// GitLab existing-MR-write author-resolution gate: hands off to the
+	// ${gitlabUsername} Cerbos rule (resource_gitlab.yaml) via the mrAuthor
+	// attr this gate resolves for every update_merge_request call.
 	opts = append(opts, server.WithGitlabMRAuthor(newUpstream()))
 	log.Printf("gitlab MR author-resolution gate enabled (update_merge_request)")
 
 	// GitLab project-canonicalization gate: resolves any spelling of a
 	// project GitLab accepts to its numeric id before Cerbos matches
 	// ${gitlabAllowedProjects}, so an operator lists one canonical value per
-	// project instead of every form an agent might send. Unconditional like
-	// the gates above; an already-numeric project_id short-circuits without a
-	// network call, so the common path costs nothing.
+	// project instead of every form an agent might send. An already-numeric
+	// project_id short-circuits without a network call, so the common path
+	// costs nothing.
 	opts = append(opts, server.WithGitlabProjectCanonicalizer(newUpstream()))
 	log.Printf("gitlab project-canonicalization gate enabled (all project-bearing tools)")
 
-	// Jira ticket-assignee resolution gate: same unconditional-enable
-	// posture as the gates above -- no allowlist of its own, hands off to
-	// the ${jiraAllowedAssignees} Cerbos rule (resource_jira.yaml) via the
+	// Jira ticket-assignee resolution gate: hands off to the
+	// ${jiraAllowedAssignees} Cerbos rule (resource_jira.yaml) via the
 	// assignee attr this gate resolves for update_issue/add_comment/
 	// transition_issue calls that don't carry their own assignee signal.
 	opts = append(opts, server.WithJiraIssueAssignee(newUpstream()))
 	log.Printf("jira issue assignee-resolution gate enabled (update_issue, add_comment, transition_issue)")
 
-	// Alertmanager deleteSilence owner-resolution gate: same unconditional-
-	// enable posture as the gates above -- no allowlist of its own, hands off
-	// to the ${alertmanagerCreatedBy} Cerbos rule (resource_alertmanager.yaml)
-	// via the createdBy attr this gate resolves for every deleteSilence call.
+	// Alertmanager deleteSilence owner-resolution gate: hands off to the
+	// ${alertmanagerCreatedBy} Cerbos rule (resource_alertmanager.yaml) via
+	// the createdBy attr this gate resolves for every deleteSilence call.
 	// mapping.yaml's `force` block stamps that same value onto every
 	// createSilence call, so the two halves stay in sync by construction.
 	opts = append(opts, server.WithAlertmanagerSilenceOwner(newUpstream()))

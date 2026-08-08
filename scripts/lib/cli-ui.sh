@@ -19,15 +19,9 @@ else
   UI_RESET=""
 fi
 
-# Compatibility aliases for existing scripts while they migrate to ui_* helpers.
+# B/N: kept for inline styling inside heredoc usage text (only vicegerent), where the line-based ui_* helpers do not apply.
 # shellcheck disable=SC2034 # These globals are consumed by sourcing scripts.
 B="$UI_BOLD"
-# shellcheck disable=SC2034
-G="$UI_GREEN"
-# shellcheck disable=SC2034
-Y="$UI_YELLOW"
-# shellcheck disable=SC2034
-R="$UI_RED"
 # shellcheck disable=SC2034
 N="$UI_RESET"
 
@@ -57,13 +51,6 @@ ui_warn() {
 
 ui_error() {
   printf '%sERROR:%s %s\n' "$UI_RED$UI_BOLD" "$UI_RESET" "$*" >&2
-}
-
-ui_confirm() {
-  local answer
-  printf '%s?%s %s [y/N] ' "$UI_YELLOW" "$UI_RESET" "$*"
-  read -r answer
-  [[ "$answer" =~ ^[Yy]([Ee][Ss])?$ ]]
 }
 
 ui_key_value() {

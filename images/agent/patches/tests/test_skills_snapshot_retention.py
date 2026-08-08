@@ -144,9 +144,9 @@ after = int(git("rev-list", "--count", "HEAD"))
 check("a large retention window prunes nothing", after == before + 1,
       f"{before} -> {after}")
 
-# A repo that stops changing must STILL prune. Retention used to sit behind the
-# "nothing changed" early exit, so a quiet skills tree kept stale history
-# forever -- found by running against a copy of the real 458-file repo.
+# A repo that stops changing must STILL prune. Retention must run even when
+# nothing changed; it previously sat behind the "nothing changed" early exit,
+# so a quiet skills tree kept stale history forever.
 shutil.rmtree(ROOT, ignore_errors=True)
 (SKILLS / "cat" / "probe").mkdir(parents=True)
 snapshot("QUIET-0\n", days_ago=30, SKILLS_SNAPSHOT_RETAIN_DAYS="3650")

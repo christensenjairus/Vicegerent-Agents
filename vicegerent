@@ -576,12 +576,11 @@ cluster_setup() {
   fi
   ensure_kind_userns_hook_access "${cluster_name}-control-plane"
 
-  # kind always installs local-path-provisioner + the `standard` default StorageClass on
-  # create (pkg/cluster/internal/create/actions/installstorage), with no config flag to skip
-  # it (kubernetes-sigs/kind#3176, still open). We don't use it -- every agent PVC pins
-  # csi-hostpath-sc, installed by the `storage` stage of `./vicegerent install` -- so remove
-  # it post-creation instead. --ignore-not-found makes this safe to rerun on an existing
-  # cluster; the namespace delete cascades onto its Deployment/ServiceAccount/Role/RoleBinding.
+  # kind always installs local-path-provisioner + the default 'standard' StorageClass with
+  # no flag to skip it. We don't use it -- every agent PVC pins csi-hostpath-sc, installed
+  # by the storage stage of ./vicegerent install -- so remove it post-creation instead.
+  # --ignore-not-found makes this safe to rerun; the namespace delete cascades onto its
+  # Deployment/ServiceAccount/Role/RoleBinding.
   ui_info "Removing kind's local-path-provisioner and 'standard' default StorageClass…"
   kubectl --context "kind-${cluster_name}" delete storageclass standard --ignore-not-found
   kubectl --context "kind-${cluster_name}" delete clusterrole local-path-provisioner-role --ignore-not-found
@@ -678,8 +677,8 @@ case "${1:-}" in
       cluster)
         shift
         [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && { setup_usage; exit 0; }
-        # cluster_setup is configured entirely by env; a positional arg here is a
-        # mistake (a cluster name, most likely) and was previously ignored.
+        # cluster_setup is configured entirely by env; reject a positional arg here
+        # (most likely a mistaken cluster name) instead of silently ignoring it.
         [[ $# -eq 0 ]] || { echo "vicegerent setup cluster takes no arguments (configure it via env: KIND_CONFIG CILIUM_VERSION KIND_DOCKER_NETWORK VICEGERENT_HOST_IP)" >&2; exit 2; }
         cluster_setup
         ;;

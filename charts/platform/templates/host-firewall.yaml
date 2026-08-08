@@ -1,22 +1,10 @@
 ---
-# No workload may reach the host node — that is where ghostunnel → ToolHive vMCP
-# listens and where the laptop lives. Only agentgateway is allowed to the host
-# (scoped to the ghostunnel port in templates/gateway-egress-networkpolicy.yaml).
-#
-# Scoped to the application namespaces only. kube-system / cilium and the controller
-# namespaces are deliberately excluded: on Kind the kube-apiserver runs ON the host
-# node, so a `host` deny there would sever their API-server access.
-#
-# agent-sandbox is ALSO excluded: the sandbox pod is already denied host egress by its
-# own default-deny CiliumNetworkPolicy (it allows only egress-proxy/DNS/Slack/git), and
-# the per-agent restart Job in that namespace legitimately needs the kube-apiserver
-# (== the host node on Kind). A blanket host deny here would sever the restart Job.
-#
-# The listed namespaces run data-plane workloads that never talk to the API server.
-#
-# enableDefaultDeny.egress: false — this policy only ADDS a deny; it must not flip
-# these endpoints into default-deny egress (that would break workloads like cerbos
-# that carry no egress allow policy of their own).
+# Denies host/remote-node egress for data-plane namespaces that never need the
+# API server. kube-system/controller namespaces and agent-sandbox are excluded:
+# on Kind the kube-apiserver runs on the host node, and agent-sandbox's restart
+# Job needs it (the sandbox pod itself is already denied via its own policy).
+# enableDefaultDeny is false: this only ADDS a deny and must not flip these
+# endpoints (e.g. cerbos) into default-deny egress.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:

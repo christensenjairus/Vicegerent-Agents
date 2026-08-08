@@ -91,7 +91,7 @@ tests:
       - principal: agent
         resource: note_add
         actions: {annotate: EFFECT_ALLOW}
-  - name: service scoping (pagerdutyAllowedServiceIds is PJD41LB/PV3S4O5/PORBNK3,
+  - name: service scoping (pagerdutyAllowedServiceIds is PJD41LB/PV3S4O5/PORBNK3/P7X89U2,
       matching test-values.yaml) denies an ack/resolve-only manage_incidents call
       targeting a disallowed service, denies the whole batch if ANY targeted incident's
       service is disallowed, and allows a call confined to allowed services

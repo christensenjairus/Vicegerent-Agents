@@ -201,8 +201,8 @@ func lookupCINumber(m map[string]any, key string) int64 {
 // hostname or literal IP) to something inside this platform's trust boundary:
 // loopback, RFC1918 private ranges, IPv6 unique-local/link-local, the cloud
 // metadata IP (169.254.169.254, also covered by the broader 169.254.0.0/16
-// link-local range check), *.local/*.internal/*.cluster.local names, plain
-// "localhost", and host.docker.internal specifically -- the exact bypass
+// link-local range check), *.local/*.internal/*.svc/*.cluster.local names,
+// plain "localhost", and host.docker.internal specifically -- the exact bypass
 // host/mcp/README.md documents as reaching the vMCP from any sibling
 // container on this Mac regardless of which container makes the request.
 // This is a literal-hostname/literal-IP check only (no DNS resolution --

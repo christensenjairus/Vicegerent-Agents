@@ -1,6 +1,8 @@
 // Package moderation checks free-text tool-call content against OpenAI's
-// Moderations endpoint before a write reaches Notion/Linear/GitHub/Jira/
-// PagerDuty. Existing Cerbos rules check WHO/WHERE; this checks WHAT.
+// Moderations endpoint before a write reaches any backend, matched by verb
+// (create/update/save/add_note/add_comment/transition) against the tool
+// name rather than a fixed backend list. Existing Cerbos rules check
+// WHO/WHERE; this checks WHAT.
 package moderation
 
 import (
@@ -63,7 +65,6 @@ type moderationResponse struct {
 // Result is the outcome of a Check call.
 type Result struct {
 	Flagged           bool
-	FlaggedIndex      int
 	FlaggedCategories []string
 }
 
@@ -107,7 +108,7 @@ func (c *Client) Check(ctx context.Context, inputs []string) (*Result, error) {
 		return nil, fmt.Errorf("decode moderation response: %w", err)
 	}
 
-	for i, r := range parsed.Results {
+	for _, r := range parsed.Results {
 		if !r.Flagged {
 			continue
 		}
@@ -117,7 +118,7 @@ func (c *Client) Check(ctx context.Context, inputs []string) (*Result, error) {
 				cats = append(cats, cat)
 			}
 		}
-		return &Result{Flagged: true, FlaggedIndex: i, FlaggedCategories: cats}, nil
+		return &Result{Flagged: true, FlaggedCategories: cats}, nil
 	}
 	return &Result{}, nil
 }

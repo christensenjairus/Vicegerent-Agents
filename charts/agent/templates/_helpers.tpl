@@ -26,14 +26,9 @@ For independent vMCP backend operations in Claude Code, put up to eight entries 
 {{- /* Shared coding-agent instruction: use .worktrees correctly for any repo with a
       persistent clone under /workspace. Single source of truth for the agent runtime's
       SOUL.md, codex's developer_instructions,
-      claude-code's seeded CLAUDE.md, and opencode's seeded AGENTS.md — a wrong-worktree edit was observed live wasting
-      most of an hour of agent runtime (edits landed in the primary clone instead of
-      the assigned .worktrees/<branch>, and a full-repo validation script then scanned
-      unrelated sibling worktrees and failed on their content). Also covers: keeping
+      claude-code's seeded CLAUDE.md, and opencode's seeded AGENTS.md. Also covers: keeping
       terminal() cwd sticky to the verified worktree for the rest of a task, and
-      checking merge status before reusing an existing worktree for a new task (a
-      false "not merged" read from git merge-base --is-ancestor once caused a stale,
-      already-merged worktree to be reused and edited before the mistake was caught). */ -}}
+      checking merge status before reusing an existing worktree for a new task. */ -}}
 {{- define "vicegerent-agent.worktreeDiscipline" -}}
 When working on a dedicated branch in a repo that already has a persistent clone under `/workspace/<repo>`, use `git worktree add .worktrees/<branch>` off that clone — never a second clone, and never edit directly in the primary clone once you're on a task branch. Before your FIRST file edit in any session, confirm with `pwd` and `git branch --show-current` that you are actually inside the assigned `.worktrees/<branch>` directory, not the primary clone — both look like valid checkouts and nothing errors immediately if you're in the wrong one. This matters especially for full-repo validation scripts (`pre-commit run --all-files`, custom `validate.sh` globs): run from the primary clone, they also scan sibling `.worktrees/` content and can fail on unrelated in-progress work, which looks like a broken repo but is actually a location bug. Once verified, `cd` into that worktree as your first shell/terminal call for the task (not just a one-time `pwd`/`git branch` check) — every subsequent shell command without an explicit working-directory override inherits that cwd, keeping `git status`/`pre-commit`/build commands scoped correctly without re-specifying the path each time; this only fixes shell cwd, since file read/write/patch/search tools take their own explicit path argument and are unaffected by shell cwd (a wrong-path mistake there is a separate failure mode — double-check the literal path, not the shell state). Re-verify `pwd` before resuming work in the original tree after any point where you changed directory elsewhere. Before reusing an existing `.worktrees/<branch>` directory for a *new* task, confirm its branch isn't already merged first (`git log --oneline origin/main | grep <branch-or-commit>`, or check the merge/pull request's own `state`/`merged_at` via its API — `git merge-base --is-ancestor` is unreliable here since merges often land as merge/squash commits with a different SHA than the branch tip); if it's already merged, remove the stale worktree and create a fresh one off `origin/main` rather than editing on top of a merged base.
 {{- end -}}
@@ -71,7 +66,9 @@ All pull requests and merge requests are forcibly kept as drafts by the platform
 {{ include "vicegerent-agent.draftPullRequestExpectation" . | trim }}
 {{- end -}}
 
-{{- /* Standalone harnesses differ from Hermes only in their web tooling. */ -}}
+{{- /* codingHarnessSystemPrompt = sharedSystemPrompt plus a web-tooling-only
+   addition; Hermes's SOUL.md separately layers the much larger
+   hermesInstructions on top of the same sharedSystemPrompt. */ -}}
 {{- define "vicegerent-agent.codingHarnessSystemPrompt" -}}
 {{ include "vicegerent-agent.webSearchInstructions" . | trim }}
 
@@ -92,7 +89,9 @@ your own capabilities, models, tools, and limits are configured.
   - **`web_search`** — internet lookups via the in-cluster SearXNG proxy.
   - **MCP servers** — all external integrations (GitLab, Kubernetes, Notion, web scraping, etc.).
   - **agentgateway** — all model API calls; don't call providers directly.
-  - **`git` over SSH (port 22)** — the only approved direct TCP outside the cluster.
+  - **`git` over SSH (port 22)** — the baseline direct TCP path; Slack Socket
+    Mode and edge-tts, when configured for this agent, are also allowed to
+    bypass the proxy.
   If none cover your need, tell the user what to add.
 - **No cluster credentials by default.** Your service-account token is not
   mounted; you cannot read Secrets or mutate the cluster unless a specific
@@ -224,7 +223,7 @@ zai:
       activates on the placeholder <PROVIDER>_API_KEY=none the sandbox sets for
       agentgateway and claims the slug first. Excluded slugs are the built-in
       canonical names (openai-api, zai) or the shared config key (anthropic,
-      deepseek) -- see MR !612. */ -}}
+      deepseek). */ -}}
 {{- define "vicegerent-agent.mandatoryConfig" -}}
 {{- $catalog := include "vicegerent-agent.providerCatalog" . | fromYaml -}}
 {{- $providerOrder := include "vicegerent-agent.providerOrder" . | fromJsonArray -}}
