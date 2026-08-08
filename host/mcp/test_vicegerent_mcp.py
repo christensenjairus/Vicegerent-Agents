@@ -24,6 +24,74 @@ vicegerent_mcp = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(vicegerent_mcp)
 
 
+class HostPackagePreflightTests(unittest.TestCase):
+    def test_current_packages_skip_apply(self) -> None:
+        current = subprocess.CompletedProcess([], 0, stdout="all current\n", stderr="")
+        with (
+            patch.object(vicegerent_mcp.subprocess, "run", return_value=current) as run,
+            patch.object(vicegerent_mcp, "_ui_ok"),
+        ):
+            vicegerent_mcp.ensure_host_packages_current()
+
+        run.assert_called_once_with(
+            [
+                vicegerent_mcp.sys.executable,
+                str(vicegerent_mcp.HOST_PACKAGE_RECONCILER),
+                "check",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_drift_forces_noninteractive_apply(self) -> None:
+        drift = subprocess.CompletedProcess([], 1, stdout="DRIFT toolhive\n", stderr="")
+        applied = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with (
+            patch.object(vicegerent_mcp.subprocess, "run", side_effect=[drift, applied]) as run,
+            patch.object(vicegerent_mcp, "_ui_warn"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            vicegerent_mcp.ensure_host_packages_current()
+
+        self.assertEqual(run.call_args_list[1], call([
+            vicegerent_mcp.sys.executable,
+            str(vicegerent_mcp.HOST_PACKAGE_RECONCILER),
+            "apply",
+            "--yes",
+        ], check=False))
+
+    def test_failed_apply_aborts_startup(self) -> None:
+        drift = subprocess.CompletedProcess([], 1, stdout="", stderr="")
+        failed = subprocess.CompletedProcess([], 1, stdout="", stderr="")
+        with (
+            patch.object(vicegerent_mcp.subprocess, "run", side_effect=[drift, failed]),
+            patch.object(vicegerent_mcp, "_ui_warn"),
+        ):
+            with self.assertRaisesRegex(SystemExit, "MCP startup aborted"):
+                vicegerent_mcp.ensure_host_packages_current()
+
+    def test_mcp_start_runs_package_preflight(self) -> None:
+        args = type("Args", (), {
+            "runtime_dir": Path("/runtime"),
+            "servers_config": Path("/servers.json"),
+            "ghostshell": Path("/ghostshell"),
+            "listen": "127.0.0.1:8453",
+            "allow_cn": "agentgateway",
+            "skip_workloads": False,
+            "caffeinate": False,
+            "operator_vmcp": False,
+        })()
+        with (
+            patch.object(vicegerent_mcp, "ensure_host_packages_current") as preflight,
+            patch.object(vicegerent_mcp, "start_stack", return_value=0) as start,
+        ):
+            self.assertEqual(vicegerent_mcp.cmd_start(args), 0)
+
+        preflight.assert_called_once_with()
+        start.assert_called_once()
+
+
 class InternalKubeconfigTests(unittest.TestCase):
     def test_generated_kubeconfig_is_owner_readable_only(self) -> None:
         completed = subprocess.CompletedProcess([], 0, stdout="apiVersion: v1\n", stderr="")
@@ -74,15 +142,16 @@ class WorkloadRecoveryTests(unittest.TestCase):
 
 
 class HealthWatchTests(unittest.TestCase):
-    def test_running_workload_clears_a_prior_watcher_notification(self) -> None:
+    def test_running_workload_retries_clearing_a_prior_watcher_notification(self) -> None:
         config = {"group": "vicegerent", "servers": [{"name": "github", "enabled": True}]}
         with (
             tempfile.TemporaryDirectory() as directory,
             patch.object(vicegerent_mcp, "load_servers_config", return_value=config),
             patch.object(vicegerent_mcp, "load_server_state", return_value={}),
             patch.object(vicegerent_mcp, "list_workloads", return_value={"github": "running"}),
+            patch.object(vicegerent_mcp, "reconcile_vmcp_membership"),
             patch.object(vicegerent_mcp, "_notify_clear") as notify_clear,
-            patch.object(vicegerent_mcp.time, "sleep", side_effect=KeyboardInterrupt),
+            patch.object(vicegerent_mcp.time, "sleep", side_effect=[None, KeyboardInterrupt]),
             contextlib.redirect_stdout(io.StringIO()),
         ):
             with self.assertRaises(KeyboardInterrupt):
@@ -90,7 +159,12 @@ class HealthWatchTests(unittest.TestCase):
 
         self.assertEqual(
             notify_clear.call_args_list,
-            [call("vicegerent-mcp-github"), call(vicegerent_mcp._AWS_CRED_GROUP)],
+            [
+                call("vicegerent-mcp-github"),
+                call(vicegerent_mcp._AWS_CRED_GROUP),
+                call("vicegerent-mcp-github"),
+                call(vicegerent_mcp._AWS_CRED_GROUP),
+            ],
         )
 
     def test_healthy_credentials_clear_a_prior_watcher_notification(self) -> None:
@@ -102,6 +176,7 @@ class HealthWatchTests(unittest.TestCase):
             patch.object(vicegerent_mcp, "list_workloads", return_value={"aws": "running"}),
             patch.object(vicegerent_mcp, "server_param", return_value=""),
             patch.object(vicegerent_mcp, "_aws_cred_status", return_value=None),
+            patch.object(vicegerent_mcp, "reconcile_vmcp_membership"),
             patch.object(vicegerent_mcp, "_notify_clear") as notify_clear,
             patch.object(vicegerent_mcp.time, "sleep", side_effect=KeyboardInterrupt),
             contextlib.redirect_stdout(io.StringIO()),
@@ -114,6 +189,75 @@ class HealthWatchTests(unittest.TestCase):
             [call("vicegerent-mcp-aws"), call(vicegerent_mcp._AWS_CRED_GROUP)],
         )
 
+    def test_unhealthy_workload_reposts_until_it_recovers(self) -> None:
+        config = {"group": "vicegerent", "servers": [{"name": "github", "enabled": True}]}
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp, "load_servers_config", return_value=config),
+            patch.object(vicegerent_mcp, "load_server_state", return_value={}),
+            patch.object(
+                vicegerent_mcp,
+                "list_workloads",
+                side_effect=[{"github": "error"}, {"github": "error"}, {"github": "running"}],
+            ),
+            patch.object(vicegerent_mcp, "reconcile_vmcp_membership"),
+            patch.object(vicegerent_mcp, "_notify") as notify,
+            patch.object(vicegerent_mcp, "_notify_clear") as notify_clear,
+            patch.object(vicegerent_mcp.time, "sleep", side_effect=[None, None, KeyboardInterrupt]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                vicegerent_mcp.health_watch(Path(directory), interval=1)
+
+        self.assertEqual(
+            notify.call_args_list,
+            [
+                call(
+                    "MCP backend down: github",
+                    "Run vicegerent start to bring it back.",
+                    group="vicegerent-mcp-github",
+                ),
+                call(
+                    "MCP backend down: github",
+                    "Run vicegerent start to bring it back.",
+                    group="vicegerent-mcp-github",
+                ),
+            ],
+        )
+        self.assertIn(call("vicegerent-mcp-github"), notify_clear.call_args_list)
+
+    def test_expired_credentials_repost_until_refreshed(self) -> None:
+        config = {"group": "vicegerent", "servers": [{"name": "aws", "enabled": True}]}
+        expired = (
+            "aws-expired",
+            "AWS credentials expired",
+            "Refresh host-side (e.g. aws sso login), then run vicegerent start.",
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(vicegerent_mcp, "load_servers_config", return_value=config),
+            patch.object(vicegerent_mcp, "load_server_state", return_value={}),
+            patch.object(vicegerent_mcp, "list_workloads", return_value={"aws": "running"}),
+            patch.object(vicegerent_mcp, "server_param", return_value=""),
+            patch.object(vicegerent_mcp, "_aws_cred_status", side_effect=[expired, expired, None]),
+            patch.object(vicegerent_mcp, "reconcile_vmcp_membership"),
+            patch.object(vicegerent_mcp, "_notify") as notify,
+            patch.object(vicegerent_mcp, "_notify_clear") as notify_clear,
+            patch.object(vicegerent_mcp.time, "sleep", side_effect=[None, None, KeyboardInterrupt]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                vicegerent_mcp.health_watch(Path(directory), interval=1)
+
+        self.assertEqual(
+            notify.call_args_list,
+            [
+                call(expired[1], expired[2], group=vicegerent_mcp._AWS_CRED_GROUP),
+                call(expired[1], expired[2], group=vicegerent_mcp._AWS_CRED_GROUP),
+            ],
+        )
+        self.assertIn(call(vicegerent_mcp._AWS_CRED_GROUP), notify_clear.call_args_list)
+
 
 class NotificationTests(unittest.TestCase):
     def test_notification_message_is_not_timestamped(self) -> None:
@@ -122,6 +266,29 @@ class NotificationTests(unittest.TestCase):
 
         self.assertIn("Message", run.call_args.args[0])
         self.assertNotIn("Message [", run.call_args.args[0])
+        self.assertEqual(
+            run.call_args.kwargs["timeout"],
+            vicegerent_mcp.NOTIFIER_TIMEOUT_SECS,
+        )
+        self.assertIn(str(vicegerent_mcp.NOTIFIER_BINARY), run.call_args.args[0])
+        self.assertIn("post", run.call_args.args[0])
+        self.assertEqual(
+            run.call_args.args[0][-4:],
+            ["post", "test", "Title", "Message"],
+        )
+
+    def test_stuck_notification_post_does_not_block_the_watcher(self) -> None:
+        timeout = subprocess.TimeoutExpired(["vicegerent-notifier"], 5)
+        with patch.object(vicegerent_mcp.subprocess, "run", side_effect=timeout):
+            vicegerent_mcp._notify("Title", "Message", group="test")
+
+    def test_stuck_notification_removal_does_not_block_the_watcher(self) -> None:
+        timeout = subprocess.TimeoutExpired(["vicegerent-notifier"], 5)
+        with patch.object(vicegerent_mcp.subprocess, "run", side_effect=timeout) as run:
+            vicegerent_mcp._notify_clear("test")
+
+        self.assertIn("remove", run.call_args.args[0])
+        self.assertIn("test", run.call_args.args[0])
 
     def test_aws_expiry_message_shows_only_the_local_12_hour_time(self) -> None:
         now = datetime(2026, 8, 7, 20, 0, tzinfo=timezone.utc)

@@ -677,7 +677,7 @@ case "${1:-}" in
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
       echo "vicegerent start — start the Kind cluster, then bring up the host ToolHive stack"
       echo "  1. docker start vicegerent-control-plane   (start the Kind node container)"
-      echo "  2. ./vicegerent mcp start                   (ToolHive workloads + vMCP + ghostunnel + rclone-s3 + health-watch)"
+      echo "  2. ./vicegerent mcp start                   (host-package preflight + ToolHive workloads + supervised services)"
       echo "  Extra args pass through to 'vicegerent mcp start' (e.g. --operator-vmcp or --caffeinate)."
       exit 0
     fi
@@ -741,7 +741,7 @@ case "${1:-}" in
         shift
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
           echo "vicegerent setup mcp — set up all host-side MCP prerequisites, then configure servers"
-          echo "  Reconciles exact Homebrew package versions (thv, ghostunnel, supervisor, rclone, terminal-notifier),"
+          echo "  Reconciles exact Homebrew package versions and the native Vicegerent notification helper,"
           echo "  the locked repository Python environment and thv secrets provider, then walks you through enabling/skipping each"
           echo "  MCP server and setting its secrets."
           echo "  Flags: -y/--yes (auto-approves the prerequisite installs; the per-server"
