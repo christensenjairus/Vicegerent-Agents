@@ -565,10 +565,12 @@ VOLUME [ "/opt/data" ]
 # it. The exec shim must stay ahead of the real venv binary so root invocations
 # drop to the runtime account before writing Hermes state.
 #
-# Shadow bash builtins that have a real coreutils/util-linux equivalent so
-# invoking them triggers a genuine execve() -- Tetragon's process_exec hook
-# only sees real syscalls, so builtins (echo, printf, etc.) run in-process
-# and are otherwise invisible in VictoriaLogs. Covers 8 shadowable builtins;
+# Shadow low-frequency Bash builtins that have a real coreutils/util-linux
+# equivalent so invoking them triggers a genuine execve() -- Tetragon's
+# process_exec hook only sees real syscalls, so builtins (echo, printf, etc.)
+# run in-process and are otherwise invisible in VictoriaLogs. Keep [` and
+# test builtins: ordinary shell control flow executes them frequently and does
+# not provide useful process-start telemetry. Covers 6 shadowable builtins;
 # state-mutating ones (cd, export, eval, set, ...) have no binary equivalent
 # and can't be covered this way. BASH_ENV (not bash.bashrc) is required
 # because Hermes' terminal() tool runs plain non-interactive, non-login
@@ -590,7 +592,8 @@ ENV BASH_ENV=/etc/bash-shadow-builtins.sh
 COPY --chmod=0644 bash-prompt.sh /etc/vicegerent-bash-prompt.sh
 RUN printf 'export PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:$PATH"\n' > /etc/profile.d/00-agent-venv-path.sh \
     && chmod 644 /etc/profile.d/00-agent-venv-path.sh \
-    && printf 'enable -n "[" echo false kill printf pwd test true\n' > /etc/bash-shadow-builtins.sh \
+    && printf 'enable -n echo false kill printf pwd true\n' > /etc/bash-shadow-builtins.sh \
+    && BASH_ENV=/etc/bash-shadow-builtins.sh bash -c '[[ $(type -t "[") == builtin && $(type -t test) == builtin ]]' \
     && chmod 644 /etc/bash-shadow-builtins.sh \
     && printf '\n# Vicegerent interactive Bash prompt (tmux starts non-login Bash).\n[ -r /etc/vicegerent-bash-prompt.sh ] && . /etc/vicegerent-bash-prompt.sh\n' >> /etc/bash.bashrc \
     && find /opt/hermes/skills -name "SKILL.md" -exec chmod 644 {} +

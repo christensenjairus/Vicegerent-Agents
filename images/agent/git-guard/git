@@ -53,7 +53,7 @@ sanitize_env() {
 scan_global_opts() {
     GLOBAL_OPTS=()
     REPO_OPTS=()
-    while [ $# -gt 0 ]; do
+    while [[ $# -gt 0 ]]; do
         case "$1" in
             -c)
                 is_hookspath_assignment "${2:-}" \
@@ -114,15 +114,15 @@ scan_global_opts() {
 # likes and cannot be analysed, so it is refused outright.
 resolve_alias() {
     local depth=0 expansion
-    while [ -n "${SUBCMD}" ] && [ "${depth}" -lt "${MAX_ALIAS_DEPTH}" ]; do
+    while [[ -n "${SUBCMD}" && "${depth}" -lt "${MAX_ALIAS_DEPTH}" ]]; do
         expansion="$("${REAL_GIT}" "${REPO_OPTS[@]}" config --get "alias.${SUBCMD}" 2>/dev/null)" || return 0
-        [ -n "${expansion}" ] || return 0
+        [[ -n "${expansion}" ]] || return 0
         [[ "${expansion}" == '!'* ]] \
             && die "BLOCKED: shell alias '${SUBCMD}' cannot be checked; invoke git directly."
         # Word-split the expansion the way git does for a non-shell alias.
         local words=()
         read -r -a words <<< "${expansion}"
-        [ "${#words[@]}" -gt 0 ] || return 0
+        [[ "${#words[@]}" -gt 0 ]] || return 0
         set -- "${words[@]}" "${SUBARGS[@]}"
         local saved_global=("${GLOBAL_OPTS[@]}")
         scan_global_opts "$@"
@@ -138,7 +138,7 @@ resolve_alias() {
 push_targets_protected() {
     local arg dst delete=0 had_refspec=0 pos=() skip_value=0
     for arg in "$@"; do
-        if [ "${skip_value}" -eq 1 ]; then
+        if [[ "${skip_value}" -eq 1 ]]; then
             skip_value=0
             continue
         fi
@@ -160,9 +160,9 @@ push_targets_protected() {
         dst="${dst#refs/heads/}"
         [[ "${dst}" =~ ^(${PROTECTED})$ ]] && return 0
     done
-    [ "${delete}" -eq 1 ] && [ "${had_refspec}" -eq 1 ] && return 1
+    [[ "${delete}" -eq 1 && "${had_refspec}" -eq 1 ]] && return 1
 
-    if [ "${had_refspec}" -eq 0 ]; then
+    if [[ "${had_refspec}" -eq 0 ]]; then
         local cur
         cur="$("${REAL_GIT}" "${REPO_OPTS[@]}" symbolic-ref --short -q HEAD 2>/dev/null || true)"
         [[ "${cur}" =~ ^(${PROTECTED})$ ]] && return 0
@@ -181,7 +181,7 @@ resolve_alias
 # Repo-local and worktree config still outrank /etc/gitconfig, so a persisted hooksPath
 # write is refused here too. (~/.gitconfig is a read-only mount, which denies the global
 # case at the kernel; this covers the scopes a mount cannot.) Reads pass.
-if [ "${SUBCMD}" = "config" ]; then
+if [[ "${SUBCMD}" = "config" ]]; then
     for arg in "${SUBARGS[@]}"; do
         if is_hookspath_assignment "${arg}"; then
             for a in "${SUBARGS[@]}"; do
@@ -195,9 +195,9 @@ if [ "${SUBCMD}" = "config" ]; then
     done
 fi
 
-if [ "${SUBCMD}" = "push" ]; then
+if [[ "${SUBCMD}" = "push" ]]; then
     for arg in "${SUBARGS[@]}"; do
-        [ "${arg}" = "--no-verify" ] \
+        [[ "${arg}" = "--no-verify" ]] \
             && die "BLOCKED: git push --no-verify bypasses the protected-branch hook."
     done
     if push_targets_protected "${SUBARGS[@]}"; then
@@ -207,7 +207,7 @@ fi
 
 # Injected last so it wins over any -c the caller passed, and at command scope so
 # it wins over every config file including the agent-writable ones.
-if [ -n "${SUBCMD}" ]; then
+if [[ -n "${SUBCMD}" ]]; then
     exec "${REAL_GIT}" "${GLOBAL_OPTS[@]}" -c "core.hooksPath=${TRUSTED_HOOKS}" \
         "${SUBCMD}" "${SUBARGS[@]}"
 fi
