@@ -680,6 +680,7 @@ RUN buf --version \
 # obvious CLI equivalent.
 COPY vmcp-redirect/stub.sh /usr/local/bin/vmcp-redirect-stub
 RUN --mount=type=bind,source=vmcp-redirect/binaries.txt,target=/tmp/vmcp-redirect-binaries.txt \
+    --mount=type=bind,source=vmcp-redirect/test-stub.sh,target=/tmp/test-vmcp-redirect-stub.sh \
     chmod +x /usr/local/bin/vmcp-redirect-stub \
     && while IFS= read -r name; do \
         name="${name%%#*}"; \
@@ -687,7 +688,8 @@ RUN --mount=type=bind,source=vmcp-redirect/binaries.txt,target=/tmp/vmcp-redirec
         [ -z "$name" ] && continue; \
         ln -sf /usr/local/bin/vmcp-redirect-stub "/usr/local/bin/${name}"; \
     done < /tmp/vmcp-redirect-binaries.txt \
-    && kubectl 2>&1 | grep -q "use the vMCP server instead"
+    && kubectl 2>&1 | grep -q "use the vMCP server instead" \
+    && sh /tmp/test-vmcp-redirect-stub.sh /usr/local/bin/vmcp-redirect-stub
 
 # Client-side protected-branch guard, root-owned on the read-only rootfs so uid
 # 10000 cannot edit either half. Both layers are load-bearing: /etc/gitconfig is
