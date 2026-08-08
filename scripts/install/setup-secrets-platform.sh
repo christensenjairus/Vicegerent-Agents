@@ -139,18 +139,25 @@ ensure_literal_secret() {
   unset val
 }
 
-# ensure_velero_credentials — generate-once S3 creds, mirrored to the k8s Secret and host auth-key file.
+# ensure_velero_credentials — Kind etcd is authoritative. The host auth-key is a
+# disposable rclone input recovered or atomically repaired from its Secret copy.
 ensure_velero_credentials() {
   local hostfile="$RCLONE_S3_HOST_DIR/auth-key" access="" secret=""
-  if [[ -s "$hostfile" ]]; then
-    IFS=',' read -r access secret < "$hostfile"
-    info "Reusing Velero S3 credentials from $hostfile."
-  elif secret_has velero-credentials velero cloud; then
+  if secret_has velero-credentials velero cloud; then
     local cloud
     cloud="$(secret_b64 velero-credentials velero cloud | base64 -d)"
     access="$(printf '%s\n' "$cloud" | sed -n 's/^aws_access_key_id=//p')"
     secret="$(printf '%s\n' "$cloud" | sed -n 's/^aws_secret_access_key=//p')"
-    info "Recovered Velero S3 credentials from velero/velero-credentials."
+    [[ -n "$access" && -n "$secret" ]] \
+      || die "velero/velero-credentials is malformed; repair or delete it, then rerun setup"
+    info "Recovered authoritative Velero S3 credentials from velero/velero-credentials."
+  elif [[ -s "$hostfile" ]]; then
+    # This is a first-time migration from the historical host-owned layout. Once
+    # seeded, subsequent reconciliation always reads Kind first.
+    IFS=',' read -r access secret < "$hostfile"
+    [[ -n "$access" && -n "$secret" ]] \
+      || die "host rclone auth-key is malformed; remove it or provide a valid Kind Secret"
+    info "Migrating existing host rclone credentials into velero/velero-credentials."
   fi
   if [[ -z "$access" || -z "$secret" ]]; then
     access="$(openssl rand -hex 16)"
@@ -161,9 +168,12 @@ ensure_velero_credentials() {
     --from-literal="cloud=$(printf '[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n' "$access" "$secret")"
   mkdir -p "$RCLONE_S3_HOST_DIR"
   chmod 700 "$RCLONE_S3_HOST_DIR"
-  printf '%s,%s\n' "$access" "$secret" > "$hostfile"
-  chmod 600 "$hostfile"
-  info "Applied velero/velero-credentials Secret + host auth-key ($hostfile)."
+  local tmpfile
+  tmpfile="$(mktemp "$RCLONE_S3_HOST_DIR/.auth-key.XXXXXX")"
+  printf '%s,%s\n' "$access" "$secret" > "$tmpfile"
+  chmod 600 "$tmpfile"
+  mv -f "$tmpfile" "$hostfile"
+  info "Reconciled velero/velero-credentials Secret to host auth-key ($hostfile)."
 }
 
 # Wraps openssl so a failure names the specific subcommand and its captured stderr;

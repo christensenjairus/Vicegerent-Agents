@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run the host-side `rclone serve s3` backend that stores Velero backups, reading its
 # SigV4 auth-key from the local host file setup-secrets-platform.sh writes. The matching
-# S3 credentials also live in the velero/velero-credentials Kubernetes Secret; this file
-# is the host copy and is disposable — re-run setup-secrets-platform.sh to regenerate it.
+# S3 credentials are authoritative in the velero/velero-credentials Kubernetes Secret; this
+# host copy is disposable and is reconciled from Kind by `./vicegerent start` or setup secrets.
 # The served directory is a folder in this repo checkout and is gitignored.
 set -euo pipefail
 

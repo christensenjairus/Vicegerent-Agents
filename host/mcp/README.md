@@ -228,7 +228,7 @@ OPERATOR_VMCP_PORT      opt-in unscoped host vMCP port (default: 4484)
 LISTEN                  ghostunnel listen address (default 127.0.0.1:8453)
 GHOSTUNNEL_HOST_DIR     host mTLS material (default ~/.vicegerent/ghostunnel)
 RCLONE_ADDR             rclone serve s3 listen address (default 127.0.0.1:9899)
-RCLONE_S3_HOST_DIR      rclone auth-key material (default ~/.vicegerent/rclone-s3)
+RCLONE_S3_HOST_DIR      disposable rclone auth-key copy (default ~/.vicegerent/rclone-s3; reconciled from Kind's velero-credentials Secret)
 RCLONE_SERVE_DIR        directory rclone serves as the Velero bucket (default <repo>/velero-backups)
 ```
 

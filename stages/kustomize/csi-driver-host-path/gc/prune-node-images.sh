@@ -6,7 +6,7 @@
 # the rollback window: an image an upgrade replaces stays until the next run.
 set -eu
 
-CRICTL=/host/bin/crictl
+CRICTL="${CRICTL:-/host/bin/crictl}"
 RUNTIME_ENDPOINT=unix:///run/containerd/containerd.sock
 
 # crictl gives every CRI call a 2s deadline by default and issues the removals
@@ -19,9 +19,8 @@ DEADLINE=300
 
 log() { echo "[csi-hostpath-gc] $*"; }
 
-# Best-effort. This runs ahead of the CSI reconcile in the same pod, and with
-# backoffLimit 0 a non-zero exit here would cost the cluster that run's volume
-# GC as well.
+# Best-effort. The preceding restore-csi-driver initContainer guarantees the
+# plugin is ready before this runs, including in a Job retry pod.
 status=0
 output="$(timeout "$DEADLINE" "$CRICTL" --timeout "$RPC_TIMEOUT" \
   --runtime-endpoint "$RUNTIME_ENDPOINT" rmi --prune 2>&1)" || status=$?

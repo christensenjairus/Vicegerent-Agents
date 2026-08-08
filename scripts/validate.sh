@@ -367,6 +367,9 @@ echo "INFO - Asserting the agent owns ~/.gitconfig instead of seeding it imperat
 echo "INFO - Asserting agent runtime ownership"
 "$PYTHON" scripts/validate-agent-runtime.py
 
+echo "INFO - Testing installer convergence and CSI recovery failure handling"
+"$PYTHON" scripts/test_installer_recovery.py
+
 echo "INFO - Testing the interactive agent Bash prompt"
 scripts/test-agent-bash-prompt.sh
 

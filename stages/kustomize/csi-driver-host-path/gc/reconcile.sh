@@ -5,13 +5,50 @@ set -eu
 
 NS=csi-hostpath-system
 STS=csi-hostpathplugin
-DATA_DIR=/csi-data-dir
+DATA_DIR="${DATA_DIR:-/csi-data-dir}"
 STATE_FILE="$DATA_DIR/state.json"
 # Skip anything this recent: an in-flight operation may not be visible yet
 # as a PV or state.json entry.
-GRACE_MINUTES=360
+GRACE_MINUTES="${GRACE_MINUTES:-360}"
 
 log() { echo "[csi-hostpath-gc] $*"; }
+
+driver_scaled_down=0
+recovery_attempted=0
+restore_driver() {
+  [ "$driver_scaled_down" -eq 1 ] || return 0
+  # A normal-path recovery that already exhausted its bounded retry budget must
+  # not be repeated by the EXIT trap; a duplicate burst cannot repair an API
+  # outage and only extends the scaled-down window.
+  [ "$recovery_attempted" -eq 0 ] || return 1
+  recovery_attempted=1
+  attempt=1
+  while [ "$attempt" -le 3 ]; do
+    if kubectl -n "$NS" patch statefulset "$STS" --type=merge -p '{"spec":{"replicas":1}}' \
+      && kubectl -n "$NS" wait --for=condition=Ready pod/"$STS-0" --timeout=2m; then
+      driver_scaled_down=0
+      log "$STS back up"
+      return 0
+    fi
+    log "failed to restore $STS (attempt $attempt/3)"
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  log "ERROR: $STS remains scaled down; run: kubectl -n $NS scale statefulset/$STS --replicas=1"
+  return 1
+}
+
+cleanup() {
+  status=$?
+  trap - EXIT INT TERM
+  if ! restore_driver; then
+    [ "$status" -ne 0 ] || status=1
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 live_pv_handles="$(kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeHandle}{"\n"}{end}' | sort -u)"
 live_vsc_handles="$(kubectl get volumesnapshotcontents.snapshot.storage.k8s.io \
@@ -53,6 +90,7 @@ if [ -n "$stale_vol_ids" ]; then
   log "orphaned volume directories: $stale_vol_ids"
   # Pausing avoids racing the plugin's own state.json writes.
   kubectl -n "$NS" patch statefulset "$STS" --type=merge -p '{"spec":{"replicas":0}}'
+  driver_scaled_down=1
   kubectl -n "$NS" wait --for=delete pod/"$STS-0" --timeout=2m || true
 
   cp "$STATE_FILE" "$STATE_FILE.bak-$(date +%Y%m%d%H%M%S 2>/dev/null || echo pre-gc)"
@@ -65,16 +103,17 @@ if [ -n "$stale_vol_ids" ]; then
   jq --argjson remove "$remove_json" \
     '.Volumes = [ .Volumes[] | select(([.VolID] | inside($remove)) | not) ]' \
     "$STATE_FILE" > "$STATE_FILE.tmp"
-  mv "$STATE_FILE.tmp" "$STATE_FILE"
 
+  # Keep the authoritative state until all deletes have succeeded. If a
+  # filesystem failure interrupts this loop, a later run can retry from the
+  # still-present entry instead of stranding an untracked directory.
   for vol_id in $stale_vol_ids; do
     log "removing orphaned volume directory $vol_id"
     rm -rf "$DATA_DIR/${vol_id:?}"
   done
+  mv "$STATE_FILE.tmp" "$STATE_FILE"
 
-  kubectl -n "$NS" patch statefulset "$STS" --type=merge -p '{"spec":{"replicas":1}}'
-  kubectl -n "$NS" wait --for=condition=Ready pod/"$STS-0" --timeout=5m
-  log "$STS back up"
+  restore_driver
 else
   log "no orphaned volume directories"
 fi
