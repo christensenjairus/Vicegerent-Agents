@@ -390,6 +390,13 @@ def main() -> None:
     changed_config_restart_job = render_restart_job_name({"tuning": {"maxTurns": 101}})
     if baseline_restart_job == changed_config_restart_job:
         die("agent config changes must create a new restart Job so the gateway reloads them")
+    for startup_override in (
+        {"soul": "changed prompt"},
+        {"harnesses": {"claudeCode": "claude-haiku-4-5"}},
+        {"config": {"approvals": {"mode": "auto"}}},
+    ):
+        if baseline_restart_job == render_restart_job_name(startup_override):
+            die("every startup-consumed prompt, harness, approval, and Sandbox payload must create a new restart Job")
 
     for profile in OPERATOR_PROFILES:
         configured = yaml.safe_load(profile.read_text(encoding="utf-8"))

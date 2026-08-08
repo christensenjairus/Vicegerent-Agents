@@ -121,7 +121,7 @@ def reconcile_hermes(
         ("kanban",),
         ("mcp_servers",),
         ("toolsets",),
-        ("agent", "disabled_toolsets"),
+
         ("command_allowlist",),
         ("approvals", "mode"),
         ("hooks_auto_accept",),
@@ -130,6 +130,15 @@ def reconcile_hermes(
         ("slack",),
     ):
         replace_path(result, desired, path)
+
+    desired_agent = desired.get("agent")
+    existing_agent = existing.get("agent")
+    if isinstance(desired_agent, dict):
+        result["agent"] = preserve_mapping_leaves(
+            desired_agent,
+            existing_agent if isinstance(existing_agent, dict) else {},
+            ("reasoning_effort", "service_tier", "system_prompt"),
+        )
 
     providers = result.get("providers")
     desired_model = desired.get("model")

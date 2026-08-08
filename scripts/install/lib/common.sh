@@ -117,16 +117,16 @@ validate_values_schema() {
     ([.agents[]? | .config? | type == "!!str"] | any)
   ] | any' "$VALUES_FILE")"
   [[ "$legacy" != "true" ]] || die "$VALUES_FILE uses the retired values schema; migrate it from clusterVars/networkAllowlist/directEgress.ssh.fqdn/comma-separated egress fields to policy/directEgress.ssh.hosts/list fields (see values.example.yaml)"
-  local alignment_output
-  if alignment_output="$("$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/scripts/validate-model-backend-alignment.py" \
+  local validation_output
+  if validation_output="$("$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/scripts/validate-machine-values.py" \
       --defaults "$DEFAULTS_FILE" "$VALUES_FILE" 2>&1)"; then
-    echo "$alignment_output"
+    echo "$validation_output"
   else
-    echo "$alignment_output" >&2
-    if grep -q '^FAIL - ' <<<"$alignment_output"; then
-      die "$VALUES_FILE enables an agent provider without its platform model backend"
+    echo "$validation_output" >&2
+    if grep -q '^FAIL - ' <<<"$validation_output"; then
+      die "$VALUES_FILE violates the merged machine-values configuration contract"
     fi
-    die "validate-model-backend-alignment.py crashed instead of validating $VALUES_FILE (see traceback above)"
+    die "validate-machine-values.py crashed instead of validating $VALUES_FILE (see traceback above)"
   fi
 }
 
