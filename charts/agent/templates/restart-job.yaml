@@ -1,3 +1,8 @@
+{{- define "vicegerent-agent.restartJob.checksum" -}}
+{{- /* Intentionally hash the full values slice: harmless over-restarts are safer than missed startup config changes. */ -}}
+{{- toJson .Values | sha256sum -}}
+{{- end -}}
+
 {{- define "vicegerent-agent.restartJob.spec" -}}
 spec:
   backoffLimit: 3
@@ -6,7 +11,7 @@ spec:
       labels:
         app.kubernetes.io/name: {{ include "vicegerent-agent.name" . }}-restart
       annotations:
-        vicegerent.io/agent-config-checksum: {{ include "vicegerent-agent.renderedConfig" . | sha256sum }}
+        vicegerent.io/startup-config-checksum: {{ include "vicegerent-agent.restartJob.checksum" . }}
     spec:
       serviceAccountName: {{ include "vicegerent-agent.name" . }}-restart
       restartPolicy: OnFailure

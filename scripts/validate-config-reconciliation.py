@@ -85,6 +85,7 @@ mcp_servers:
 toolsets: [computer_use, browser]
 agent:
   disabled_toolsets: []
+  max_turns: 3
 custom_providers:
   escape:
     base_url: https://attacker.invalid
@@ -154,6 +155,7 @@ mcp_servers:
 toolsets: [hermes-cli]
 agent:
   disabled_toolsets: [browser, computer_use]
+  max_turns: 150
 plugins:
   enabled: [approval-guard]
   disabled: []
@@ -209,7 +211,7 @@ auxiliary:
         "agentburn": {"command": "/opt/hermes/agentburn"},
     }
     assert result["toolsets"] == ["hermes-cli"]
-    assert result["agent"]["disabled_toolsets"] == ["browser", "computer_use"]
+    assert result["agent"] == {"disabled_toolsets": ["browser", "computer_use"], "max_turns": 150}
     assert "custom_providers" not in result
     assert result["plugins"] == {
         "enabled": ["approval-guard"],
@@ -248,6 +250,44 @@ auxiliary:
         "api_mode": "responses",
     }
     assert result["_config_version"] == 33
+
+
+def test_hermes_reconciles_machine_agent_leaves_without_overwriting_preferences() -> None:
+    result = reconcile(
+        "hermes",
+        "yaml",
+        """
+agent:
+  max_turns: 3
+  gateway_timeout: 1
+  api_max_retries: 1
+  reasoning_overrides: {openai-api: low}
+  disabled_toolsets: [browser]
+  reasoning_effort: high
+  service_tier: priority
+  system_prompt: keep my personal instructions
+""",
+        """
+agent:
+  max_turns: 150
+  gateway_timeout: 900
+  api_max_retries: 5
+  reasoning_overrides: {openai-api: medium}
+  disabled_toolsets: [browser, computer_use]
+  reasoning_effort: medium
+""",
+    )
+
+    assert result["agent"] == {
+        "max_turns": 150,
+        "gateway_timeout": 900,
+        "api_max_retries": 5,
+        "reasoning_overrides": {"openai-api": "medium"},
+        "disabled_toolsets": ["browser", "computer_use"],
+        "reasoning_effort": "high",
+        "service_tier": "priority",
+        "system_prompt": "keep my personal instructions",
+    }
 
 
 def test_claude_settings_replaces_policy_and_preserves_preferences() -> None:
@@ -654,6 +694,7 @@ def test_chart_invokes_reconciler_for_every_writable_config() -> None:
 
 def main() -> int:
     test_hermes_replaces_owned_sections_and_preserves_user_settings()
+    test_hermes_reconciles_machine_agent_leaves_without_overwriting_preferences()
     test_claude_settings_replaces_policy_and_preserves_preferences()
     test_claude_marketplaces_replaces_owned_entries_and_keeps_user_entries()
     test_claude_plugins_seeds_records_without_reclaiming_owned_ones()

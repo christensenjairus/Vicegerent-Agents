@@ -337,8 +337,9 @@ echo "INFO - Asserting SSH direct egress fails closed and remains FQDN-scoped"
 echo "INFO - Asserting every configured model has live pricing"
 "$PYTHON" scripts/validate-model-pricing.py
 
-echo "INFO - Asserting agent provider routes have matching platform backends"
-"$PYTHON" scripts/validate-model-backend-alignment.py \
+echo "INFO - Validating merged machine-values contracts"
+"$PYTHON" scripts/test-validate-machine-values.py
+"$PYTHON" scripts/validate-machine-values.py \
   --defaults "$DEFAULTS_VALUES" \
   "$EXAMPLE_VALUES" examples/personal.yaml examples/work.yaml
 
