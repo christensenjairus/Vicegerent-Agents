@@ -83,7 +83,7 @@ agentDefaults:
     # Mnemosyne weights are reseeded from the image and excluded from Velero backup.
     models: 2Gi
   obsidian:
-    # Absolute git-synced vault path under /opt/data or /workspace; empty disables Obsidian.
+    # Absolute self-saving vault path under /opt/data or /workspace; empty disables Obsidian.
     vaultPath: ''
   git:
     # Global commit identity; empty leaves git without an author identity.
