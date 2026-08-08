@@ -103,8 +103,9 @@ except Exception as e:
 }
 
 # Query the vMCP optimizer's find_tool and print discoverable tool names, one per
-# line. keyword drives the ranked FTS5 search (underscore tool names don't tokenize
-# well as keywords — use the backend name); description adds semantic context.
+# line. Both fields drive a ranked, capped search. Callers checking one exact tool
+# must pass that full prefixed name in both fields; a broad backend keyword can
+# push an enabled target out of the result cap.
 find_tool_names() {
   local url="$1" description="$2" keyword="$3"
   local payload
@@ -120,12 +121,30 @@ lines = [l[5:].strip() for l in raw.split('\n') if l.startswith('data:')]
 body = lines[0] if lines else raw
 try:
     d = json.loads(body)
+    if d.get('error'):
+        raise RuntimeError(d['error'].get('message') or 'find_tool failed')
     inner = json.loads(d['result']['content'][0]['text'])
     for t in (inner.get('tools') or []):
         print(t['name'])
-except Exception:
-    pass
+except Exception as e:
+    sys.stderr.write(f'find_tool response error: {e}\n')
+    sys.exit(2)
 "
+}
+
+# Return 0 when an exact real tool is discoverable, 1 when it is absent from a
+# successful result, and 2 when discovery itself failed. In non-optimizer mode,
+# tools/list is authoritative and cannot produce the third state.
+tool_is_enabled() {
+  local tool="$1" available
+  if [[ "$OPTIMIZER" -eq 1 ]]; then
+    if ! available=$(find_tool_names "$VMCP_URL" "$tool" "$tool"); then
+      return 2
+    fi
+  else
+    available="$TOOLS"
+  fi
+  grep -qx "$tool" <<<"$available"
 }
 
 # Build a tools/call payload for a real backend tool. When OPTIMIZER=1 the tool is
@@ -207,13 +226,16 @@ except Exception:
 # accepting an unrelated schema, lookup, or upstream failure as coverage.
 deny_probe() {
   local policy="$1" tool="$2" args="$3" expected="$4"
-  local available
-  if [[ "$OPTIMIZER" -eq 1 ]]; then
-    available=$(find_tool_names "$VMCP_URL" "$tool" "${tool%%_*}")
+  local availability
+  if tool_is_enabled "$tool"; then
+    availability=0
   else
-    available="$TOOLS"
+    availability=$?
   fi
-  if ! grep -qx "$tool" <<<"$available"; then
+  if [[ "$availability" -eq 2 ]]; then
+    fail "$policy — could not verify whether $tool is enabled"
+    return
+  elif [[ "$availability" -eq 1 ]]; then
     skip "$policy — $tool is not enabled"
     return
   fi
@@ -270,22 +292,26 @@ if echo "$TOOLS" | grep -qx "call_tool" && echo "$TOOLS" | grep -qx "find_tool";
   pass "vMCP optimizer on — probing tools via find_tool / call_tool"
 fi
 
-# Section 2's Cerbos Secret block depends on these exact kubernetes tool names, so
-# confirm they exist: discoverable via find_tool (optimizer) or listed raw.
-if [[ "$OPTIMIZER" -eq 1 ]]; then
-  DISCOVERED=$(find_tool_names "$VMCP_URL" "get and list kubernetes resources" "kubernetes")
-fi
+# Section 2's Cerbos Secret block depends on these exact Kubernetes tool names.
+# Probe each full name separately so the optimizer's result cap cannot hide one
+# behind higher-ranked tools from the same backend.
+KUBE_GET_ENABLED=0
+KUBE_LIST_ENABLED=0
 for must_have in "kubernetes_resources_get" "kubernetes_resources_list"; do
-  if [[ "$OPTIMIZER" -eq 1 ]]; then
-    if echo "$DISCOVERED" | grep -qx "$must_have"; then
-      pass "tool discoverable via find_tool: ${must_have}"
+  if tool_is_enabled "$must_have"; then
+    pass "tool discoverable: ${must_have}"
+    if [[ "$must_have" == "kubernetes_resources_get" ]]; then
+      KUBE_GET_ENABLED=1
+    else
+      KUBE_LIST_ENABLED=1
+    fi
+  else
+    availability=$?
+    if [[ "$availability" -eq 2 ]]; then
+      fail "tool discovery failed: ${must_have}"
     else
       skip "tool not enabled: ${must_have}"
     fi
-  elif echo "$TOOLS" | grep -qx "$must_have"; then
-    pass "tool present: ${must_have}"
-  else
-    skip "tool not enabled: ${must_have}"
   fi
 done
 
@@ -299,14 +325,6 @@ done
 section "2. Cerbos guardrail — Secret reads must be denied"
 
 open_session "$VMCP_URL"
-
-if [[ "$OPTIMIZER" -eq 1 ]]; then
-  KUBE_GET_ENABLED=$(grep -c '^kubernetes_resources_get$' <<<"$DISCOVERED" || true)
-  KUBE_LIST_ENABLED=$(grep -c '^kubernetes_resources_list$' <<<"$DISCOVERED" || true)
-else
-  KUBE_GET_ENABLED=$(grep -c '^kubernetes_resources_get$' <<<"$TOOLS" || true)
-  KUBE_LIST_ENABLED=$(grep -c '^kubernetes_resources_list$' <<<"$TOOLS" || true)
-fi
 
 # 2a: resources_get on a Secret — must be denied before k8s is ever contacted.
 # Args: apiVersion + kind (kubernetes-mcp-server format). No context arg needed.
@@ -407,7 +425,7 @@ policy_probe "linear_team" "Linear team scope" "linear_save_issue" \
   "only create/update Linear issues for the DEVOPS team"
 policy_probe "alertmanager_silence" "Alertmanager silence duration" "alertmanager_createSilence" \
   '{"alertName":"PolicyTestNeverFires","duration":"1000000h","comment":"policy test — must be denied","matchers":[]}' \
-  "Silence duration exceeds"
+  "Silence creation is disabled or its duration exceeds"
 policy_probe "alertmanager_alert_query" "Alertmanager query filter" "alertmanager_getAlerts" '{}' \
   "getAlerts requires filterLabel"
 policy_probe "pagerduty_incident" "PagerDuty incident mutation" "pagerduty_manage_incidents" \

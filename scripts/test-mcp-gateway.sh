@@ -7,8 +7,10 @@
 #   #   kubectl -n agentgateway-system port-forward svc/agentgateway-proxy 8080:80
 #   #   GATEWAY_URL=http://localhost:8080 bash scripts/test-mcp-gateway.sh [keyword]
 #
-# With no keyword, enumerate the reachable tools per backend. With a keyword,
-# search find_tool for matching tools (e.g. 'kubernetes', 'context', 'notion').
+# With no keyword, sample the optimizer's ranked results once per configured
+# backend. With a keyword, search find_tool for matching tools (e.g.
+# 'kubernetes', 'context', 'notion'). The optimizer caps every search, so neither
+# mode is a complete inventory.
 #
 # Override the unauthenticated placeholder API key sent to agentgateway (default "agent");
 # the gateway route does not validate this value.
@@ -85,12 +87,13 @@ except Exception as e:
 # The vMCP tool-discovery optimizer collapses every backend tool behind two
 # meta-tools (find_tool/call_tool), so tools/list can't enumerate the real tools.
 # We probe find_tool instead. With no QUERY, search once per expected backend
-# (keyword = the backend's own name) and union the hits, surfacing which backends
-# are live and a representative set of each one's tools. With a QUERY, run that one
-# search and show matches across all backends (e.g. 'kubernetes', 'context', 'notion').
+# (keyword = the backend's own name) and union the hits, surfacing a representative
+# set of each backend's tools. With a QUERY, run that one search and show matches
+# across all backends (e.g. 'kubernetes', 'context', 'notion').
 # find_tool is a ranked BM25+semantic search capped at a handful of hits per query,
-# so results are a reachable sample, not the full catalog. Enumerate mode exits 4
-# if the index came back empty; search mode always exits 0 (the endpoint is healthy).
+# so results are discovery samples, not reachability checks or a full catalog.
+# Sample mode exits 4 if the index came back empty and 5 if any optimizer search
+# failed. Search mode exits 5 on a failed call and 0 on a successful empty result.
 discover_tools() {
   local url="$1" session="$2" query="${3:-}"
   URL="$url" API_KEY="$API_KEY" SESSION="$session" SERVERS_CONFIG="$SERVERS_CONFIG" QUERY="$query" python3 -c "
@@ -116,14 +119,22 @@ def find(keyword):
         d = json.loads(data[0] if data else raw)
         inner = json.loads(d['result']['content'][0]['text'])
         return inner.get('tools') or []
-    except Exception:
-        return []
+    except Exception as e:
+        raise RuntimeError(str(e)) from e
 
 def owner(name):
-    return next((p for p in servers if name.startswith(p + '_')), '?')
+    # Conflict-resolution prefixes can overlap (grafana/grafana_secondary and
+    # aws/aws_profiles). Match the longest workload name so secondary and
+    # companion tools are not attributed to their shorter primary prefix.
+    return next((p for p in sorted(servers, key=len, reverse=True)
+                 if name.startswith(p + '_')), '?')
 
 if query:
-    matches = {t['name']: t for t in find(query)}
+    try:
+        matches = {t['name']: t for t in find(query)}
+    except RuntimeError as e:
+        print(f'  {Y}- find_tool search failed: {e}{N}')
+        raise SystemExit(5)
     if not matches:
         print(f'  {Y}- no tools match \"{query}\"{N}')
         raise SystemExit(0)
@@ -136,22 +147,29 @@ if query:
     raise SystemExit(0)
 
 union = {}
+errors = {}
 for s in servers:
-    for t in find(s):
-        union[t['name']] = owner(t['name'])
+    try:
+        for t in find(s):
+            union[t['name']] = owner(t['name'])
+    except RuntimeError as e:
+        errors[s] = str(e)
 by_server = {s: sorted(n for n, o in union.items() if o == s) for s in servers}
 live = [s for s in servers if by_server[s]]
 for s in servers:
     tools = by_server[s]
-    if tools:
-        print(f'  {G}+ {s}: {len(tools)} tools reachable{N}')
+    if s in errors:
+        print(f'  {Y}- {s}: find_tool search failed: {errors[s]}{N}')
+    elif tools:
+        print(f'  {G}+ {s}: {len(tools)} sampled tool matches{N}')
         for t in tools:
             print(f'      {t}')
     else:
-        print(f'  {Y}- {s}: none reachable (disabled or backend down){N}')
+        print(f'  {Y}- {s}: no matching tools sampled{N}')
 total = len(union)
-print(f'  {G}{total} tools reachable across {len(live)} backend(s): {\", \".join(live) or \"none\"}{N}')
-raise SystemExit(0 if total else 4)
+print(f'  {G}{total} unique tool matches sampled across {len(live)} backend(s): {\", \".join(live) or \"none\"}{N}')
+print(f'  {Y}find_tool is ranked and capped; these counts are not a complete inventory.{N}')
+raise SystemExit(5 if errors else (0 if total else 4))
 "
 }
 
@@ -206,12 +224,12 @@ for entry in "${MCPS[@]}"; do
     echo    "    kubectl -n agentgateway-system get agentgatewaypolicies ${name}-policy -o yaml"
     ((WARN++))
   elif echo "$tools" | grep -qx "find_tool"; then
-    # Optimizer on: search (QUERY) or enumerate the real tools behind find_tool.
+    # Optimizer on: search (QUERY) or sample real tools behind find_tool.
     [[ -n "$QUERY" ]] && ui_key_value "Search" "$QUERY"
     if discover_tools "$url" "$SESSION_ID" "$QUERY"; then
       ((PASS++))
     else
-      ui_warn "find_tool surfaced no backend tools — the index is empty or all backends are down."
+      ui_warn "find_tool surfaced no backend tools — the index is empty or searches failed."
       ((WARN++))
     fi
   else
