@@ -890,7 +890,7 @@ EOF
         shift
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
           echo "vicegerent test gateway [keyword] — probe MCP endpoints (auto port-forwards agentgateway, requires the host MCP stack running)"
-          echo "  no keyword: enumerate reachable tools per backend"
+          echo "  no keyword: sample ranked tool-discovery results per backend"
           echo "  keyword:    search find_tool for matching tools (e.g. 'kubernetes', 'context', 'notion')"
           exit 0
         fi
