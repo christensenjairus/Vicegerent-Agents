@@ -133,8 +133,9 @@ def check_bumped(images: dict[str, tuple[str, str]], since: str) -> list[str]:
     # Diffed against the working tree, not HEAD, so this catches a bump that is
     # still uncommitted -- the state you are in when you run it by hand. Diffing
     # from the merge base keeps a hand-run `--since origin/main` on a branch
-    # behind main from picking up main-side image changes; CI passes the merge
-    # request's base SHA, which IS the merge base, so there it changes nothing.
+    # behind main from picking up main-side image changes. Read the old tag from
+    # that same base: mixing a merge-base changed-file set with a newer `since`
+    # tag can make a stale branch's tag decrease look like a valid bump.
     base = subprocess.run(
         ["git", "-C", str(ROOT), "merge-base", since, "HEAD"],
         capture_output=True, text=True, check=True,
@@ -154,17 +155,42 @@ def check_bumped(images: dict[str, tuple[str, str]], since: str) -> list[str]:
         if not content:
             continue
         before = subprocess.run(
-            ["git", "-C", str(ROOT), "show", f"{since}:{prefix}Makefile"],
+            ["git", "-C", str(ROOT), "show", f"{base}:{prefix}Makefile"],
             capture_output=True, text=True,
         )
         if before.returncode != 0:  # new image, so its tag is new by definition
             continue
         old = make_vars(before.stdout).get("TAG", "")
-        if old == images[name][1]:
+        current = images[name][1]
+        old_revision = next(
+            (
+                (match.group(1), int(match.group(2)))
+                for pattern in (REV_TAG, VERSION_TAG)
+                if (match := pattern.fullmatch(old))
+            ),
+            None,
+        )
+        current_revision = next(
+            (
+                (match.group(1), int(match.group(2)))
+                for pattern in (REV_TAG, VERSION_TAG)
+                if (match := pattern.fullmatch(current))
+            ),
+            None,
+        )
+        unchanged = old == current
+        non_increasing = (
+            old_revision is not None
+            and current_revision is not None
+            and old_revision[0] == current_revision[0]
+            and current_revision[1] <= old_revision[1]
+        )
+        if unchanged or non_increasing:
             errors.append(
                 f"images/{name}/ changed ({', '.join(sorted(content)[:4])}"
-                f"{', ...' if len(content) > 4 else ''}) but TAG is still {old} -- "
-                f"the cluster pulls IfNotPresent, so this rebuild would never be deployed"
+                f"{', ...' if len(content) > 4 else ''}) but TAG did not increase "
+                f"from {old} (current: {current}) -- the cluster pulls IfNotPresent, "
+                "so this rebuild would never be deployed"
             )
     return errors
 

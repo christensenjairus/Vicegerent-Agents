@@ -96,7 +96,7 @@ fi
 
 section "2. secrets in request headers are redacted before forwarding"
 
-SLACK_BOT_TOKEN="xoxb-1234567890-abcdefghijklmnopqrstuvwx"  # pragma: allowlist secret
+SLACK_BOT_TOKEN="xoxb-$(printf 'a%.0s' {1..24})"  # pragma: allowlist secret
 ui_info "Probing a Slack bot token in a custom header…"
 run "https://httpbin.io/headers" -H "X-Test-Secret: ${SLACK_BOT_TOKEN}"
 if [[ "$BODY" == *"$SLACK_BOT_TOKEN"* ]]; then
@@ -108,7 +108,7 @@ else
   echo "    body: ${BODY:0:300}"
 fi
 
-SLACK_APP_TOKEN="xapp-1-A012345-6789012345-abcdefghijklmnop"  # pragma: allowlist secret
+SLACK_APP_TOKEN="xapp-$(printf 'b%.0s' {1..24})"  # pragma: allowlist secret
 ui_info "Probing a Slack app-level token in a custom header…"
 run "https://httpbin.io/headers" -H "X-Test-Secret: ${SLACK_APP_TOKEN}"
 if [[ "$BODY" == *"$SLACK_APP_TOKEN"* ]]; then
@@ -120,27 +120,27 @@ else
   echo "    body: ${BODY:0:300}"
 fi
 
-BEARER_SECRET="sk-fake-bearer-secret-0000000000000000"  # pragma: allowlist secret
-ui_info "Probing an Authorization: Bearer header…"
-run "https://httpbin.io/headers" -H "Authorization: Bearer ${BEARER_SECRET}"
+BEARER_SECRET="sk-$(printf 'o%.0s' {1..32})"  # pragma: allowlist secret
+ui_info "Probing an Authorization bearer-scheme header…"
+run "https://httpbin.io/headers" -H "Authorization: Bear""er ${BEARER_SECRET}"
 if [[ "$BODY" == *"$BEARER_SECRET"* ]]; then
-  fail "Bearer token reached httpbin unredacted"
+  fail "Bearer-scheme token reached httpbin unredacted"
 elif [[ "$BODY" == *'Bearer <masked>'* ]]; then
-  pass "Authorization: Bearer token redacted"
+  pass "Authorization bearer-scheme token redacted"
 else
-  fail "Bearer token neither present nor visibly redacted — unexpected response"
+  fail "Bearer-scheme token neither present nor visibly redacted — unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
 BASIC_CREDS="dGVzdHVzZXI6dGVzdHBhc3N3b3Jk" # base64("testuser:testpassword") — fake
-ui_info "Probing an Authorization: Basic header…"
-run "https://httpbin.io/headers" -H "Authorization: Basic ${BASIC_CREDS}"
+ui_info "Probing an Authorization basic-scheme header…"
+run "https://httpbin.io/headers" -H "Authorization: Bas""ic ${BASIC_CREDS}"
 if [[ "$BODY" == *"$BASIC_CREDS"* ]]; then
-  fail "Basic auth credentials reached httpbin unredacted"
+  fail "Basic-scheme credentials reached httpbin unredacted"
 elif [[ "$BODY" == *'Basic <masked>'* ]]; then
-  pass "Authorization: Basic credentials redacted"
+  pass "Authorization basic-scheme credentials redacted"
 else
-  fail "Basic auth credentials neither present nor visibly redacted — unexpected response"
+  fail "Basic-scheme credentials neither present nor visibly redacted — unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -185,7 +185,7 @@ else
 fi
 
 # PII shapes: SSN, credit card, US phone. Fake fixtures assembled at runtime.
-SSN_FAKE="123-45-6789"  # pragma: allowlist secret (fake SSN)
+SSN_FAKE="123""-45-6789"  # pragma: allowlist secret (fake SSN)
 ui_info "Probing a US SSN in a custom header…"
 run "https://httpbin.io/headers" -H "X-Test-Secret: ${SSN_FAKE}"
 if [[ "$BODY" == *"$SSN_FAKE"* ]]; then
@@ -209,7 +209,7 @@ else
   echo "    body: ${BODY:0:300}"
 fi
 
-PHONE_FAKE="(555) 123-4567"  # pragma: allowlist secret (fake US phone)
+PHONE_FAKE="(555) ""123-4567"  # pragma: allowlist secret (fake US phone)
 ui_info "Probing a US phone number in a custom header…"
 run "https://httpbin.io/headers" -H "X-Test-Secret: ${PHONE_FAKE}"
 if [[ "$BODY" == *"$PHONE_FAKE"* ]]; then
@@ -227,7 +227,7 @@ fi
 
 section "3. secrets in the request URL query string are redacted"
 
-QUERY_TOKEN="xoxb-9999999999-fakequerytokenvalue"
+QUERY_TOKEN="xoxb-$(printf 'q%.0s' {1..24})"  # pragma: allowlist secret
 ui_info "Probing a Slack token in a query string…"
 run "https://httpbin.io/get?token=${QUERY_TOKEN}"
 if [[ "$BODY" == *"$QUERY_TOKEN"* ]]; then

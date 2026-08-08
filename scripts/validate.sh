@@ -179,21 +179,88 @@ assert_agentgateway_release_locked() {
 }
 
 assert_promptguard_well_formed() {
-  local rendered="$1" guarded
-  # shellcheck disable=SC2016  # $guard is a yq variable, not a shell expansion.
-  guarded="$(echo "$rendered" | yq ea '
-    select(.kind == "AgentgatewayBackend" and (.spec.ai.groups | length) > 0)
-    | .spec.ai.groups[].providers[]
-    | .policies.ai.promptGuard as $guard
-    | ($guard.streaming == "Enabled" and
-       ($guard.request | length) == 1 and
-       $guard.request[0].regex.action == "Mask" and
-       ($guard.response | length) == 1 and
-       $guard.response[0].regex.action == "Reject" and
-       $guard.response[0].rejection == null)' -)"
-  if [[ -z "$guarded" || "$guarded" == *false* ]]; then
-    echo "ERROR - every AI provider must mask matching request content and reject matching buffered or streaming responses using the v1.4.1 CRD-supported default rejection." >&2
-    exit 1
+  local rendered="$1" rendered_file
+  rendered_file="$(mktemp_f)"
+  printf '%s\n' "$rendered" > "$rendered_file"
+  python3 - "$SECRET_PATTERNS_FILE" "$rendered_file" <<'PY'
+import json
+import sys
+
+import yaml
+
+registry_path, rendered_path = sys.argv[1:]
+with open(registry_path, encoding="utf-8") as handle:
+    definitions = json.load(handle)
+expected_request = [definition["regex"] for definition in definitions]
+expected_response = [
+    definition["regex"]
+    for definition in definitions
+    if definition.get("modelResponse", True) is not False
+]
+if len(expected_request) != 41 or len(expected_response) != 33:
+    raise SystemExit(
+        f"unexpected prompt-guard registry counts: request={len(expected_request)} "
+        f"response={len(expected_response)}"
+    )
+
+with open(rendered_path, encoding="utf-8") as handle:
+    resources = list(yaml.safe_load_all(handle))
+providers = 0
+for resource in resources:
+    if not isinstance(resource, dict) or resource.get("kind") != "AgentgatewayBackend":
+        continue
+    groups = resource.get("spec", {}).get("ai", {}).get("groups", [])
+    for group in groups:
+        for provider in group.get("providers", []):
+            providers += 1
+            guard = provider.get("policies", {}).get("ai", {}).get("promptGuard", {})
+            request = guard.get("request", [])
+            response = guard.get("response", [])
+            valid = (
+                guard.get("streaming") == "Enabled"
+                and len(request) == 1
+                and request[0].get("regex", {}).get("action") == "Mask"
+                and request[0].get("regex", {}).get("matches") == expected_request
+                and len(response) == 1
+                and response[0].get("regex", {}).get("action") == "Reject"
+                and response[0].get("regex", {}).get("matches") == expected_response
+                and response[0].get("rejection") is None
+            )
+            if not valid:
+                raise SystemExit(
+                    "AI provider prompt guard does not contain the exact 41 request-mask "
+                    "and 33 response-reject patterns"
+                )
+if providers == 0:
+    raise SystemExit("platform render contained no guarded AI providers")
+PY
+}
+
+assert_promptguard_rejects_empty_response_patterns() {
+  local request_only_registry render_log
+  request_only_registry="$(mktemp_f)"
+  render_log="$(mktemp_f)"
+  python3 - "$SECRET_PATTERNS_FILE" "$request_only_registry" <<'PY'
+import json
+import sys
+
+source, destination = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    definitions = json.load(handle)
+for definition in definitions:
+    definition["modelResponse"] = False
+with open(destination, "w", encoding="utf-8") as handle:
+    json.dump(definitions, handle)
+PY
+  if helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" \
+      --set-file "secretPatterns=$request_only_registry" >"$render_log" 2>&1; then
+    echo "ERROR - platform rendered an empty model-response prompt guard instead of failing closed." >&2
+    return 1
+  fi
+  if ! grep -q "empty model-response list" "$render_log"; then
+    echo "ERROR - empty model-response prompt-guard render failed for an unexpected reason." >&2
+    cat "$render_log" >&2
+    return 1
   fi
 }
 
@@ -382,10 +449,16 @@ echo "INFO - Asserting Slack access is single-operator and DM-only"
 echo "INFO - Asserting shared operating guidance reaches every harness"
 "$PYTHON" scripts/validate-shared-skill-guidance.py
 
+echo "INFO - Asserting model prompt-guard pattern scope and fixture hygiene"
+python3 scripts/validate-promptguard-pattern-scope.py
+
 platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
 
 echo "INFO - Asserting AI prompt guards cover buffered and streaming responses"
 assert_promptguard_well_formed "$platform_rendered"
+
+echo "INFO - Asserting an empty model-response pattern set fails closed"
+assert_promptguard_rejects_empty_response_patterns
 
 echo "INFO - Asserting the agentgateway release versions stay in lockstep"
 assert_agentgateway_release_locked "$platform_rendered"
