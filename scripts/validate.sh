@@ -15,6 +15,9 @@ WAIT=2
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# shellcheck source=lib/python-env.sh
+source "$REPO_ROOT/scripts/lib/python-env.sh"
+
 EXAMPLE_VALUES="values.example.yaml"
 DEFAULTS_VALUES="values.defaults.yaml"
 # Canonical secret-pattern source injected into the egress-proxy scrubber via
@@ -53,6 +56,18 @@ require_tools() {
     fi
   done
   (( missing == 0 )) || exit 1
+  ensure_python_environment "$REPO_ROOT"
+  PYTHON="$REPO_ROOT/.venv/bin/python"
+  # yq below is invoked bare (no -r) in places, relying on mikefarah/yq v4's
+  # default of printing plain scalars unquoted. A same-named PyPI package
+  # (kislyuk/yq, a jq wrapper) JSON-quotes every string instead and silently
+  # corrupts those checks.
+  local yq_version_output
+  yq_version_output="$(yq --version 2>&1)"
+  if [[ "$yq_version_output" != *"mikefarah/yq"* ]]; then
+    echo "ERROR - yq on PATH is not mikefarah/yq (got: '$yq_version_output'); a PATH entry ahead of it is shadowing the Go binary from https://github.com/mikefarah/yq — commonly a pip-installed 'yq' (kislyuk/yq) in a venv's bin dir" >&2
+    exit 1
+  fi
 }
 
 # Re-root agentDefaults and the first example agent the way the installer feeds the agent chart.
@@ -185,8 +200,14 @@ assert_promptguard_well_formed() {
 require_tools
 mkdir -p "$KUBECONFORM_CACHE"
 
+echo "INFO - Asserting one locked Python environment covers repository tooling"
+"$PYTHON" scripts/validate-python-dependencies.py
+
+echo "INFO - Testing serialized Python environment reconciliation"
+bash scripts/test-python-env.sh
+
 echo "INFO - Asserting every Cerbos policy has a runtime MCP probe"
-python3 scripts/validate-policy-runtime-coverage.py
+"$PYTHON" scripts/validate-policy-runtime-coverage.py
 
 echo "INFO - Testing the Kind user-namespace OCI hook repair"
 bash scripts/test-kind-userns-hook-access.sh
@@ -269,7 +290,7 @@ helm template egress-proxy charts/egress-proxy -f "$DEFAULTS_VALUES" -f "$EXAMPL
   --set-file "secretPatterns=$SECRET_PATTERNS_FILE" \
   --show-only templates/addon-configmap.yaml \
   | yq '.data."scrub.py"' \
-  | python3 -c 'import ast, sys; ast.parse(sys.stdin.read())' \
+  | "$PYTHON" -c 'import ast, sys; ast.parse(sys.stdin.read())' \
   || { echo "ERROR - templated egress-proxy scrub.py is not valid Python" >&2; exit 1; }
 
 echo "INFO - Asserting egress-proxy render FAILS without --set-file secretPatterns"
@@ -287,7 +308,7 @@ echo "INFO - Testing egress-proxy scrub.py secret-redaction patterns"
 # scrub.py renders with a single -f, so hand it the merged full values document.
 egress_merged="$(mktemp_f)"
 yq eval-all 'select(fi==0) * select(fi==1)' "$DEFAULTS_VALUES" "$EXAMPLE_VALUES" > "$egress_merged"
-EGRESS_VALUES="$egress_merged" python3 scripts/test-scrub-patterns.py
+EGRESS_VALUES="$egress_merged" "$PYTHON" scripts/test-scrub-patterns.py
 
 echo "INFO - Asserting platform render FAILS without --set-file secretPatterns"
 # platform's promptGuard partial guards .Values.secretPatterns with `required` and
@@ -302,60 +323,60 @@ fi
 echo "INFO - Asserting the victoria-logs Vector redactor is in sync with secret-patterns.json"
 # Leg 4 (Vector VRL) has no render seam like --set-file/embed, so its regexes are
 # GENERATED from the canonical JSON and committed; this fails closed on any drift.
-python3 scripts/gen-vector-redactor.py --check
+"$PYTHON" scripts/gen-vector-redactor.py --check
 
 echo "INFO - Asserting every image we build is deployed on the tag its Makefile defaults to"
-python3 scripts/validate-image-tags.py
+"$PYTHON" scripts/validate-image-tags.py
 
 echo "INFO - Asserting values.example.yaml remains a scoped Moveworks DevOps starter"
-python3 scripts/validate-values-example.py
+"$PYTHON" scripts/validate-values-example.py
 
 echo "INFO - Asserting SSH direct egress fails closed and remains FQDN-scoped"
-python3 scripts/validate-agent-ssh-egress.py
+"$PYTHON" scripts/validate-agent-ssh-egress.py
 
 echo "INFO - Asserting every configured model has live pricing"
-python3 scripts/validate-model-pricing.py
+"$PYTHON" scripts/validate-model-pricing.py
 
 echo "INFO - Asserting agent provider routes have matching platform backends"
-python3 scripts/validate-model-backend-alignment.py \
+"$PYTHON" scripts/validate-model-backend-alignment.py \
   --defaults "$DEFAULTS_VALUES" \
   "$EXAMPLE_VALUES" examples/personal.yaml examples/work.yaml
 
 echo "INFO - Asserting Anthropic and OpenAI model switches stay on Agentgateway"
-python3 scripts/validate-model-switch-routing.py
+"$PYTHON" scripts/validate-model-switch-routing.py
 
 echo "INFO - Asserting only vMCP opts into parallel tool calls"
-python3 scripts/validate-mcp-parallel-tool-calls.py
+"$PYTHON" scripts/validate-mcp-parallel-tool-calls.py
 
 echo "INFO - Asserting Codex has the baked LSP MCP runtime"
-python3 scripts/validate-codex-lsp.py
+"$PYTHON" scripts/validate-codex-lsp.py
 
 echo "INFO - Asserting Claude Code loads the baked language servers"
-python3 scripts/validate-claude-lsp.py
+"$PYTHON" scripts/validate-claude-lsp.py
 
 echo "INFO - Asserting rendered provider reasoning overrides match configured efforts"
-python3 images/agent/patches/tests/test_provider_reasoning_overrides.py --chart-dir charts/agent --values values.defaults.yaml
+"$PYTHON" images/agent/patches/tests/test_provider_reasoning_overrides.py --chart-dir charts/agent --values values.defaults.yaml
 
 echo "INFO - Asserting harness config ownership reconciliation"
-python3 scripts/validate-config-reconciliation.py
+"$PYTHON" scripts/validate-config-reconciliation.py
 
 echo "INFO - Asserting the agent owns ~/.gitconfig instead of seeding it imperatively"
-python3 scripts/validate-gitconfig-immutable.py
+"$PYTHON" scripts/validate-gitconfig-immutable.py
 
 echo "INFO - Asserting agent runtime ownership"
-python3 scripts/validate-agent-runtime.py
+"$PYTHON" scripts/validate-agent-runtime.py
 
 echo "INFO - Testing the interactive agent Bash prompt"
 scripts/test-agent-bash-prompt.sh
 
 echo "INFO - Asserting legacy Hermes state migrates into its per-harness home"
-python3 images/agent/patches/tests/test_hermes_home_migration.py
+"$PYTHON" images/agent/patches/tests/test_hermes_home_migration.py
 
 echo "INFO - Asserting Slack access is single-operator and DM-only"
-python3 scripts/validate-slack-access.py
+"$PYTHON" scripts/validate-slack-access.py
 
 echo "INFO - Asserting shared operating guidance reaches every harness"
-python3 scripts/validate-shared-skill-guidance.py
+"$PYTHON" scripts/validate-shared-skill-guidance.py
 
 platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
 
@@ -385,7 +406,7 @@ if [[ -n "$unpinned" ]]; then
 fi
 
 echo "INFO - Testing managed Homebrew package reconciliation"
-python3 -m unittest host.brew.test_generate host.brew.test_reconcile
-python3 host/brew/reconcile.py validate
+"$PYTHON" -m unittest host.brew.test_generate host.brew.test_reconcile
+"$PYTHON" host/brew/reconcile.py validate
 
 echo "INFO - All validations passed"

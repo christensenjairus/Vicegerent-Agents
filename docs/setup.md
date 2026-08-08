@@ -249,7 +249,7 @@ Every MCP server runs on the laptop under ToolHive (`thv`). The control plane li
 
 The cluster reaches the vMCP at `host.docker.internal:8453`. agentgateway fronts it with one `AgentgatewayBackend` + HTTPRoute + `AgentgatewayPolicy` trio per Gateway listener: `vmcp` on `/mcp/vmcp` for agent traffic (guardrail phase `Full`), and `vmcp-internal` on the internal `:81` listener for the shim's own re-entrant ownership lookups (phase `Request` only, so a lookup can't recurse into response inspection). Through the vMCP, tools are named `{workload}_<tool>` (e.g. `kubernetes_resources_get`).
 
-First-time setup reconciles the host prerequisites (`thv`, `ghostunnel`, `supervisor`, `rclone`, and `terminal-notifier`) to the exact versions in [`host/brew/packages.json`](../host/brew/packages.json), creates the Python venv `vicegerent mcp` runs under, then walks you through enabling and configuring servers interactively (API keys become `thv` secrets; notion/linear use browser OAuth), and links the `vicegerent` CLI onto your `PATH`. Repository-managed versioned formulae live under `Formula/`; `terminal-notifier` uses Homebrew Core's bottle to avoid a full-Xcode build dependency. `./vicegerent host-packages check` is the read-only drift check and `apply` repairs drift explicitly:
+First-time setup reconciles the host prerequisites (`thv`, `ghostunnel`, `supervisor`, `rclone`, and `terminal-notifier`) to the exact versions in [`host/brew/packages.json`](../host/brew/packages.json), reconciles the repository's locked root `.venv`, then walks you through enabling and configuring servers interactively (API keys become `thv` secrets; notion/linear use browser OAuth), and links the `vicegerent` CLI onto your `PATH`. Repository-managed versioned formulae live under `Formula/`; `terminal-notifier` uses Homebrew Core's bottle to avoid a full-Xcode build dependency. `./vicegerent host-packages check` is the read-only drift check and `apply` repairs drift explicitly:
 
 ```bash
 ./vicegerent setup mcp
@@ -317,8 +317,8 @@ VictoriaLogs (cluster-wide log aggregation) has no NodePort. Port-forward its se
 Install and run the repo hooks before committing:
 
 ```bash
-pre-commit install
-pre-commit run --all-files
+scripts/run-python -m pre_commit install
+scripts/run-python -m pre_commit run --all-files
 ```
 
-The local validation hook (`scripts/validate.sh`) expects `helm`, `yq` v4, `kubeconform`, and `python3` on `PATH` (plus `cerbos` for the policy-compile pass, which is skipped if it's absent).
+The repository has one Python environment at `.venv`. `pyproject.toml` declares every host-tool and validation dependency, `uv.lock` locks the full cross-platform graph, and `scripts/run-python`, setup, and validation reconcile it with `uv sync --locked`. The first reconciliation needs Python 3.11+ and bootstraps the pinned `uv` inside the venv without modifying Homebrew's externally managed Python. Host MCP runtime commands use the environment created by `./vicegerent setup mcp` without performing package installation, so teardown remains available during a package-source outage. The local validation hook (`scripts/validate.sh`) also expects `helm`, `yq` v4 (the Go binary from [mikefarah/yq](https://github.com/mikefarah/yq), not the same-named PyPI `yq`), and `kubeconform` on `PATH` (plus `cerbos` for the policy-compile pass, which is skipped if it's absent).

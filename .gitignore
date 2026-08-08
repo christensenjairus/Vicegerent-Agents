@@ -3,8 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Python venv
-host/mcp/.venv/
+# Repository Python environment
+.venv/
+.venv.lock
 
 # Machine plane copied from values.example.yaml (per-machine, never committed).
 # Anchored to repo root so chart-internal charts/*/values.yaml stay tracked.

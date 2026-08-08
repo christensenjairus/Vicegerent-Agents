@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/python-env.sh
+source "$REPO_ROOT/scripts/lib/python-env.sh"
+ensure_python_environment "$REPO_ROOT"
+exec "$REPO_ROOT/.venv/bin/python" "$@"

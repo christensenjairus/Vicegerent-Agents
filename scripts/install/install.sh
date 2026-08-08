@@ -52,6 +52,8 @@ VALS=()
 
 # shellcheck source=../lib/kube-context.sh
 source "$REPO_ROOT/scripts/lib/kube-context.sh"
+# shellcheck source=../lib/python-env.sh
+source "$REPO_ROOT/scripts/lib/python-env.sh"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/helm.sh
@@ -87,15 +89,26 @@ HELM_UPGRADE_FLAGS+=(--hide-notes)
 
 # --- prerequisites ---------------------------------------------------------
 step "Prerequisites"
-for cmd in kubectl helm yq git; do
+for cmd in kubectl helm yq git python3; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed or not on PATH"
 done
+ensure_python_environment "$REPO_ROOT"
 # The installer uses Helm 4 flags (--rollback-on-failure, --force-replace,
 # --hide-notes); a positively-detected Helm 3 fails fast instead of erroring
 # mid-stage on an "unknown flag". A parse hiccup falls through rather than block.
 helm_major="$(helm version --short 2>/dev/null | sed -E 's/^v?([0-9]+).*/\1/')"
 if [[ "$helm_major" =~ ^[0-9]+$ ]] && [[ "$helm_major" -lt 4 ]]; then
   die "Helm 4+ required (found Helm ${helm_major}); upgrade helm"
+fi
+# The installer consumes action metadata as shell scalars, so every scalar
+# lookup uses -r rather than depending on yq's output-format defaults.
+yq_version_output="$(yq --version 2>&1)"
+if [[ "$yq_version_output" != *"mikefarah/yq"* ]]; then
+  die "yq on PATH is not mikefarah/yq (got: '$yq_version_output'); a PATH entry ahead of it is shadowing the Go binary from https://github.com/mikefarah/yq — commonly a pip-installed 'yq' (kislyuk/yq) in a venv's bin dir"
+fi
+yq_major="$(sed -E 's/.*version v([0-9]+).*/\1/' <<<"$yq_version_output")"
+if [[ ! "$yq_major" =~ ^[0-9]+$ ]] || [[ "$yq_major" -lt 4 ]]; then
+  die "yq v4+ required (found $yq_version_output)"
 fi
 require_kind_context
 [[ -f "$STAGES_FILE" ]] || die "stages file not found: $STAGES_FILE"
@@ -111,55 +124,55 @@ info "Tools present; context '$KUBE_CONTEXT' reachable; using $VALUES_FILE"
 run_action() {
   local a="$1"
   local type name
-  type="$(yq "$a.type" "$STAGES_FILE")"
-  name="$(yq "$a.name" "$STAGES_FILE")"
+  type="$(yq -r "$a.type" "$STAGES_FILE")"
+  name="$(yq -r "$a.name" "$STAGES_FILE")"
   case "$type" in
     helm)
       helm_remote "$name" \
-        "$(yq "$a.repo" "$STAGES_FILE")" \
-        "$(yq "$a.chart" "$STAGES_FILE")" \
-        "$(yq "$a.version" "$STAGES_FILE")" \
-        "$(yq "$a.namespace" "$STAGES_FILE")" \
-        "$(yq "$a.values // \"\"" "$STAGES_FILE")" \
-        "$(yq "$a.crds // false" "$STAGES_FILE")"
+        "$(yq -r "$a.repo" "$STAGES_FILE")" \
+        "$(yq -r "$a.chart" "$STAGES_FILE")" \
+        "$(yq -r "$a.version" "$STAGES_FILE")" \
+        "$(yq -r "$a.namespace" "$STAGES_FILE")" \
+        "$(yq -r "$a.values // \"\"" "$STAGES_FILE")" \
+        "$(yq -r "$a.crds // false" "$STAGES_FILE")"
       ;;
     helm-oci)
       local extra_set="" rvp rsk rv
-      rvp="$(yq "$a.replicasValuePath // \"\"" "$STAGES_FILE")"
-      rsk="$(yq "$a.replicasSetKey // \"\"" "$STAGES_FILE")"
+      rvp="$(yq -r "$a.replicasValuePath // \"\"" "$STAGES_FILE")"
+      rsk="$(yq -r "$a.replicasSetKey // \"\"" "$STAGES_FILE")"
       if [[ -n "$rvp" && -n "$rsk" ]]; then
         rv="$(resolve_value_or_default "$rvp")"
         [[ -n "$rv" ]] && extra_set="${rsk}=${rv}"
       fi
       helm_oci "$name" \
-        "$(yq "$a.chart" "$STAGES_FILE")" \
-        "$(yq "$a.version" "$STAGES_FILE")" \
-        "$(yq "$a.namespace" "$STAGES_FILE")" \
-        "$(yq "$a.values // \"\"" "$STAGES_FILE")" \
-        "$(yq "$a.crds // false" "$STAGES_FILE")" \
+        "$(yq -r "$a.chart" "$STAGES_FILE")" \
+        "$(yq -r "$a.version" "$STAGES_FILE")" \
+        "$(yq -r "$a.namespace" "$STAGES_FILE")" \
+        "$(yq -r "$a.values // \"\"" "$STAGES_FILE")" \
+        "$(yq -r "$a.crds // false" "$STAGES_FILE")" \
         "$extra_set"
       ;;
     helm-git)
       helm_git "$name" \
-        "$(yq "$a.gitRepo" "$STAGES_FILE")" \
-        "$(yq "$a.ref" "$STAGES_FILE")" \
-        "$(yq "$a.chartPath" "$STAGES_FILE")" \
-        "$(yq "$a.namespace" "$STAGES_FILE")" \
-        "$(yq "$a.values // \"\"" "$STAGES_FILE")" \
-        "$(yq "$a.crds // false" "$STAGES_FILE")"
+        "$(yq -r "$a.gitRepo" "$STAGES_FILE")" \
+        "$(yq -r "$a.ref" "$STAGES_FILE")" \
+        "$(yq -r "$a.chartPath" "$STAGES_FILE")" \
+        "$(yq -r "$a.namespace" "$STAGES_FILE")" \
+        "$(yq -r "$a.values // \"\"" "$STAGES_FILE")" \
+        "$(yq -r "$a.crds // false" "$STAGES_FILE")"
       ;;
     local)
       helm_local "$name" \
-        "$(yq "$a.namespace" "$STAGES_FILE")" \
-        "$(yq "$a.machineValues // \"\"" "$STAGES_FILE")" \
-        "$(yq "$a.forEach // \"\"" "$STAGES_FILE")"
+        "$(yq -r "$a.namespace" "$STAGES_FILE")" \
+        "$(yq -r "$a.machineValues // \"\"" "$STAGES_FILE")" \
+        "$(yq -r "$a.forEach // \"\"" "$STAGES_FILE")"
       ;;
     kubectl-k)
       kubectl_k "$name" \
-        "$(yq "$a.path" "$STAGES_FILE")" \
-        "$(yq "$a.gate // \"\"" "$STAGES_FILE")" \
-        "$(yq "$a.waitResource // \"\"" "$STAGES_FILE")" \
-        "$(yq "$a.waitNamespace // \"\"" "$STAGES_FILE")"
+        "$(yq -r "$a.path" "$STAGES_FILE")" \
+        "$(yq -r "$a.gate // \"\"" "$STAGES_FILE")" \
+        "$(yq -r "$a.waitResource // \"\"" "$STAGES_FILE")" \
+        "$(yq -r "$a.waitNamespace // \"\"" "$STAGES_FILE")"
       ;;
     *) die "unknown action type '$type' for action '$name'" ;;
   esac
@@ -177,12 +190,12 @@ for flag_name in ONLY_STAGE FROM_STAGE; do
     || die "no such stage '$want'; stages are: $(tr '\n' ' ' <<<"$stage_names")"
 done
 
-stage_count="$(yq '.stages | length' "$STAGES_FILE")"
+stage_count="$(yq -r '.stages | length' "$STAGES_FILE")"
 reached=0
 [[ -z "$FROM_STAGE" ]] && reached=1
 
 for ((si = 0; si < stage_count; si++)); do
-  sname="$(yq ".stages[$si].name" "$STAGES_FILE")"
+  sname="$(yq -r ".stages[$si].name" "$STAGES_FILE")"
 
   if [[ -n "$ONLY_STAGE" && "$sname" != "$ONLY_STAGE" ]]; then continue; fi
   if [[ "$reached" == 0 ]]; then
@@ -196,7 +209,7 @@ for ((si = 0; si < stage_count; si++)); do
     agents)      preflight_agent_secrets; warn_vmcp_down ;;
   esac
 
-  action_count="$(yq ".stages[$si].actions | length" "$STAGES_FILE")"
+  action_count="$(yq -r ".stages[$si].actions | length" "$STAGES_FILE")"
   for ((ai = 0; ai < action_count; ai++)); do
     run_action ".stages[$si].actions[$ai]"
   done

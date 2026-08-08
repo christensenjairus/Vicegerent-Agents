@@ -2,7 +2,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="$(mktemp -d)"
+WORK="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/bin"
 
@@ -284,7 +284,7 @@ assert_log_has "offers session actions before repositories when no sessions exis
 assert_log_has "creates the derived workspace session after selecting new" "$expected_tmux_prefix <new-session> <-s> <main> <-c> <$VICEGERENT_WORKSPACE_ROOT>"
 
 : > "$TEST_LOG"
-TEST_FZF_SESSION_KEY=ctrl-s "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
+TEST_FZF_SESSION_KEY=ctrl-s "$REPO_ROOT/vicegerent" ssh alpha </dev/null >/dev/null 2>&1
 assert_log_has "offers a plain shell from the empty session selector" "<--prompt=Session> >"
 if grep -Fq '<--prompt=Repository> >' "$TEST_LOG" || grep -Fq '<new-session>' "$TEST_LOG"; then
   no "plain shell bypasses directory and tmux selection" "unexpected selector or tmux call: $(tr '\n' ' ' < "$TEST_LOG")"
