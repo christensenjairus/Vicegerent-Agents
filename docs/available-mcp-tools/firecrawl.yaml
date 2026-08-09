@@ -10,7 +10,7 @@ servers:
     tool_count: 27
     tools:
       firecrawl_scrape:
-        description: "Retrieve and extract content from one supplied URL through Firecrawl. Use this when the request identifies a page and needs its content or defined fields. It can return markdown, HTML, links, screenshots, branding data, a targeted answer, or JSON matching a supplied schema; JSON is useful when the requested result has defined fields, while markdown preserves readable page content. This tool operates on a known page. For a set of pages use `firecrawl_crawl`, and to discover page URLs use `firecrawl_map` or `firecrawl_search`. Options include JavaScript render delay, cache age, main-content filtering, PII redaction, and lockdown cache-only retrieval. Browser actions may change the live page when interactive actions are enabled. Returns the selected content formats and page metadata."
+        description: "Retrieve and extract content from one supplied URL through Firecrawl. Use this when the request identifies a page and needs its content or defined fields. It can return markdown, HTML, links, screenshots, branding data, a targeted answer, or JSON matching a supplied schema; JSON is useful when the requested result has defined fields, while markdown preserves readable page content. This tool operates on a known page. For a set of pages use `firecrawl_crawl`, and to discover page URLs use `firecrawl_map` or `firecrawl_search`. Options include JavaScript render delay, cache age, main-content filtering, PII redaction, and lockdown cache-only retrieval. Browser actions may change the live page when interactive actions are enabled. Firecrawl may reuse recently indexed content instead of refetching the page, and the reuse window varies by domain. Set `maxAge: 0` to force a live fetch, or a smaller `maxAge` to bound how stale reused content may be. A successful response does not by itself confirm that the state it describes is still current. Returns the selected content formats and page metadata."
         arguments:
           actions:
             type: "array"
@@ -105,7 +105,7 @@ servers:
             type: "string"
             required: true
       firecrawl_search:
-        description: "Search web, news, or image sources and return ranked results. Operators include quoted phrases, `-term`, `site:host`, `inurl:term`, `intitle:term`, and `related:host`; the set is non-exhaustive. `includeDomains` and `excludeDomains` are mutually exclusive hostname filters; categories limit results to GitHub, research, PDF, or developer sources. For a programming question, add `categories: [\"developer\"]`. It searches an index of GitHub issues, merged pull requests, repository READMEs, and curated documentation sites, and returns the hits in `data.developer` beside the web results. `scrapeOptions` can attach extracted page content. Returns source-type result groups and usage metadata. Authenticated responses can include an `id` for optional search feedback."
+        description: "Search web, news, or image sources and return ranked results. Operators include quoted phrases, `-term`, `site:host`, `inurl:term`, `intitle:term`, and `related:host`; the set is non-exhaustive. `includeDomains` and `excludeDomains` are mutually exclusive hostname filters; categories limit results to GitHub, research, PDF, or developer sources. For a programming question, add `categories: [\"developer\"]`. It searches an index of GitHub issues, merged pull requests, repository READMEs, and curated documentation sites, and returns the hits in `data.developer` beside the web results. `scrapeOptions` can attach extracted page content; pages fetched this way use a fixed reuse window and ignore `maxAge`, so use `firecrawl_scrape` when a live fetch is required. Returns source-type result groups and usage metadata. Authenticated responses can include an `id` for optional search feedback."
         arguments:
           categories:
             type: "array"
@@ -268,7 +268,7 @@ servers:
             type: "string"
             required: true
       firecrawl_extract:
-        description: "Extract structured information from one or more URLs with an optional natural-language prompt and JSON schema. It can include subdomains, follow external links, or use web search when those options are enabled. Use this for a defined structured result rather than full page content. Returns data shaped by the supplied schema or prompt."
+        description: "Deprecated compatibility entry point. Use firecrawl_scrape once per known URL with formats: [\"json\"] and jsonOptions containing the prompt and schema. Use firecrawl_search or firecrawl_agent before Scrape when URLs are not known."
         arguments:
           allowExternalLinks:
             type: "boolean"
@@ -363,6 +363,7 @@ servers:
           maxAge:
             type: "number"
             required: false
+            description: "Ignored: parse never reuses or stores indexed content."
           onlyMainContent:
             type: "boolean"
             required: false

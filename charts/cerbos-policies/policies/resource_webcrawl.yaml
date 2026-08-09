@@ -12,7 +12,7 @@
 # helper (helpers_webcrawl.go) computes isInternalTarget and the three
 # numeric fields; an absent numeric field reads as 0 and never trips its cap.
 #
-# firecrawl_scrape/firecrawl_extract/firecrawl_agent/tavily_extract
+# firecrawl_scrape/firecrawl_agent/tavily_extract
 # don't discover new targets the way crawl/map do, but their single `url` or
 # `urls` array is exactly as caller-controlled and exactly as exposed to the
 # same SSRF trust boundary as crawl/map's starting url -- these were left

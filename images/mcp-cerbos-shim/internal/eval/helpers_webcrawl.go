@@ -83,7 +83,7 @@ func webCrawlAttrOption() []cel.EnvOption {
 
 // webFetchAttrOption computes isInternalTarget for the single-URL/
 // multi-URL fetch tools that were deliberately left unmapped by the crawl/map gate above -- firecrawl_scrape's
-// `url` (a single string), and firecrawl_extract/firecrawl_agent/tavily_extract's
+// `url` (a single string), and firecrawl_agent/tavily_extract's
 // `urls` (a JSON array). These tools don't discover new targets the way crawl/map
 // do, but the SEED target itself is exactly as caller-controlled and exactly as
 // exposed to the platform's trust boundary (host.docker.internal, RFC1918/link-local

@@ -74,7 +74,7 @@ stages:
         type: helm
         repo: https://stakater.github.io/stakater-charts
         chart: reloader
-        version: 2.2.14
+        version: 2.2.15
         namespace: reloader
         values: reloader.yaml
       - name: metrics-server

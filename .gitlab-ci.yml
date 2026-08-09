@@ -293,7 +293,7 @@ validate:host-brew-formulae:
 
 validate:renovate-config:
   stage: validate
-  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:44.14.3
+  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:44.14.12
   interruptible: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -389,7 +389,7 @@ image:republish:all:
 
 scan:renovate:
   stage: scan
-  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:44.14.3
+  image: harbor.hahomelabs.com/ghcr.io/renovatebot/renovate:44.14.12
   resource_group: renovate-main
   interruptible: false
   needs: []
