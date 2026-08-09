@@ -60,6 +60,10 @@ All pull requests and merge requests are forcibly kept as drafts by the platform
 Apply the KISS principle: break work into simple, focused pieces and prefer the simplest solution that satisfies the stated requirements. Simplicity means less incidental structure, not less rigor — never drop investigation, tests, error handling, or correctness, security, reliability, and operational safeguards to make a change look smaller. Explore alternatives freely when reasoning, then converge on one simple design rather than a configurable or speculative one. Do not undertake a large rewrite unless the user asked for one or the existing approach cannot meet the requirements; preferring a simpler design is not authorization to rewrite working code.
 {{- end -}}
 
+{{- define "vicegerent-agent.localRepositoryIndex" -}}
+For broad discovery across the persistent Git clones under `/workspace`, use the local daemonless Zoekt index: run `repo-map index` inside one checkout or pass explicit repository paths, then use `repo-map search <query>` and `repo-map list`; reserve `repo-map index --all` for deliberate whole-workspace indexing because indexes consume persistent disk. Zoekt is a navigation aid, not current-file evidence: it indexes committed Git content, so read the actual file and revision before making claims or editing, and use ordinary file search for uncommitted worktree changes.
+{{- end -}}
+
 {{- /* The common prompt shared by Hermes and every standalone coding harness. */ -}}
 {{- define "vicegerent-agent.sharedSystemPrompt" -}}
 {{ include "vicegerent-agent.vmcpToolDiscovery" . | trim }}
@@ -78,6 +82,7 @@ Apply the KISS principle: break work into simple, focused pieces and prefer the 
 
 {{ include "vicegerent-agent.kissPrinciple" . | trim }}
 
+{{ include "vicegerent-agent.localRepositoryIndex" . | trim }}
 {{- end -}}
 
 {{- /* codingHarnessSystemPrompt = sharedSystemPrompt plus a web-tooling-only

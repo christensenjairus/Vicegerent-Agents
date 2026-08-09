@@ -451,6 +451,9 @@ echo "INFO - Testing installer convergence and CSI recovery failure handling"
 echo "INFO - Testing the interactive agent Bash prompt"
 scripts/test-agent-bash-prompt.sh
 
+echo "INFO - Testing the local repository index wrapper"
+bash scripts/test-repo-map.sh
+
 echo "INFO - Asserting legacy Hermes state migrates into its per-harness home"
 "$PYTHON" images/agent/patches/tests/test_hermes_home_migration.py
 
