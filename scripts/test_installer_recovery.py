@@ -96,7 +96,11 @@ class KubeContextTests(unittest.TestCase):
                       run) printf '192.0.2.1 host.docker.internal\\n' ;;
                     esac
                 """,
-
+                "cilium": """\
+                    #!/bin/sh
+                    printf 'cilium %s\\n' "$*" >> "$LOG"
+                    exit 97
+                """,
             }.items():
                 executable = bin_dir / command
                 executable.write_text(textwrap.dedent(body), encoding="utf-8")

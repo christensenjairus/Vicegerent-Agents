@@ -9,9 +9,7 @@ mkdir -p "$WORK/bin"
 
 cat > "$WORK/bin/kind" <<'EOF'
 #!/usr/bin/env bash
-if [[ "$1 $2" == "get clusters" ]]; then
-  printf 'vicegerent\n'
-fi
+exit 0
 EOF
 
 cat > "$WORK/bin/kubectl" <<'EOF'
@@ -29,7 +27,13 @@ case "$1" in
 esac
 EOF
 
-chmod +x "$WORK/bin/kind" "$WORK/bin/kubectl" "$WORK/bin/docker"
+cat > "$WORK/bin/cilium" <<'EOF'
+#!/usr/bin/env bash
+printf 'cluster setup unexpectedly invoked the legacy CNI bootstrap command\n' >&2
+exit 97
+EOF
+
+chmod +x "$WORK/bin/kind" "$WORK/bin/kubectl" "$WORK/bin/docker" "$WORK/bin/cilium"
 
 if ! output="$(PATH="$WORK/bin:$PATH" "$REPO_ROOT/vicegerent" setup cluster 2>&1)"; then
   printf 'setup cluster failed:\n%s\n' "$output" >&2

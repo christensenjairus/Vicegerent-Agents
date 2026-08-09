@@ -285,6 +285,11 @@ echo "INFO - Asserting every Cerbos policy has a runtime MCP probe"
 echo "INFO - Testing the Kind user-namespace OCI hook repair"
 bash scripts/test-kind-userns-hook-access.sh
 
+echo "INFO - Validating the staged-install manifest before rendering local charts"
+"$PYTHON" scripts/validate-stages.py --static-only
+"$PYTHON" -m unittest scripts.test_validate_stages scripts.test_shim_ci_inputs
+"$PYTHON" images/aws-api-mcp-server/test_sitecustomize.py
+
 echo "INFO - Validating YAML syntax"
 # Tracked files only: a `find` walk also descends into .worktrees/ and any other
 # untracked scratch dir, so an unrelated in-progress branch could fail this run.

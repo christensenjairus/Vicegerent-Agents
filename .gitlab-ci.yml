@@ -146,6 +146,8 @@ validate:shim-go-test:
   variables:
     GOPATH: $CI_PROJECT_DIR/.cache/go
     GOCACHE: $CI_PROJECT_DIR/.cache/go-build
+    # renovate: datasource=github-releases depName=helm/helm
+    HELM_VERSION: v4.2.3
   cache:
     key:
       prefix: shim-go
@@ -158,10 +160,17 @@ validate:shim-go-test:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
         - images/mcp-cerbos-shim/**/*
+        - host/mcp/toolhive-servers.json
+        - charts/mcp-cerbos-shim/**/*
+        - values.defaults.yaml
+        - values.example.yaml
       when: on_success
     - if: $CI_PIPELINE_SOURCE == "web"
       when: on_success
     - when: never
+  before_script:
+    - curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C /tmp
+    - install /tmp/linux-amd64/helm /usr/local/bin/helm
   script:
     - cd images/mcp-cerbos-shim
     - test -z "$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
