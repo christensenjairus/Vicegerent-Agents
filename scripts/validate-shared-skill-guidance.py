@@ -26,6 +26,8 @@ REQUIRED_GUIDANCE: tuple[str, ...] = (
     "Prefer the current `upstream/HEAD`, then `upstream/main` or `upstream/master`",
     "Never pull, reset, rebase, clean, delete branches, or automatically update an existing task worktree as part of hygiene",
     "use the local daemonless Zoekt index: run `repo-map index` inside one checkout",
+    "use `repo-map search -r <query>`",
+    "`-r` prefixes results with their repository so same-named paths are unambiguous",
     "reserve `repo-map index --all` for deliberate whole-workspace indexing",
     "Zoekt is a navigation aid, not current-file evidence:",
     "use ordinary file search for uncommitted worktree changes.",
