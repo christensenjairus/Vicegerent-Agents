@@ -814,5 +814,8 @@ RUN --mount=type=bind,source=patches,target=/tmp/patches \
     && cp -a /opt/hermes/docker/hermes-exec-shim.sh /opt/hermes/bin/hermes \
     && chmod 0755 /etc/cont-init.d/015-supervise-perms /etc/cont-init.d/02-reconcile-profiles /opt/hermes/bin/hermes
 
+# Keep interactive and exec sessions at the root of the persistent repository volume.
+WORKDIR /workspace
+
 ENTRYPOINT [ "/opt/hermes/docker/entrypoint-dispatch.sh" ]
 CMD [ ]
