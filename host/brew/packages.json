@@ -6,11 +6,7 @@
   },
   "notifier": {
     "version": "1.0.0",
-    "bundleIdentifier": "com.hahomelabs.vicegerent.notifier",
-    "obsoleteFormulae": [
-      "homebrew/core/terminal-notifier",
-      "vicegerent/packages/terminal-notifier@2.0.0"
-    ]
+    "bundleIdentifier": "com.hahomelabs.vicegerent.notifier"
   },
   "packages": [
     {

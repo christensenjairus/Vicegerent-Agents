@@ -58,7 +58,6 @@ class Package:
 class Notifier:
     version: str
     bundle_identifier: str
-    obsolete_formulae: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -95,7 +94,6 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> Manifest:
     notifier = Notifier(
         version=notifier_data["version"],
         bundle_identifier=bundle_identifier,
-        obsolete_formulae=tuple(notifier_data.get("obsoleteFormulae", [])),
     )
     packages: list[Package] = []
     for raw in data.get("packages", []):
@@ -500,28 +498,6 @@ def reconcile_notifier(
     )
 
 
-def installed_obsolete_formulae(notifier: Notifier, brew: Brew) -> list[str]:
-    return [
-        installed
-        for formula in notifier.obsolete_formulae
-        if (installed := _installed_formula_name(formula, brew)) is not None
-    ]
-
-
-def remove_obsolete_formulae(notifier: Notifier, brew: Brew) -> None:
-    installed = installed_obsolete_formulae(notifier, brew)
-    if not installed:
-        return
-    pinned = brew.run("list", "--pinned")
-    if pinned.returncode != 0:
-        raise ReconcileError("cannot list pinned Homebrew formulae")
-    pinned_names = set(pinned.stdout.split())
-    for formula in installed:
-        if formula.rsplit("/", 1)[-1] in pinned_names:
-            brew.run("unpin", formula, check=True)
-        brew.run("uninstall", "--ignore-dependencies", formula, check=True)
-
-
 def _probe_expected_version(
     package: Package,
     binary: str,
@@ -598,7 +574,7 @@ def check(
     *,
     check_notifier: Callable[[Notifier, Path], NotifierStatus] = notifier_status,
 ) -> int:
-    statuses, native_status, obsolete = inspect_host_status(
+    statuses, native_status = inspect_host_status(
         manifest,
         brew,
         repo_root,
@@ -608,16 +584,6 @@ def check(
         marker = "OK" if status.ok else ("DRIFT" if status.package.required else "OPTIONAL")
         observed = status.observed_version or "missing"
         print(f"{marker:5} {status.package.name}: expected {status.package.version}, observed {observed} — {status.detail}")
-    if obsolete:
-        obsolete_detail = "obsolete formula is still installed: " + ", ".join(obsolete)
-        native_status = NotifierStatus(
-            False,
-            (
-                obsolete_detail
-                if native_status.ok
-                else f"{native_status.detail}; {obsolete_detail}"
-            ),
-        )
     marker = "OK" if native_status.ok else "DRIFT"
     print(
         f"{marker:5} vicegerent-notifier: expected {manifest.notifier.version} — "
@@ -633,8 +599,7 @@ def inspect_host_status(
     repo_root: Path,
     *,
     check_notifier: Callable[[Notifier, Path], NotifierStatus] | None = None,
-    include_obsolete: bool = True,
-) -> tuple[list[PackageStatus], NotifierStatus, list[str]]:
+) -> tuple[list[PackageStatus], NotifierStatus]:
     """Probe independent package and notifier state concurrently.
 
     Every task is read-only. Reconciliation remains serialized in `apply` so
@@ -642,11 +607,8 @@ def inspect_host_status(
     Results retain manifest order for stable diagnostics.
     """
     notifier_probe = check_notifier or notifier_status
-    task_count = len(manifest.packages) + 1
-    if include_obsolete:
-        task_count += len(manifest.notifier.obsolete_formulae)
     with ThreadPoolExecutor(
-        max_workers=min(task_count, 8),
+        max_workers=min(len(manifest.packages) + 1, 8),
         thread_name_prefix="host-package-check",
     ) as executor:
         package_futures = [
@@ -654,30 +616,16 @@ def inspect_host_status(
             for package in manifest.packages
         ]
         notifier_future = executor.submit(notifier_probe, manifest.notifier, repo_root)
-        obsolete_futures = (
-            [
-                executor.submit(_installed_formula_name, formula, brew)
-                for formula in manifest.notifier.obsolete_formulae
-            ]
-            if include_obsolete
-            else []
-        )
         statuses = [future.result() for future in package_futures]
         native_status = notifier_future.result()
-        obsolete = [
-            installed
-            for future in obsolete_futures
-            if (installed := future.result()) is not None
-        ]
-    return statuses, native_status, obsolete
+    return statuses, native_status
 
 
 def apply(manifest: Manifest, brew: Brew, repo_root: Path) -> int:
-    package_statuses, current_notifier, _ = inspect_host_status(
+    package_statuses, current_notifier = inspect_host_status(
         manifest,
         brew,
         repo_root,
-        include_obsolete=False,
     )
     if any(not status.ok for status in package_statuses):
         ensure_tap(manifest.tap, brew)
@@ -699,7 +647,6 @@ def apply(manifest: Manifest, brew: Brew, repo_root: Path) -> int:
     else:
         print(f"Reconciling vicegerent-notifier {manifest.notifier.version}...")
         reconcile_notifier(manifest.notifier, repo_root)
-    remove_obsolete_formulae(manifest.notifier, brew)
     return check(manifest, brew, repo_root)
 
 
@@ -799,7 +746,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 formula
                 for package in manifest.packages
                 for formula in package.replaces
-            } | set(manifest.notifier.obsolete_formulae))
+            })
             print(f"Will install and link managed Homebrew packages: {versions}")
             print(
                 "Installed floating replacements will be unlinked and uninstalled: "
