@@ -463,6 +463,7 @@ def main() -> None:
         and env.get("HERMES_DASHBOARD") == "1"
         and env.get("HERMES_DASHBOARD_HOST") == "0.0.0.0"
         and env.get("TERMINAL_HOME_MODE") == "real"
+        and env.get("HERMES_TERMINAL_ALLOW_SLACK_SEND") == "true"
     ):
         die("the agent runtime must isolate Hermes state while preserving its environment contract")
     if "-i /opt/agent-ssh/agent_ed25519 " not in env.get("GIT_SSH_COMMAND", ""):

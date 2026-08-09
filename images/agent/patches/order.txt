@@ -60,3 +60,4 @@
 0050-kanban-orchestrator-board-guidance.py
 0051-mcp-parallel-tool-calls.py
 0052-agent-runtime-identity.py
+0053-terminal-slack-send-env.py
