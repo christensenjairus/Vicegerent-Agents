@@ -422,6 +422,8 @@ spec:
                   fieldPath: metadata.name
             - name: HERMES_HOME
               value: /opt/data/.hermes
+            - name: TERMINAL_HOME_MODE
+              value: real
             # Route all HTTP(S) traffic through the GET-only MITM proxy.
             - name: http_proxy
               value: http://egress-proxy.egress-proxy.svc.cluster.local:8080
