@@ -10,7 +10,7 @@ dependencies = [
   "PyYAML==6.0.3",
   "rich==15.0.0",
   "textual==8.2.8",
-  "uv==0.12.3",
+  "uv==0.12.1",
 ]
 
 [tool.uv]
