@@ -54,6 +54,12 @@ case "$command_name" in
     ;;
   index)
     shift
+    case "${1:-}" in
+      -h|--help|help)
+        usage
+        exit 0
+        ;;
+    esac
     mkdir -p "$index_dir"
     repos=()
     if [[ "${1:-}" == "--all" ]]; then
@@ -136,6 +142,17 @@ case "$command_name" in
     exec zoekt -index_dir "$index_dir" "${flags[@]}" "${positional[@]}"
     ;;
   list)
+    shift
+    case "${1:-}" in
+      -h|--help|help)
+        usage
+        exit 0
+        ;;
+    esac
+    (( $# == 0 )) || {
+      printf 'repo-map: list does not accept arguments\n' >&2
+      exit 2
+    }
     [[ -d "$index_dir" ]] || {
       printf 'repo-map: index missing at %s; run repo-map index first\n' "$index_dir" >&2
       exit 1
