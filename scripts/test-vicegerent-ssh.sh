@@ -198,6 +198,13 @@ sys.exit(os.waitstatus_to_exitcode(status))
 PY
 }
 
+capture_color_tty() {
+  (
+    unset NO_COLOR
+    TERM=xterm-256color capture_tty "$@"
+  )
+}
+
 export PATH="$WORK/bin:$PATH"
 export TEST_LOG="$WORK/calls.log"
 export VICEGERENT_WORKSPACE_ROOT="$WORK/workspace"
@@ -218,7 +225,7 @@ expected_tmux_prefix+=" <set-option> <-g> <window-status-current-format> <#[bg=c
 expected_tmux_prefix+=" <set-option> <-g> <mouse> <on> <;>"
 
 : > "$TEST_LOG"
-TERM=xterm-256color capture_tty '' "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
+capture_color_tty '' "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
 if grep '^fzf-input ' "$TEST_LOG" | grep -Fq $'\033'; then
   ok "colors interactive repository selection"
 else
@@ -268,8 +275,8 @@ git -C "$fresh_clone" commit -qam fresh
 fresh_head="$(git -C "$fresh_clone" rev-parse HEAD)"
 
 : > "$TEST_LOG"
-TERM=xterm-256color TEST_TMUX_SESSIONS="solo"$'\t'"$repo"$'\t1 windows\tdetached\tcreated today' \
-  capture_tty '' "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
+TEST_TMUX_SESSIONS="solo"$'\t'"$repo"$'\t1 windows\tdetached\tcreated today' \
+  capture_color_tty '' "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
 if grep '^fzf-input <session:' "$TEST_LOG" | grep -Fq $'\033[0;32msolo' \
   && grep '^fzf-input <new' "$TEST_LOG" | grep -Fq $'\033[0;36mcreate a new session'; then
   ok "colors sessions separately from session actions"
@@ -293,7 +300,7 @@ else
 fi
 
 : > "$TEST_LOG"
-TERM=xterm-256color capture_tty '' "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
+capture_color_tty '' "$REPO_ROOT/vicegerent" ssh alpha >/dev/null 2>&1
 if grep '^fzf-input <repo:' "$TEST_LOG" | grep -Fq $'\033[0;32mexample' \
   && grep '^fzf-input <new' "$TEST_LOG" | grep -Fq $'\033[0;36mcreate a new worktree'; then
   ok "colors repository and worktree actions separately from list items"

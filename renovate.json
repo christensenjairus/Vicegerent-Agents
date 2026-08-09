@@ -34,6 +34,11 @@
       "groupName": "mcp-cerbos-shim go modules"
     },
     {
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["jqlang/jq"],
+      "versioning": "semver-coerced"
+    },
+    {
       "description": "Surface managed Homebrew releases for explicit approval; CI generates repository formulae and checksums, while macOS installation remains a review gate.",
       "matchManagers": ["custom.regex"],
       "matchFileNames": ["host/brew/packages.json"],
