@@ -45,10 +45,6 @@ def native_notifier():
     return reconcile.Notifier(
         version="1.0.0",
         bundle_identifier="com.hahomelabs.vicegerent.notifier",
-        obsolete_formulae=(
-            "homebrew/core/terminal-notifier",
-            "vicegerent/packages/terminal-notifier@2.0.0",
-        ),
     )
 
 
@@ -67,7 +63,6 @@ def manifest_json(packages):
         "notifier": {
             "version": "1.0.0",
             "bundleIdentifier": "com.hahomelabs.vicegerent.notifier",
-            "obsoleteFormulae": ["homebrew/core/terminal-notifier"],
         },
         "packages": packages,
     }
@@ -120,20 +115,12 @@ class DiagnosticTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
-    def test_native_notifier_replaces_both_terminal_notifier_formulae(self):
+    def test_manifest_includes_native_notifier_configuration(self):
         manifest = reconcile.load_manifest()
-        self.assertFalse(any(package.name == "terminal-notifier" for package in manifest.packages))
         self.assertEqual(manifest.notifier.version, "1.0.0")
         self.assertEqual(
             manifest.notifier.bundle_identifier,
             "com.hahomelabs.vicegerent.notifier",
-        )
-        self.assertEqual(
-            manifest.notifier.obsolete_formulae,
-            (
-                "homebrew/core/terminal-notifier",
-                "vicegerent/packages/terminal-notifier@2.0.0",
-            ),
         )
 
     def test_manifest_requires_exact_version_in_formula_name(self):
@@ -413,7 +400,6 @@ class ConcurrentStatusTests(unittest.TestCase):
             notifier=reconcile.Notifier(
                 version="1.0.0",
                 bundle_identifier="com.hahomelabs.vicegerent.notifier",
-                obsolete_formulae=(),
             ),
         )
         barrier = threading.Barrier(3)
@@ -427,7 +413,7 @@ class ConcurrentStatusTests(unittest.TestCase):
             return reconcile.NotifierStatus(True, f"{notifier.version} current")
 
         with patch.object(reconcile, "package_status", side_effect=package_probe):
-            statuses, notifier, obsolete = reconcile.inspect_host_status(
+            statuses, notifier = reconcile.inspect_host_status(
                 manifest,
                 FakeBrew({}),
                 Path("/repo"),
@@ -436,7 +422,6 @@ class ConcurrentStatusTests(unittest.TestCase):
 
         self.assertEqual([status.package.name for status in statuses], ["first", "second"])
         self.assertTrue(notifier.ok)
-        self.assertEqual(obsolete, [])
 
 
 class BundleSignatureTests(unittest.TestCase):
@@ -598,31 +583,6 @@ class NativeNotifierTests(unittest.TestCase):
         self.assertTrue(any(command[0] == str(reconcile.LSREGISTER) for command in calls))
         self.assertTrue(any(command[-1] == "authorize" for command in calls))
         self.assertTrue(any(command[-1] == "remove-all" for command in calls))
-
-    def test_obsolete_formula_cleanup_uses_orphaned_short_name(self):
-        core = "homebrew/core/terminal-notifier"
-        custom = "vicegerent/packages/terminal-notifier@2.0.0"
-        brew = FakeBrew({
-            ("list", "--versions", core): (0, "terminal-notifier 2.0.0\n", ""),
-            ("list", "--versions", custom): (1, "", "No available formula"),
-            ("list", "--versions", "terminal-notifier@2.0.0"): (
-                0,
-                "terminal-notifier@2.0.0 2.0.0\n",
-                "",
-            ),
-            ("list", "--pinned"): (0, "terminal-notifier terminal-notifier@2.0.0\n", ""),
-        }, pinned=("terminal-notifier", "terminal-notifier@2.0.0"))
-
-        reconcile.remove_obsolete_formulae(native_notifier(), brew)
-
-        self.assertIn(("unpin", core), brew.commands)
-        self.assertIn(("uninstall", "--ignore-dependencies", core), brew.commands)
-        self.assertIn(("unpin", "terminal-notifier@2.0.0"), brew.commands)
-        self.assertIn(
-            ("uninstall", "--ignore-dependencies", "terminal-notifier@2.0.0"),
-            brew.commands,
-        )
-
 
 class TapTests(unittest.TestCase):
     def test_missing_tap_is_added_with_pinned_remote(self):
