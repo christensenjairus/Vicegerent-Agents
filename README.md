@@ -64,7 +64,7 @@ Full walkthrough, flags, and troubleshooting: [`docs/setup.md`](docs/setup.md). 
 git clone git@github.com:christensenjairus/vicegerent-agents.git
 cd vicegerent-agents
 
-# 2. Create the Kind cluster + Cilium CNI
+# 2. Create the Kind cluster
 ./vicegerent setup cluster
 
 # 3. Provision platform-wide secrets
@@ -76,7 +76,7 @@ cp values.example.yaml values.yaml
 $EDITOR values.yaml          # cluster vars + the agents you want (start with the example agent)
 ./vicegerent setup secrets agent <name>
 
-# 5. Install the platform (staged helm upgrade --install --wait; idempotent, re-run after any git pull)
+# 5. Install the platform (Cilium is the first staged Helm release; idempotent, re-run after any git pull)
 ./vicegerent install
 
 # 6. Bring up the host-side MCP control plane (ToolHive + vMCP)
@@ -98,7 +98,7 @@ opencode
 
 The command first opens a full-height fuzzy finder over running tmux sessions, searchable by session name and active-pane directory, so an existing repository or worktree can be resumed immediately. Even when none exist, that first menu offers a new session or a plain shell. Choosing a new session opens fuzzy repository and worktree selectors searchable by name and path. Worktree naming and prune confirmation remain inside full-height fzf screens instead of dropping to shell prompts; tmux session names are always derived from the selected repository and worktree. Special actions stay at the top of each list while the initial selection remains on the first normal item. Normal sessions, repositories, and worktrees are green; non-destructive actions are cyan; and the destructive prune action is yellow. The selectors show keyboard shortcuts for their actions: `Ctrl-N` creates a session or worktree, `Ctrl-S` opens a plain shell, `Ctrl-W` selects `/workspace`, and `Ctrl-P` opens worktree pruning. `Esc` moves back through nested selectors instead of quitting; use `Ctrl-C` to quit the selector flow. Interactive Bash uses a compact two-line prompt with the repository, branch, tracked-change marker, shortened path, and prior command failure; set `NO_COLOR=1` for its plain fallback. Pruning fuzzy-finds a linked worktree, requires confirmation, keeps the Git branch, and refuses the primary worktree or a worktree still used by a tmux pane. Detach with `Ctrl-b d` and reconnect with the same command; the coding harness keeps running if the terminal or `kubectl exec` connection drops. The tmux server still belongs to the container, so sessions do not survive an agent Pod or container restart. The same pod-level containment, credentials, egress policy, shared skills, and MCP access apply to all four harnesses. See [`docs/setup.md`](docs/setup.md) for the full shell-access walkthrough.
 
-Requires `kind`, `cilium-cli`, `kubectl`, `helm` 4+, `yq` v4, `jq`, `git`, and OpenSSL 3 (not macOS's LibreSSL) on `PATH`, plus an SSH key with access to your git host.
+Requires `kind`, `kubectl`, `helm` 4+, `yq` v4, `jq`, `git`, and OpenSSL 3 (not macOS's LibreSSL) on `PATH`, plus an SSH key with access to your git host.
 
 ## Development
 

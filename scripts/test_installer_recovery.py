@@ -96,14 +96,7 @@ class KubeContextTests(unittest.TestCase):
                       run) printf '192.0.2.1 host.docker.internal\\n' ;;
                     esac
                 """,
-                "cilium": """\
-                    #!/bin/sh
-                    printf 'cilium %s\\n' "$*" >> "$LOG"
-                """,
-                "yq": """\
-                    #!/bin/sh
-                    printf '1.20.0\\n'
-                """,
+
             }.items():
                 executable = bin_dir / command
                 executable.write_text(textwrap.dedent(body), encoding="utf-8")
@@ -125,7 +118,7 @@ class KubeContextTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("kind create cluster --name test-cluster", commands)
         self.assertIn("kubectl --context kind-test-cluster delete storageclass standard", commands)
-        self.assertIn("cilium install --version 1.20.0 --context kind-test-cluster --set cluster.name=test-cluster", commands)
+        self.assertNotIn("cilium ", commands)
 
 
 class InstallerConvergenceTests(unittest.TestCase):
