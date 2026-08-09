@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 import shutil
@@ -26,23 +25,21 @@ BLOCKED = {
 }
 
 
-def _environment_values(
-    root: Path, *, enabled: bool, function_name: str
-) -> dict[str, str | None]:
-    program = f"""
+def _sanitized_values(root: Path, *, enabled: bool) -> dict[str, str | None]:
+    program = """
 import json
 import os
-from tools.environments.local import {function_name}
+from tools.environments.local import _sanitize_subprocess_env
 
 base = json.loads(os.environ['TEST_BASE_ENV'])
-result = {function_name}(base)
-print(json.dumps({{key: result.get(key) for key in sorted(base)}}))
+sanitized = _sanitize_subprocess_env(base)
+print(json.dumps({key: sanitized.get(key) for key in sorted(base)}))
 """
     env = {
         **os.environ,
         "PYTHONPATH": f"{root}{os.pathsep}/opt/hermes",
         "PYTHONDONTWRITEBYTECODE": "1",
-        "TEST_BASE_ENV": json.dumps({**FORWARDED, **BLOCKED}),
+        "TEST_BASE_ENV": __import__("json").dumps({**FORWARDED, **BLOCKED}),
     }
     if enabled:
         env[FEATURE_FLAG] = "true"
@@ -55,25 +52,20 @@ print(json.dumps({{key: result.get(key) for key in sorted(base)}}))
         capture_output=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    return json.loads(result.stdout)
+    return __import__("json").loads(result.stdout)
 
 
-def _assert_terminal_send_credentials(root: Path, function_name: str) -> None:
-    enabled = _environment_values(root, enabled=True, function_name=function_name)
+def _assert_terminal_send_credentials(root: Path) -> None:
+    enabled = _sanitized_values(root, enabled=True)
     assert {key: enabled[key] for key in FORWARDED} == FORWARDED, enabled
     assert {key: enabled[key] for key in BLOCKED} == {
         key: None for key in BLOCKED
     }, enabled
 
-    disabled = _environment_values(root, enabled=False, function_name=function_name)
+    disabled = _sanitized_values(root, enabled=False)
     assert {key: disabled[key] for key in FORWARDED | BLOCKED} == {
         key: None for key in FORWARDED | BLOCKED
     }, disabled
-
-
-def _assert_all_terminal_paths(root: Path) -> None:
-    for function_name in ("_sanitize_subprocess_env", "_make_run_env"):
-        _assert_terminal_send_credentials(root, function_name)
 
 
 def _apply_patch(source_root: Path, destination: Path, patch: Path) -> None:
@@ -105,14 +97,14 @@ def main() -> int:
     patch = Path(__file__).resolve().parents[1] / "0053-terminal-slack-send-env.py"
 
     if args.pre_fix:
-        _assert_all_terminal_paths(source_root.parent)
+        _assert_terminal_send_credentials(source_root.parent)
     else:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "hermes"
             _apply_patch(source_root, root, patch)
-            _assert_all_terminal_paths(root)
+            _assert_terminal_send_credentials(root)
 
-    print("PASS: terminal hermes send receives only required Slack credentials on every path")
+    print("PASS: terminal hermes send receives only required Slack credentials")
     return 0
 
 

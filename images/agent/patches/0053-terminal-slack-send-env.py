@@ -105,43 +105,15 @@ _patch_exact(
     ),
     description="local.py: apply Slack terminal-send policy to explicit child env",
 )
-_patch_exact(
-    local_path,
-    old=(
-        "        else:\n"
-        "            passthrough = _is_passthrough(k)\n"
-        "            if k in _HERMES_PROVIDER_ENV_BLOCKLIST and not passthrough:\n"
-        "                continue\n"
-        "            value = _resolve_passthrough_value(k, v) if passthrough else v\n"
-    ),
-    new=(
-        "        else:\n"
-        "            passthrough = _is_passthrough(k)\n"
-        "            terminal_slack_send = k in _TERMINAL_SLACK_SEND_ENV_VARS and _terminal_slack_send_enabled()\n"
-        "            if k == 'SLACK_SIGNING_SECRET' or (\n"
-        "                k in _HERMES_PROVIDER_ENV_BLOCKLIST and not passthrough and not terminal_slack_send\n"
-        "            ):\n"
-        "                continue\n"
-        "            value = _resolve_passthrough_value(k, v) if passthrough else v\n"
-    ),
-    description="local.py: apply Slack terminal-send policy to foreground terminal commands",
-)
 
 patched = local_path.read_text(encoding="utf-8")
-foreground = patched[patched.index("def _make_run_env(") :]
 for required in (
     "_TERMINAL_SLACK_SEND_FLAG",
     "_TERMINAL_SLACK_SEND_ENV_VARS",
     "_terminal_slack_send_enabled",
+    "key == 'SLACK_SIGNING_SECRET'",
 ):
     if required not in patched:
         raise RuntimeError(f"local.py missing required terminal Slack send safeguard: {required}")
-for required in (
-    "terminal_slack_send = k in _TERMINAL_SLACK_SEND_ENV_VARS",
-    "k == 'SLACK_SIGNING_SECRET'",
-    "not passthrough and not terminal_slack_send",
-):
-    if required not in foreground:
-        raise RuntimeError(f"local.py foreground terminal path missing Slack safeguard: {required}")
 
 print("Patch 0053 applied and verified.")
