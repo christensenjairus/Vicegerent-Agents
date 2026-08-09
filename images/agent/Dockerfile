@@ -13,9 +13,20 @@ ARG HERMES_GIT_SHA=3c27eb6234bf91b8ceee9e9071591b31e9b148cb
 # Also supplies the Go toolchain (/usr/local/go) copied into the final image below.
 # renovate: datasource=go depName=golang.org/x/tools/gopls
 ARG GOPLS_VERSION=v0.23.0
+
+# Local, daemonless multi-repository code index. Zoekt has no release tags, so
+# pin the source commit and update it deliberately from upstream HEAD.
+ARG ZOEKT_VERSION=c4d8f3537f7a67423835d8cf6b0e1d13e68e0b4c
+
 FROM golang:1.26 AS gopls
 ARG GOPLS_VERSION
 RUN GOBIN=/out GOTOOLCHAIN=auto go install "golang.org/x/tools/gopls@${GOPLS_VERSION}"
+
+FROM golang:1.26 AS zoekt
+ARG ZOEKT_VERSION
+RUN GOBIN=/out GOTOOLCHAIN=auto go install "github.com/sourcegraph/zoekt/cmd/zoekt@${ZOEKT_VERSION}" \
+    && GOBIN=/out GOTOOLCHAIN=auto go install "github.com/sourcegraph/zoekt/cmd/zoekt-git-index@${ZOEKT_VERSION}" \
+    && GOBIN=/out GOTOOLCHAIN=auto go install "github.com/sourcegraph/zoekt/cmd/zoekt-local-sync@${ZOEKT_VERSION}"
 
 # Every purely-static release binary this image bakes, fetched here instead
 # of in the main stage below so a Renovate bump of the Hermes source release
@@ -425,6 +436,7 @@ RUN apt-get -o Acquire::Retries=3 update \
         tar \
         tmux \
         tree \
+        universal-ctags \
         vim \
         xz-utils \
     && rm -rf /var/lib/apt/lists/* \
@@ -602,12 +614,31 @@ RUN printf 'export PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:$PATH"\n' > /etc/
 # Large but changes only with the golang builder stage's FROM.
 COPY --from=gopls /usr/local/go /usr/local/go
 COPY --from=gopls /out/gopls /usr/local/go/bin/gopls
+COPY --from=zoekt /out/zoekt /out/zoekt-git-index /out/zoekt-local-sync /usr/local/bin/
+COPY --chmod=0755 repo-map /usr/local/bin/repo-map
+# Debian exposes Universal Ctags through /usr/bin/ctags, while Zoekt's default
+# lookup expects a binary named universal-ctags. Pin the supported override.
 ENV PATH="/usr/local/go/bin:${PATH}" \
     GOPROXY=https://proxy.golang.org,direct \
     GOSUMDB=sum.golang.org \
-    GOTOOLCHAIN=local
+    GOTOOLCHAIN=local \
+    CTAGS_COMMAND=/usr/bin/ctags
 RUN printf 'export PATH="/usr/local/go/bin:$PATH"\n' >> /etc/profile.d/00-agent-venv-path.sh \
-    && go version
+    && "$CTAGS_COMMAND" --version >/dev/null \
+    && go version \
+    && smoke="$(mktemp -d)" \
+    && git init -q "$smoke/repo" \
+    && git -C "$smoke/repo" config user.name smoke \
+    && git -C "$smoke/repo" config user.email smoke@example.invalid \
+    && printf 'package smoke\nfunc RepoMapSmoke() {}\n' > "$smoke/repo/smoke.go" \
+    && git -C "$smoke/repo" add smoke.go \
+    && git -C "$smoke/repo" commit -qm smoke \
+    && mkdir "$smoke/index" \
+    && zoekt-git-index -require_ctags -index "$smoke/index" "$smoke/repo" \
+    && zoekt -index_dir "$smoke/index" RepoMapSmoke | grep -q RepoMapSmoke \
+    && zoekt-local-sync list -index "$smoke/index" | grep -q repo \
+    && rm -rf "$smoke" \
+    && repo-map --help >/dev/null
 
 # Bake the Mnemosyne + STT model seed outside /opt/data so the data PVC cannot shadow it.
 # The largest single tree in the image and effectively never changes. Modes are

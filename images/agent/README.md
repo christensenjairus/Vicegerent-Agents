@@ -15,6 +15,7 @@ The tagged Hermes source build provides the runtime but **not** the pieces this 
 | `terragrunt` for HCL/Terraform formatting hooks | no |
 | repository linters and formatters (`ruff`, `pyrefly`, `shfmt`, `hadolint`, `golangci-lint`, `ansible-lint`) | no |
 | repository inspection utilities (`fd`, `rsync`, `sqlite3`, `tree`) | no |
+| daemonless committed-code index (`repo-map`, Zoekt, Universal Ctags) | no |
 | netdebug tools (ss, dig, nc) for egress diagnostics | no |
 | bazel / bazelisk / buildozer / buildifier | no |
 
@@ -53,6 +54,7 @@ Hermes remains the bundled gateway and supplies the image's current entrypoint a
 - `terragrunt` via pinned GitHub release asset, for repos whose pre-commit or CI uses `terragrunt hcl format` against `.tf`/`.hcl` files.
 - Terraform CLI via its pinned HashiCorp release, for local repository operations such as `fmt`, `validate`, and `test`; cloud API access remains subject to the sandbox's credentials and egress controls.
 - Repository-native linting and formatting tools: pinned `shfmt`, `hadolint`, and `golangci-lint` release binaries; pinned `ruff`, `pyrefly`, and `ansible-lint` Python packages; and `fd`, `rsync`, `sqlite3`, and `tree` for efficient inspection and safe working-copy operations.
+- A daemonless local committed-code index: Zoekt's CLI, Git indexer, local synchronizer, and Universal Ctags. `repo-map index` refreshes the current checkout, explicit paths index a bounded repository set, and `repo-map index --all` deliberately indexes every direct `/workspace` clone into `/workspace/.zoekt`. Searches are navigation hints over committed refs; agents still read current files before making claims and use ordinary file search for uncommitted changes.
 - `buf` via GitHub release tarball -- `buf lint`/`buf format` for repos whose pre-commit runs those as actual hooks.
 - `clang-format` via `pip install` (PyPI's `clang-format` package ships a prebuilt binary wheel with a console-script entry point) -- lands in `/opt/hermes/.venv/bin` alongside the other `requirements.txt` tools, no separate bake step needed.
 - netdebug tools (`iproute2`/`ss`, `dnsutils`/`dig`, `netcat-openbsd`/`nc`) via apt, for diagnosing egress / CiliumNetworkPolicy hangs from inside the sandbox. A default-deny policy DROPS a blocked outbound connect, so it sits in SYN-SENT until timeout — `ss -tanp state syn-sent` names the stuck dest + PID with no added capabilities. Deliberately excludes `strace`/`tcpdump`: those need `CAP_SYS_PTRACE`/`CAP_NET_RAW`, which the locked-down securityContext strips, so they would bake fine but fail to attach at runtime.

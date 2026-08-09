@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+workspace="${REPO_MAP_WORKSPACE:-/workspace}"
+index_dir="${ZOEKT_INDEX_DIR:-${workspace}/.zoekt}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  repo-map index [REPOSITORY ...]  Index committed Git content (current checkout by default)
+  repo-map index --all             Index every direct Git clone under /workspace
+  repo-map search QUERY...         Search the local index with Zoekt query syntax
+  repo-map list                    List indexed repositories
+
+Environment:
+  ZOEKT_INDEX_DIR     Index directory (default: /workspace/.zoekt)
+  REPO_MAP_WORKSPACE  Default repository root (default: /workspace)
+
+The index is local and daemonless. Results describe committed Git refs; read the
+current source before making claims about uncommitted working-tree content.
+EOF
+}
+
+command_name="${1:---help}"
+case "$command_name" in
+  -h|--help|help)
+    usage
+    ;;
+  index)
+    shift
+    mkdir -p "$index_dir"
+    repos=()
+    if [[ "${1:-}" == "--all" ]]; then
+      shift
+      (( $# == 0 )) || {
+        printf 'repo-map: --all does not accept repository paths\n' >&2
+        exit 2
+      }
+      for candidate in "$workspace"/*; do
+        [[ -e "$candidate/.git" ]] || continue
+        repos+=("$candidate")
+      done
+    elif (( $# )); then
+      repos=("$@")
+    else
+      current="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+      [[ -n "$current" ]] && repos+=("$current")
+    fi
+    (( ${#repos[@]} )) || {
+      printf 'repo-map: no Git repositories found\n' >&2
+      exit 1
+    }
+    for repo in "${repos[@]}"; do
+      [[ -e "$repo/.git" ]] || {
+        printf 'repo-map: not a Git checkout: %s\n' "$repo" >&2
+        exit 1
+      }
+      top="$(git -C "$repo" rev-parse --show-toplevel)"
+      [[ "$(realpath "$repo")" == "$(realpath "$top")" ]] || {
+        printf 'repo-map: path is not the checkout root: %s\n' "$repo" >&2
+        exit 1
+      }
+      printf 'Indexing %s\n' "$top" >&2
+      zoekt-git-index -require_ctags -index "$index_dir" "$top"
+    done
+    ;;
+  search)
+    shift
+    (( $# )) || {
+      printf 'repo-map: search requires a Zoekt query\n' >&2
+      exit 2
+    }
+    [[ -d "$index_dir" ]] || {
+      printf 'repo-map: index missing at %s; run repo-map index first\n' "$index_dir" >&2
+      exit 1
+    }
+    exec zoekt -index_dir "$index_dir" "$@"
+    ;;
+  list)
+    [[ -d "$index_dir" ]] || {
+      printf 'repo-map: index missing at %s; run repo-map index first\n' "$index_dir" >&2
+      exit 1
+    }
+    exec zoekt-local-sync list -index "$index_dir"
+    ;;
+  *)
+    printf 'repo-map: unknown command: %s\n' "$command_name" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
