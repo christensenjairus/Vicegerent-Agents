@@ -121,6 +121,18 @@ _patch_exact(
     description="adapter.py: use Slack-aware proxy resolution for standalone media",
 )
 
+send_message_tool_path = _find_module_path("tools.send_message_tool")
+_patch_exact(
+    send_message_tool_path,
+    old="        _proxy = resolve_proxy_url()\n        _sess_kw, _req_kw = proxy_kwargs_for_aiohttp(_proxy)\n",
+    new=(
+        "        _proxy = resolve_proxy_url(target_hosts=[\"slack.com\"])\n"
+        "        _sess_kw, _req_kw = proxy_kwargs_for_aiohttp(_proxy)\n"
+    ),
+    expected_count=1,
+    description="send_message_tool.py: bypass proxy while resolving Slack user targets",
+)
+
 patched_adapter = adapter_path.read_text(encoding="utf-8")
 for function_name in ("_resolve_slack_user_dm", "_standalone_send"):
     start = patched_adapter.index(f"async def {function_name}(")
@@ -130,6 +142,15 @@ for function_name in ("_resolve_slack_user_dm", "_standalone_send"):
         raise RuntimeError(f"{function_name} still directly resolves the generic proxy")
     if "_resolve_slack_proxy_url()" not in function_source:
         raise RuntimeError(f"{function_name} does not use Slack-aware proxy resolution")
+
+patched_send_message_tool = send_message_tool_path.read_text(encoding="utf-8")
+user_target_start = patched_send_message_tool.index("async def _resolve_slack_user_target(")
+user_target_end = patched_send_message_tool.find("\nasync def ", user_target_start + 1)
+user_target_source = patched_send_message_tool[
+    user_target_start : user_target_end if user_target_end != -1 else None
+]
+if 'resolve_proxy_url(target_hosts=["slack.com"])' not in user_target_source:
+    raise RuntimeError("_resolve_slack_user_target does not bypass the proxy for slack.com")
 
 
 # ---------------------------------------------------------------------------

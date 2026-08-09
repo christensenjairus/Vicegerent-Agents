@@ -18,6 +18,7 @@ FUNCTIONS = (
     "_resolve_slack_user_dm",
     "_standalone_send",
 )
+USER_TARGET_RESOLVER = "_resolve_slack_user_target"
 
 
 def _assert_slack_aware_proxy_resolution(adapter_path: Path) -> None:
@@ -55,8 +56,45 @@ def _assert_slack_aware_proxy_resolution(adapter_path: Path) -> None:
         )
 
 
+def _assert_user_target_resolution_bypasses_proxy(send_tool_path: Path) -> None:
+    tree = ast.parse(send_tool_path.read_text(encoding="utf-8"), filename=str(send_tool_path))
+    function = next(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == USER_TARGET_RESOLVER
+        ),
+        None,
+    )
+    assert function is not None, f"missing expected function: {USER_TARGET_RESOLVER}"
+    proxy_calls = [
+        node
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "resolve_proxy_url"
+    ]
+    assert len(proxy_calls) == 1, f"expected one proxy resolver in {USER_TARGET_RESOLVER}"
+    target_hosts = next(
+        (keyword.value for keyword in proxy_calls[0].keywords if keyword.arg == "target_hosts"),
+        None,
+    )
+    assert isinstance(target_hosts, ast.List), (
+        f"{USER_TARGET_RESOLVER} must pass Slack target hosts to resolve_proxy_url()"
+    )
+    hosts = {
+        item.value
+        for item in target_hosts.elts
+        if isinstance(item, ast.Constant) and isinstance(item.value, str)
+    }
+    assert "slack.com" in hosts, (
+        f"{USER_TARGET_RESOLVER} must bypass Vicegerent's GET-only egress proxy for slack.com"
+    )
+
+
 def _apply_patch(source_root: Path, destination: Path, patch: Path) -> None:
     shutil.copytree(source_root / "plugins", destination / "plugins")
+    shutil.copytree(source_root / "tools", destination / "tools")
     slack_sdk_spec = importlib.util.find_spec("slack_sdk")
     if slack_sdk_spec is None or not slack_sdk_spec.submodule_search_locations:
         raise AssertionError("could not locate the installed slack_sdk package")
@@ -96,11 +134,15 @@ def main() -> int:
         _assert_slack_aware_proxy_resolution(
             source_root / "plugins" / "platforms" / "slack" / "adapter.py"
         )
+        _assert_user_target_resolution_bypasses_proxy(
+            source_root / "tools" / "send_message_tool.py"
+        )
     else:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "hermes"
             _apply_patch(source_root, root, patch)
             _assert_slack_aware_proxy_resolution(root / "plugins" / "platforms" / "slack" / "adapter.py")
+            _assert_user_target_resolution_bypasses_proxy(root / "tools" / "send_message_tool.py")
 
     print("PASS: Slack delivery honors NO_PROXY")
     return 0

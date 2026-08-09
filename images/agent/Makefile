@@ -1,5 +1,5 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/agent
-TAG   ?= v2026.8.3-rev35
+TAG   ?= v2026.8.3-rev36
 REF   := $(IMAGE):$(TAG)
 
 DOCKER    ?= docker
