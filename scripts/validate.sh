@@ -273,6 +273,9 @@ echo "INFO - Asserting one locked Python environment covers repository tooling"
 echo "INFO - Testing serialized Python environment reconciliation"
 bash scripts/test-python-env.sh
 
+echo "INFO - Testing vicegerent command working directory"
+bash scripts/test-vicegerent-cwd.sh
+
 echo "INFO - Asserting every Cerbos policy has a runtime MCP probe"
 "$PYTHON" scripts/validate-policy-runtime-coverage.py
 
