@@ -609,11 +609,6 @@ backends:
         action: fetch
         id: get(args,'url','')
         attrFrom: webFetchAttr(args)
-      firecrawl_firecrawl_extract:
-        resourceType: web_crawl
-        action: fetch
-        id: get(args,'urls','')
-        attrFrom: webFetchAttr(args)
       firecrawl_firecrawl_agent:
         resourceType: web_crawl
         action: fetch

@@ -4,7 +4,7 @@ go 1.25.11
 
 require (
 	github.com/cerbos/cerbos-sdk-go v0.4.2
-	github.com/google/cel-go v0.30.0
+	github.com/google/cel-go v0.31.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1

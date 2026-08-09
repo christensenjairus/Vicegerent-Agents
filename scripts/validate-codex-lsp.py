@@ -76,8 +76,8 @@ def main() -> None:
         fail(f"Agent image must build and smoke-test codex-lsp: {', '.join(missing)}")
 
     packages = json.loads((REPO / "images/agent/package.json").read_text(encoding="utf-8"))
-    if packages.get("dependencies", {}).get("@types/node") != "25.7.0":
-        fail("Agent image must provide @types/node 25.7.0 to compile codex-lsp")
+    if packages.get("dependencies", {}).get("@types/node") != "25.9.5":
+        fail("Agent image must provide @types/node 25.9.5 to compile codex-lsp")
 
     print("OK - Codex launches the baked codex-lsp MCP runtime")
 

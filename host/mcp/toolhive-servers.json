@@ -7,7 +7,7 @@
       "description": "Read-only Kubernetes access \u2014 inspect resources, pods, logs, and Helm releases across the local kind cluster and, via an exec-plugin kubeconfig, a real EKS cluster.",
       "enabled": false,
       "type": "registry",
-      "registry": "harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server:v0.2.2",
+      "registry": "harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server:v0.2.3",
       "transport": "stdio",
       "server_args": ["--read-only","--toolsets=config,core,helm"],
       "kind_cluster": "${KIND_CLUSTER}",
@@ -114,15 +114,15 @@
       "description": "Firecrawl web scraping, crawling, and extraction over arbitrary public URLs.",
       "enabled": false,
       "type": "npx",
-      "package": "firecrawl-mcp@3.23.4",
+      "package": "firecrawl-mcp@3.23.6",
       "network": {
         "allow_hosts": ["api.firecrawl.dev"]
       },
       "secrets": [{"name": "firecrawl_api_key", "prompt": "Firecrawl API key", "target": "FIRECRAWL_API_KEY"}],
       "tools": [
         "firecrawl_scrape", "firecrawl_map", "firecrawl_search", "firecrawl_search_feedback",
-        "firecrawl_feedback", "firecrawl_crawl", "firecrawl_check_crawl_status", "firecrawl_extract",
-        "firecrawl_agent", "firecrawl_agent_status", "firecrawl_interact", "firecrawl_interact_stop",
+        "firecrawl_feedback", "firecrawl_crawl", "firecrawl_check_crawl_status", "firecrawl_agent",
+        "firecrawl_agent_status", "firecrawl_interact", "firecrawl_interact_stop",
         "firecrawl_parse", "firecrawl_monitor_create", "firecrawl_monitor_list", "firecrawl_monitor_get",
         "firecrawl_monitor_update", "firecrawl_monitor_delete", "firecrawl_monitor_run",
         "firecrawl_monitor_checks", "firecrawl_monitor_check", "firecrawl_research_search_papers",

@@ -233,7 +233,7 @@ RUN case "${TARGETARCH}" in \
 
 # Bake rtk for rtk-hermes; arch triples differ between arm64 and amd64 release assets.
 # renovate: datasource=github-releases depName=rtk-ai/rtk
-ARG RTK_VERSION=v0.44.2
+ARG RTK_VERSION=v0.45.0
 RUN case "${TARGETARCH}" in \
         arm64) RTK_TRIPLE=aarch64-unknown-linux-gnu ;; \
         amd64) RTK_TRIPLE=x86_64-unknown-linux-musl ;; \
@@ -248,7 +248,7 @@ RUN case "${TARGETARCH}" in \
 # Offline Mnemosyne + STT model seed for the egress-locked sandbox; preserve HF cache layout.
 FROM python:3.14-slim AS mnemosyne-models
 # renovate: datasource=pypi depName=huggingface-hub
-ARG HUGGINGFACE_HUB_VERSION=1.26.1
+ARG HUGGINGFACE_HUB_VERSION=1.27.0
 RUN pip install --no-cache-dir "huggingface-hub==${HUGGINGFACE_HUB_VERSION}"
 RUN python - <<'PY'
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -317,7 +317,7 @@ RUN apt-get -o Acquire::Retries=3 update \
     && make install
 
 FROM ghcr.io/astral-sh/uv:0.11.6-python3.13-trixie@sha256:b3c543b6c4f23a5f2df22866bd7857e5d304b67a564f4feab6ac22044dde719b AS uv_source
-FROM docker.io/library/node:26-bookworm-slim@sha256:9e6f9357d371591e32ab6f2d8a26d63bdd0d17c29eee3f4f3e7e454d9634bf73 AS node_source
+FROM docker.io/library/node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341 AS node_source
 
 # Fetch the exact tagged Hermes source and verify the tag's peeled commit.
 # The source tree replaces the prebuilt nousresearch/hermes-agent image while

@@ -155,7 +155,6 @@ func TestDeployedWebFetchMapping_MappedToolsReachCerbos(t *testing.T) {
 		args map[string]any
 	}{
 		{"firecrawl_firecrawl_scrape", map[string]any{"url": "http://host.docker.internal:4483/mcp"}},
-		{"firecrawl_firecrawl_extract", map[string]any{"urls": []any{"http://169.254.169.254/latest/meta-data/"}}},
 		{"firecrawl_firecrawl_agent", map[string]any{"urls": []any{"http://169.254.169.254/latest/meta-data/"}}},
 		{"tavily_tavily_extract", map[string]any{"urls": []any{"http://169.254.169.254/latest/meta-data/"}}},
 	}
