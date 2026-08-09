@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resolve through symlinks (e.g. ~/.local/bin/vicegerent) so REPO_ROOT is always the
-# repo checkout — lets the CLI run from any working directory.
+git_common_dir() {
+  local root="$1" common_dir
+  common_dir="$(git -C "$root" rev-parse --git-common-dir)" || return
+  if [[ "$common_dir" != /* ]]; then
+    common_dir="$root/$common_dir"
+  fi
+  cd -P "$common_dir" >/dev/null 2>&1 && pwd
+}
+
+# Resolve the installed CLI target first. When invoked from a sibling worktree of
+# that checkout, run the command and its helpers from the caller's worktree.
 SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SOURCE" ]]; do
   src_dir="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
@@ -10,6 +19,12 @@ while [[ -L "$SOURCE" ]]; do
   [[ "$SOURCE" != /* ]] && SOURCE="$src_dir/$SOURCE"
 done
 REPO_ROOT="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+CALLER_ROOT="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -n "$CALLER_ROOT" ]] \
+  && [[ "$(git_common_dir "$CALLER_ROOT")" == "$(git_common_dir "$REPO_ROOT")" ]]; then
+  REPO_ROOT="$CALLER_ROOT"
+fi
+cd "$REPO_ROOT"
 
 # shellcheck source=scripts/lib/cli-ui.sh
 source "$REPO_ROOT/scripts/lib/cli-ui.sh"
