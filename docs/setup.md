@@ -45,7 +45,6 @@ Prerequisites:
 
 - macOS with Docker (Kind runs its node as a container)
 - `kind`
-- `cilium-cli`
 - `kubectl`
 - `helm` 4+ — the installer uses Helm 4 flags (`--rollback-on-failure`, `--force-replace`, `--hide-notes`) and refuses to run on Helm 3
 - `yq` v4
@@ -54,19 +53,18 @@ Prerequisites:
 - A Homebrew-provided OpenSSL release with `req -addext` support — macOS's stock LibreSSL lacks it. Put its `bin` directory ahead of `/usr/bin` on `PATH`.
 - SSH access to your git host — see "Configuring for your machine" above
 
-Create the cluster (creates the Kind cluster on its docker network, removes kind's auto-installed local-path-provisioner and `standard` StorageClass, installs Cilium as the CNI, and patches CoreDNS to resolve `host.docker.internal`):
+Create the cluster (creates the Kind cluster on its docker network, removes Kind's auto-installed local-path-provisioner and `standard` StorageClass, and patches CoreDNS to resolve `host.docker.internal`):
 
 ```bash
 ./vicegerent setup cluster
 ```
 
-Verify the cluster and CNI:
+Verify the cluster:
 
 ```bash
 KUBE_CONTEXT="${VICEGERENT_KUBE_CONTEXT:-kind-vicegerent}"
 kubectl --context "$KUBE_CONTEXT" get nodes -o wide
 kubectl --context "$KUBE_CONTEXT" get pods -n kube-system
-cilium status --context "$KUBE_CONTEXT"
 kubectl --context "$KUBE_CONTEXT" top nodes
 ```
 
@@ -176,6 +174,8 @@ Slack remains optional. If any Slack value is configured, all four Slack values 
 `./vicegerent install` runs the staged Helm installer in `scripts/install/install.sh`. The control plane (stage order, chart coordinates, pinned versions, image tags) lives in `stages/stages.yaml`; the machine plane (`policy` / `agents` / `egress` / `models` / `replicas`) is your `values.yaml`. It does not run continuously — re-run it yourself after a `git pull` to apply upstream changes.
 
 Each stage runs `helm upgrade --install --wait --rollback-on-failure` (or `kubectl apply -k` for the vendored/CRD manifests) in order and health-gates before moving on, so a re-run delivers upgrades with no gaps. It is idempotent — an immediate re-run with no changes is a no-op. It confirms before each change; pass `-y`/`--yes` for a non-interactive run.
+
+The first stage installs Cilium as the CNI; no separate Cilium CLI installation is required.
 
 ```bash
 ./vicegerent install

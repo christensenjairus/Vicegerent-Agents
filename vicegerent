@@ -30,9 +30,8 @@ cd "$REPO_ROOT"
 source "$REPO_ROOT/scripts/lib/cli-ui.sh"
 C="$UI_CYAN"
 
-# Resolve KUBE_CONTEXT (scripts/lib/kube-context.sh): the canonical kind-vicegerent by
-# default, or the current context under the undocumented VICEGERENT_USE_CURRENT_CONTEXT
-# hatch — always guarded to a local Kind context so a bare kubectl/cilium call can't
+# Resolve KUBE_CONTEXT (scripts/lib/kube-context.sh): default kind-vicegerent or a
+# VICEGERENT_KUBE_CONTEXT-selected local Kind context. It is always guarded so a bare kubectl call can't
 # silently hit whatever cluster the ambient kubeconfig points at.
 # shellcheck source=scripts/lib/kube-context.sh
 source "$REPO_ROOT/scripts/lib/kube-context.sh"
@@ -499,7 +498,7 @@ ${B}vicegerent${N} — operational CLI for the vicegerent infra-agent platform
 ${B}Usage:${N}
   ${C}vicegerent start${N}                        start the Kind cluster + host ToolHive/vMCP stack
   ${C}vicegerent stop${N}                         stop the host stack + Kind cluster
-  ${C}vicegerent setup cluster${N}                create the Kind cluster (+ Cilium CNI)
+  ${C}vicegerent setup cluster${N}                create the Kind cluster
   ${C}vicegerent setup secrets platform${N}       provision platform-wide secrets (idempotent)
   ${C}vicegerent setup secrets agent <name>${N}   provision a named agent's secrets (idempotent)
   ${C}vicegerent setup mcp${N}                    set up host-side MCP prerequisites
@@ -520,8 +519,8 @@ setup_usage() {
   cat <<EOF
 ${B}vicegerent setup${N} — one-time provisioning steps
 
-  ${C}cluster${N}                create the Kind cluster and install Cilium as the CNI
-                         (overridable env: KIND_CONFIG CILIUM_VERSION KIND_DOCKER_NETWORK
+  ${C}cluster${N}                create the Kind cluster; install Cilium with vicegerent install
+                         (overridable env: KIND_CONFIG KIND_DOCKER_NETWORK
                           VICEGERENT_HOST_IP — the host address CoreDNS resolves
                           host.docker.internal to; set it if autodetection fails)
   ${C}secrets platform${N}       provision platform-wide Kubernetes Secrets + host ghostunnel material
@@ -581,22 +580,12 @@ patch_coredns() {
   kubectl --context "$ctx" -n kube-system rollout restart deployment/coredns
 }
 
-# Create the Kind cluster (Kind's default CNI disabled) and install Cilium so it
-# owns pod networking — the CiliumNetworkPolicy egress lock is the security model.
+# Create the Kind cluster with Kind's default CNI disabled. The staged Helm installer
+# installs Cilium before any workloads that depend on CiliumNetworkPolicy.
 cluster_setup() {
   require_kind_context
   local cluster_name="${KUBE_CONTEXT#kind-}"
   local kind_config="${KIND_CONFIG:-$REPO_ROOT/scripts/install/kind-config.yaml}"
-  # Read from the same pin the `cni` stage installs, so a Renovate bump to
-  # stages.yaml can't leave the bootstrap on an older Cilium than the install.
-  local cilium_version="${CILIUM_VERSION:-}"
-  if [[ -z "$cilium_version" ]]; then
-    command -v yq >/dev/null 2>&1 || { ui_error "yq is not installed or not on PATH"; exit 1; }
-    cilium_version="$(yq -r '.stages[].actions[] | select(.name == "cilium") | .version' \
-      "$REPO_ROOT/stages/stages.yaml")"
-    [[ -n "$cilium_version" && "$cilium_version" != "null" ]] \
-      || { ui_error "No Cilium version in stages/stages.yaml"; exit 1; }
-  fi
   # Dedicated docker network so this cluster's node containers are isolated from the
   # default shared `kind` network and any other kind clusters.
   local docker_network="${KIND_DOCKER_NETWORK:-$cluster_name}"
@@ -604,12 +593,6 @@ cluster_setup() {
   for cmd in kind kubectl docker; do
     command -v "$cmd" >/dev/null 2>&1 || { ui_error "$cmd is not installed or not on PATH"; exit 1; }
   done
-  command -v cilium >/dev/null 2>&1 || {
-    ui_error "cilium (cilium-cli) is not installed or not on PATH."
-    echo "  Install it: brew install cilium-cli" >&2
-    echo "  (or see https://docs.cilium.io/en/stable/gettingstarted/k8s-install-helm/)" >&2
-    exit 1
-  }
 
   if kind get clusters 2>/dev/null | grep -qx "$cluster_name"; then
     ui_success "Kind cluster '${cluster_name}' already exists; skipping create."
@@ -631,11 +614,6 @@ cluster_setup() {
   kubectl --context "$KUBE_CONTEXT" delete clusterrole local-path-provisioner-role --ignore-not-found
   kubectl --context "$KUBE_CONTEXT" delete clusterrolebinding local-path-provisioner-bind --ignore-not-found
   kubectl --context "$KUBE_CONTEXT" delete namespace local-path-storage --ignore-not-found
-
-  ui_info "Installing Cilium ${cilium_version} as the CNI…"
-  cilium install --version "$cilium_version" --context "$KUBE_CONTEXT" --set "cluster.name=${cluster_name}" 2>/dev/null \
-    || ui_info "Cilium already installed or install skipped; checking status…"
-  cilium status --wait --context "$KUBE_CONTEXT"
 
   patch_coredns "$cluster_name" "$docker_network"
 }
@@ -725,7 +703,7 @@ case "${1:-}" in
         [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && { setup_usage; exit 0; }
         # cluster_setup is configured entirely by env; reject a positional arg here
         # (most likely a mistaken cluster name) instead of silently ignoring it.
-        [[ $# -eq 0 ]] || { echo "vicegerent setup cluster takes no arguments (configure it via env: VICEGERENT_KUBE_CONTEXT KIND_CONFIG CILIUM_VERSION KIND_DOCKER_NETWORK VICEGERENT_HOST_IP)" >&2; exit 2; }
+        [[ $# -eq 0 ]] || { echo "vicegerent setup cluster takes no arguments (configure it via env: VICEGERENT_KUBE_CONTEXT KIND_CONFIG KIND_DOCKER_NETWORK VICEGERENT_HOST_IP)" >&2; exit 2; }
         cluster_setup
         ;;
       secrets)

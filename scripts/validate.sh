@@ -276,6 +276,9 @@ bash scripts/test-python-env.sh
 echo "INFO - Testing vicegerent command working directory"
 bash scripts/test-vicegerent-cwd.sh
 
+echo "INFO - Testing that cluster setup defers CNI installation to Helm"
+bash scripts/test-cluster-setup-uses-staged-cni.sh
+
 echo "INFO - Asserting every Cerbos policy has a runtime MCP probe"
 "$PYTHON" scripts/validate-policy-runtime-coverage.py
 
