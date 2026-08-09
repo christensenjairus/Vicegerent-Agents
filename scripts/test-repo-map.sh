@@ -52,6 +52,28 @@ grep -q "$work/workspace/alpha" "$log"
 bash "$repo_root/images/agent/repo-map" search 'symbol foo' >/dev/null
 grep -q "search:-index_dir $work/index symbol foo" "$log"
 
+: > "$log"
+bash "$repo_root/images/agent/repo-map" search -l 'symbol foo' >/dev/null
+grep -q "search:-index_dir $work/index -l symbol foo" "$log"
+
+: > "$log"
+bash "$repo_root/images/agent/repo-map" search 'symbol foo' -l >/dev/null
+if ! grep -q "search:-index_dir $work/index -l symbol foo" "$log"; then
+  echo 'repo-map did not reorder a trailing -l flag ahead of the query' >&2
+  exit 1
+fi
+
+: > "$log"
+bash "$repo_root/images/agent/repo-map" search 'movebeat' -l -r '-file:test' >/dev/null
+if ! grep -q "search:-index_dir $work/index -l -r movebeat -file:test" "$log"; then
+  echo 'repo-map did not reorder flags while preserving query term order' >&2
+  exit 1
+fi
+
+: > "$log"
+bash "$repo_root/images/agent/repo-map" search -shard myshard 'symbol foo' >/dev/null
+grep -q "search:-index_dir $work/index -shard myshard symbol foo" "$log"
+
 bash "$repo_root/images/agent/repo-map" list >/dev/null
 grep -q "list:list -index $work/index" "$log"
 

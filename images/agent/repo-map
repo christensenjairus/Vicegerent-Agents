@@ -6,15 +6,41 @@ index_dir="${ZOEKT_INDEX_DIR:-${workspace}/.zoekt}"
 
 usage() {
   cat <<'EOF'
+repo-map is a thin wrapper around the Zoekt code search engine (github.com/sourcegraph/zoekt).
+`repo-map search` execs the `zoekt` CLI directly: its flags and query syntax are
+Zoekt's, not grep/ripgrep's. Do not assume grep-style flags exist (there is no
+--limit, -C, or output_mode=); run `repo-map search -h` to see zoekt's real -help
+output, reproduced below for convenience.
+
 Usage:
   repo-map index [REPOSITORY ...]  Index committed Git content (current checkout by default)
   repo-map index --all             Index every direct Git clone under /workspace
-  repo-map search QUERY...         Search the local index with Zoekt query syntax
+  repo-map search [FLAGS] QUERY... Search the local index with Zoekt query syntax
   repo-map list                    List indexed repositories
 
 Environment:
   ZOEKT_INDEX_DIR     Index directory (default: /workspace/.zoekt)
   REPO_MAP_WORKSPACE  Default repository root (default: /workspace)
+
+Search flags (any position; repo-map reorders them before invoking zoekt):
+  -l                  Print matching filenames only
+  -r                  Prefix each result with its repository name
+  -sym                Restrict to symbol definitions (requires ctags coverage)
+  -jsonl              Print results as JSON Lines
+  -v                  Verbose/background stats
+  -debug              Print debug scoring output
+  -shard STRING       Search only a specific shard
+  -cpu_profile FILE   Write a CPU profile to FILE
+  -full_profile FILE  Write a full profile to FILE
+  -profile_time DUR   Run this long gathering stats
+
+Query syntax notes:
+  - Bare terms are ANDed together: 'foo bar' matches files containing both.
+  - Use regex alternation for OR: '(foo|bar)'.
+  - file:PATTERN and -file:PATTERN filter by path; PATTERN is a regex, not a
+    glob ('file:*.tf' is invalid regex and matches nothing; use 'file:\.tf$').
+  - repo:NAME restricts results to one indexed repository.
+  - Prefix a query with '(?i)' for case-insensitive matching.
 
 The index is local and daemonless. Results describe committed Git refs; read the
 current source before making claims about uncommitted working-tree content.
@@ -74,7 +100,40 @@ case "$command_name" in
       printf 'repo-map: index missing at %s; run repo-map index first\n' "$index_dir" >&2
       exit 1
     }
-    exec zoekt -index_dir "$index_dir" "$@"
+    # Go's flag package stops parsing flags at the first non-flag argument, so
+    # a flag placed after the query (e.g. `repo-map search 'foo' -l`) is
+    # silently treated as extra query text instead of a flag -- no error, just
+    # wrong results. Reorder recognized zoekt flags to the front regardless of
+    # where the caller put them, while leaving Zoekt's own query-syntax tokens
+    # (file:, -file:, repo:, content:, branch:, etc.) untouched as positional
+    # query terms; those are never valid bare zoekt CLI flags.
+    flags=()
+    positional=()
+    while (( $# )); do
+      case "$1" in
+        -l | -r | -sym | -jsonl | -v | -debug)
+          flags+=("$1")
+          shift
+          ;;
+        -shard | -cpu_profile | -full_profile | -profile_time)
+          (( $# >= 2 )) || {
+            printf 'repo-map: %s requires a value\n' "$1" >&2
+            exit 2
+          }
+          flags+=("$1" "$2")
+          shift 2
+          ;;
+        -shard=* | -cpu_profile=* | -full_profile=* | -profile_time=*)
+          flags+=("$1")
+          shift
+          ;;
+        *)
+          positional+=("$1")
+          shift
+          ;;
+      esac
+    done
+    exec zoekt -index_dir "$index_dir" "${flags[@]}" "${positional[@]}"
     ;;
   list)
     [[ -d "$index_dir" ]] || {
