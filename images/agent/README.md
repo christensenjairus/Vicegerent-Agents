@@ -33,9 +33,11 @@ make push
 
 `make help` lists targets. `TAG` is `<upstream-version>-rev<N>`: keep it in sync with `HERMES_VERSION` and bump `-rev<N>` on every rebuild that changes what the image contains, resetting to `-rev1` when the upstream release bumps. The cluster pulls `IfNotPresent`, so a same-tag rebuild is never redeployed — see the image-tag-bump rule in `AGENTS.md`.
 
+Agent builds import and export `harbor.hahomelabs.com/vicegerent/agent:buildcache` using BuildKit's `mode=max` registry cache. This retains independent builder stages such as `sqlite_build` after Docker's local cache garbage collection; override `CACHE_REF` only when deliberately isolating a build cache.
+
 ## Base and source pins
 
-`FROM` uses an explicit DHI Python development tag. Hermes is independently pinned by `HERMES_VERSION` and `HERMES_GIT_SHA`; the clone must resolve the release tag to that exact commit before the build continues. When advancing Hermes, update both pins and re-verify the complete patch stack. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
+`FROM` keeps an explicit DHI Python development tag for update discovery and pins its multi-platform index digest so an upstream rebuild cannot silently replace the final-stage parent and invalidate its complete cache chain. Hermes is independently pinned by `HERMES_VERSION` and `HERMES_GIT_SHA`; the clone must resolve the release tag to that exact commit before the build continues. When advancing Hermes, update both pins and re-verify the complete patch stack. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
 
 ## Runtime identity and homes
 
