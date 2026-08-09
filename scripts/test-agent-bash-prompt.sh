@@ -58,7 +58,8 @@ dirty_output="$(NO_COLOR=1 TERM=xterm-256color bash --noprofile --norc -ic '
 ' bash "$tmp_dir/repo" "$prompt_script" 2>/dev/null)"
 assert_contains "marks tracked Git changes" "$dirty_output" 'dirty=*'
 
-color_output="$(TERM=xterm-256color bash --noprofile --norc -ic '
+# shellcheck disable=SC2016
+color_output="$(env -u NO_COLOR TERM=xterm-256color bash --noprofile --norc -ic '
   cd "$1"
   source "$2"
   __vicegerent_prompt_command
