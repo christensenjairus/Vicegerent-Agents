@@ -1,12 +1,11 @@
 """
-Patch: make Slack always bypass the egress MITM proxy.
+Patch: make all Slack traffic bypass the egress MITM proxy.
 
 In the vicegerent sandbox ALL outbound traffic is pointed at the GET-only
-scrubbing egress proxy via HTTPS_PROXY. Slack must NOT go through it — the proxy
-scrubs ``xox*`` tokens, blocks POST, and blocks the Socket Mode WebSocket, so any
-Slack call routed through it fails (and previously surfaced as a TLS error because
-the proxy presents a MITM cert). The network policy already allows slack.com
-directly; the only thing forcing Slack through the proxy is slack_sdk.
+scrubbing egress proxy via HTTPS_PROXY. Slack must NOT go through it — the proxy scrubs ``xox*`` tokens, blocks POST, and
+blocks the Socket Mode WebSocket, so any Slack call routed through it fails (and
+previously surfaced as a TLS error because the proxy presents a MITM cert). The
+network policy already allows slack.com directly.
 
 slack_sdk's ``AsyncBaseClient.__init__`` auto-loads ``HTTPS_PROXY`` whenever its
 ``proxy`` arg is ``None`` or empty, via ``load_http_proxy_from_env()`` — which
@@ -16,8 +15,10 @@ per-request context client as ``AsyncWebClient(token=..., proxy=app.client.proxy
 = ``AsyncWebClient(proxy=None)`` — and that ``None`` re-triggers the env lookup, so
 the auth middleware's ``auth.test()`` goes back through the proxy and hangs.
 
-Fix: make ``load_http_proxy_from_env`` return ``None`` so an unset proxy means
-"direct". Explicit per-client proxies (``AsyncWebClient(proxy="http://...")``, or
+Fix both proxy paths: make ``load_http_proxy_from_env`` return ``None`` so an
+unset proxy means "direct", and replace generic proxy resolution in standalone
+text, media, and user-ID-to-DM paths with the adapter's existing Slack-aware
+resolver. Explicit per-client proxies (``AsyncWebClient(proxy="http://...")``, or
 the adapter's ``_apply_slack_proxy`` with a real URL) set ``client.proxy`` to a
 non-empty value and never reach this loader, so a deliberately-configured
 SLACK_PROXY still works.
@@ -81,6 +82,54 @@ _patch(
     ),
     description="proxy_env_variable_loader.py: disable env proxy auto-detection",
 )
+
+
+def _patch_exact(
+    path: Path, old: str, new: str, expected_count: int, description: str
+) -> None:
+    src = path.read_text(encoding="utf-8")
+    count = src.count(old)
+    if count == expected_count:
+        path.write_text(src.replace(old, new), encoding="utf-8")
+        print(f"  ok  {description}")
+        return
+    if count == 0 and src.count(new) == expected_count:
+        print(f"  ok  {description} (already applied)")
+        return
+    raise RuntimeError(
+        f"Patch marker mismatch in {path}\n"
+        f"  description : {description}\n"
+        f"  expected    : {expected_count} occurrence(s)\n"
+        f"  found old   : {count}\n"
+        f"  found new   : {src.count(new)}"
+    )
+
+
+adapter_path = _find_module_path("plugins.platforms.slack.adapter")
+_patch_exact(
+    adapter_path,
+    old="        _proxy = resolve_proxy_url()\n        _sess_kw, _req_kw = proxy_kwargs_for_aiohttp(_proxy)\n",
+    new="        _proxy = _resolve_slack_proxy_url()\n        _sess_kw, _req_kw = proxy_kwargs_for_aiohttp(_proxy)\n",
+    expected_count=2,
+    description="adapter.py: use Slack-aware proxy resolution for standalone aiohttp paths",
+)
+_patch_exact(
+    adapter_path,
+    old="        _apply_slack_proxy(client, resolve_proxy_url())\n",
+    new="        _apply_slack_proxy(client, _resolve_slack_proxy_url())\n",
+    expected_count=1,
+    description="adapter.py: use Slack-aware proxy resolution for standalone media",
+)
+
+patched_adapter = adapter_path.read_text(encoding="utf-8")
+for function_name in ("_resolve_slack_user_dm", "_standalone_send"):
+    start = patched_adapter.index(f"async def {function_name}(")
+    next_function = patched_adapter.find("\nasync def ", start + 1)
+    function_source = patched_adapter[start : next_function if next_function != -1 else None]
+    if "resolve_proxy_url()" in function_source:
+        raise RuntimeError(f"{function_name} still directly resolves the generic proxy")
+    if "_resolve_slack_proxy_url()" not in function_source:
+        raise RuntimeError(f"{function_name} does not use Slack-aware proxy resolution")
 
 
 # ---------------------------------------------------------------------------
