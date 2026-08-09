@@ -391,7 +391,7 @@
       "description": "AWS access via aws-api-mcp-server \u2014 read-only, multi-profile AWS CLI execution (call_aws) and natural-language command suggestions across the operator's configured profiles.",
       "enabled": false,
       "type": "registry",
-      "registry": "harbor.hahomelabs.com/vicegerent/aws-api-mcp-server:v0.1.2",
+      "registry": "harbor.hahomelabs.com/vicegerent/aws-api-mcp-server:v0.1.4",
       "transport": "stdio",
       "env": {
         "READ_OPERATIONS_ONLY": "true",

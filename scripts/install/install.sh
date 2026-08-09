@@ -112,6 +112,7 @@ if [[ ! "$yq_major" =~ ^[0-9]+$ ]] || [[ "$yq_major" -lt 4 ]]; then
 fi
 require_kind_context
 [[ -f "$STAGES_FILE" ]] || die "stages file not found: $STAGES_FILE"
+python3 "$REPO_ROOT/scripts/validate-stages.py" --stages "$STAGES_FILE" --static-only
 [[ -f "$DEFAULTS_FILE" ]] || die "defaults file not found: $DEFAULTS_FILE"
 [[ -f "$VALUES_FILE" ]] \
   || die "machine values not found: $VALUES_FILE — copy values.example.yaml to values.yaml and edit it"

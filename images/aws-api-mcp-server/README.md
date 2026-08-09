@@ -12,7 +12,7 @@ Upstream, that freezes the whole ToolHive vMCP. The vMCP re-aggregates every bac
 
 `sitecustomize.py` is placed on `PYTHONPATH` (`/opt/patch`), so Python imports it at interpreter startup — before the server's `main()`. It monkeypatches `awslabs.aws_api_mcp_server.server.call_aws_helper`, offloading the two ctx-free blocking calls (`interpret_command` / `execute_awscli_customization`) to a worker thread via `asyncio.to_thread`, while keeping all FastMCP `Context` I/O on the main loop. The server now answers protocol messages *during* a long AWS call, so it never freezes the vMCP.
 
-The patch **copies** `call_aws_helper`'s body — a wrapper can't help, because the fix has to introduce an `await` at the blocking call sites. It is guarded: it checks the upstream body still has the expected markers and, on any mismatch or error, skips the patch and lets the server run unmodified rather than break startup (a warning is printed to stderr). No behaviour changes beyond moving the blocking work off-loop — `READ_OPERATIONS_ONLY`, security policy, consent, help, and error reporting via `ctx.error` are all preserved.
+The patch **copies** `call_aws_helper`'s body — a wrapper can't help, because the fix has to introduce an `await` at the blocking call sites. It is guarded: the image build explicitly imports the patch and fails when expected compatibility markers are missing or the import raises instead of publishing a known-incompatible server. No behaviour changes beyond moving the blocking work off-loop — `READ_OPERATIONS_ONLY`, security policy, consent, help, and error reporting via `ctx.error` are all preserved.
 
 ## Upstreaming
 
@@ -27,4 +27,4 @@ make release PLATFORM=linux/arm64 TAG=<release-tag>   # build + push to Harbor
 
 ## On base-image bumps
 
-Renovate tracks the base image via the `# renovate` comment on the `ARG AWS_API_MCP_VERSION` in the Dockerfile. When it bumps: rebuild, confirm the patch still applies (the stderr line `patched call_aws_helper …`, not `patch skipped …`), re-verify the copied body against upstream if the markers changed, and bump `TAG`.
+Renovate tracks the base image via the `# renovate` comment on the `ARG AWS_API_MCP_VERSION` in the Dockerfile. When it bumps: rebuild, confirm the patch applies (the stderr line `patched call_aws_helper …`), re-verify the copied body against upstream if the markers changed, run `python3 test_sitecustomize.py`, and bump `TAG`.

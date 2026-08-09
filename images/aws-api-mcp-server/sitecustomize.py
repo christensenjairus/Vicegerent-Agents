@@ -16,9 +16,9 @@ server keeps answering protocol messages while a long AWS call runs.
 
 This copies the body of `call_aws_helper` (it must introduce an `await` at the
 blocking call sites, which a wrapper alone cannot). It is guarded: if the
-upstream body drifts (expected markers missing) or anything else fails, the
-patch is skipped and the server runs unmodified rather than breaking startup —
-re-verify this copy whenever the base image ARG is bumped.
+upstream body drifts (expected markers missing) or anything else fails, the image
+build fails rather than publishing an unpatched backend. Re-verify this copy
+whenever the base image ARG is bumped.
 """
 import sys
 
@@ -41,6 +41,8 @@ def _apply() -> None:
     ):
         if marker not in src:
             raise RuntimeError(f"unexpected call_aws_helper body (missing marker {marker!r})")
+    if inspect.iscoroutinefunction(S.check_security_policy):
+        raise RuntimeError("unexpected async check_security_policy; copied policy flow requires a synchronous result")
 
     async def call_aws_helper(cli_command, ctx, max_results=None, credentials=None, default_region=None):
         """Patched call_aws_helper: the blocking AWS execution runs off the event
@@ -133,5 +135,5 @@ def _apply() -> None:
 
 try:
     _apply()
-except Exception as exc:  # never break interpreter startup
-    print(f"[aws-api-mcp-nonblocking] patch skipped ({exc!r}); server runs unpatched", file=sys.stderr)
+except Exception as exc:
+    raise RuntimeError(f"aws-api-mcp compatibility patch failed: {exc!r}") from exc

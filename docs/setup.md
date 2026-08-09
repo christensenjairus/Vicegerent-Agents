@@ -175,7 +175,7 @@ Slack remains optional. If any Slack value is configured, all four Slack values 
 
 Each stage runs `helm upgrade --install --wait --rollback-on-failure` (or `kubectl apply -k` for the vendored/CRD manifests) in order and health-gates before moving on, so a re-run delivers upgrades with no gaps. It is idempotent — an immediate re-run with no changes is a no-op. It confirms before each change; pass `-y`/`--yes` for a non-interactive run.
 
-The first stage installs Cilium as the CNI; no separate Cilium CLI installation is required.
+The first stage installs Cilium as the CNI.
 
 ```bash
 ./vicegerent install
