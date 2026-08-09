@@ -257,6 +257,12 @@ def validate_platform_naming_contracts() -> None:
         die("login-shell PATH fallback must preserve exec-shim precedence")
     if "FROM nousresearch/hermes-agent:" in dockerfile:
         die("the generic agent image must not inherit the prebuilt Hermes image")
+    if re.search(
+        r"^WORKDIR /workspace\n\nENTRYPOINT \[ \"/opt/hermes/docker/entrypoint-dispatch\.sh\" \]$",
+        dockerfile,
+        re.MULTILINE,
+    ) is None:
+        die("the final agent image working directory must be /workspace")
     if re.search(r"^RUN groupadd --gid 10000 agent \\$", dockerfile, re.MULTILINE) is None:
         die("the generic agent image must create the neutral agent group at gid 10000")
     if re.search(
