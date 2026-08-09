@@ -170,11 +170,12 @@ anthropic:
   auxiliaryModel: {{ .Values.providers.anthropic.auxiliaryModel }}
   mnemosyneModel: {{ .Values.providers.anthropic.mnemosyneModel }}
   moaModels: {{ .Values.providers.anthropic.moaModels | toJson }}
-  models: {{ list .Values.providers.anthropic.model .Values.providers.anthropic.auxiliaryModel .Values.providers.anthropic.mnemosyneModel .Values.providers.anthropic.moaModels.balanced .Values.providers.anthropic.moaModels.frontier .Values.harnesses.claudeCode | uniq | toJson }}
+  models: {{ list .Values.providers.anthropic.model .Values.providers.anthropic.auxiliaryModel .Values.providers.anthropic.mnemosyneModel .Values.providers.anthropic.moaModels.balanced .Values.providers.anthropic.moaModels.frontier .Values.harnesses.claudeCode "claude-haiku-4-5" "claude-sonnet-5" "claude-opus-5" "claude-fable-5" | uniq | toJson }}
   aliases:
-    haiku: {{ .Values.providers.anthropic.auxiliaryModel }}
-    sonnet: {{ .Values.providers.anthropic.model }}
-    opus: {{ .Values.harnesses.claudeCode }}
+    haiku: claude-haiku-4-5
+    sonnet: claude-sonnet-5
+    opus: claude-opus-5
+    fable: claude-fable-5
 openai:
   enabled: {{ .Values.providers.openai.enabled }}
   id: openai-api
@@ -190,7 +191,6 @@ openai:
   moaModels: {{ .Values.providers.openai.moaModels | toJson }}
   models: {{ list .Values.providers.openai.model .Values.providers.openai.auxiliaryModel .Values.providers.openai.mnemosyneModel .Values.providers.openai.moaModels.balanced .Values.providers.openai.moaModels.frontier .Values.harnesses.codex .Values.harnesses.openCode "gpt-5.6-sol" "gpt-5.6-terra" "gpt-5.6-luna" | uniq | toJson }}
   aliases:
-    gpt-5: {{ .Values.providers.openai.model }}
     sol: gpt-5.6-sol
     terra: gpt-5.6-terra
     luna: gpt-5.6-luna
