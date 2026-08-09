@@ -4,7 +4,7 @@
 # Pinned for reproducibility; Renovate's pip_requirements manager tracks updates.
 # Add a package = add a line. No renovate.json change needed.
 absl-py==2.5.0
-agentburn==0.12.3
+agentburn==0.11.0
 ansible-lint==26.6.0
 clang-format==22.1.8
 detect-secrets==1.5.0
@@ -12,7 +12,7 @@ faster-whisper==1.2.1
 mnemosyne-hermes[all]==0.5.0
 numpy==2.5.1
 pre-commit==4.6.1
-pyrefly==1.2.0
+pyrefly==1.1.1
 pygithub==2.9.1
 pygount==3.2.0
 rtk-hermes==1.2.3
