@@ -19,6 +19,7 @@ CLAUDE_BATCH_TOOL = "mcp__vmcp__batch_call_tool"
 CLAUDE_BRIDGE = "/usr/local/bin/vmcp-stdio-bridge"
 VMCP_URL = "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp"
 PROXY_URL = "http://egress-proxy.egress-proxy.svc.cluster.local:8080"
+VMCP_KEEPALIVE_INTERVAL_SECONDS = 10
 
 
 def main() -> None:
@@ -85,6 +86,11 @@ def main() -> None:
     failures = []
     if vmcp.get("supports_parallel_tool_calls") is not True:
         failures.append("vmcp must set supports_parallel_tool_calls: true")
+    if vmcp.get("keepalive_interval") != VMCP_KEEPALIVE_INTERVAL_SECONDS:
+        failures.append(
+            "vmcp must ping every "
+            f"{VMCP_KEEPALIVE_INTERVAL_SECONDS}s to avoid an idle session expiry"
+        )
     if elicitation.get("enabled") is not False:
         failures.append("vmcp must disable elicitation while calls share one connection")
     if agentburn.get("supports_parallel_tool_calls") is not False:

@@ -342,6 +342,7 @@ mcp_servers:
     url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp/vmcp
     timeout: {{ .Values.tuning.vmcp.timeoutSeconds }}
     connect_timeout: {{ .Values.tuning.vmcp.connectTimeoutSeconds }}
+    keepalive_interval: {{ .Values.tuning.vmcp.keepaliveIntervalSeconds }}
     supports_parallel_tool_calls: true
     elicitation:
       enabled: false

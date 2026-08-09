@@ -184,6 +184,8 @@ agentDefaults:
     vmcp:
       timeoutSeconds: 90
       connectTimeoutSeconds: 5
+      # Keep the long-lived Streamable HTTP session below vMCP's idle expiry.
+      keepaliveIntervalSeconds: 10
     toolLoopGuardrails:
       hardStopEnabled: true
       warnAfterExactFailure: 4
