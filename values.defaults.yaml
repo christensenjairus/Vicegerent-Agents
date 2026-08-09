@@ -100,6 +100,11 @@ agentDefaults:
       reasoningEffort: medium
       auxiliaryModel: claude-haiku-4-5
       mnemosyneModel: claude-haiku-4-5
+      aliases:
+        haiku: claude-haiku-4-5
+        sonnet: claude-sonnet-5
+        opus: claude-opus-5
+        fable: claude-fable-5
       moaModels:
         balanced: claude-sonnet-5
         frontier: claude-opus-5
@@ -109,6 +114,10 @@ agentDefaults:
       reasoningEffort: medium
       auxiliaryModel: gpt-4o-mini
       mnemosyneModel: gpt-4o-mini
+      aliases:
+        sol: gpt-5.6-sol
+        terra: gpt-5.6-terra
+        luna: gpt-5.6-luna
       moaModels:
         balanced: gpt-5.4
         frontier: gpt-5.6-sol
