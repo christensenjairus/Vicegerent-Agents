@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Centralized kube-context resolution for the vicegerent CLI and its scripts.
 #
-# Defaults to kind-vicegerent; the undocumented VICEGERENT_USE_CURRENT_CONTEXT escape
-# hatch targets the active kubectl context instead, but the result must still start with
-# 'kind-' or this aborts. require_kind_context sets the global KUBE_CONTEXT, or exits 1 --
+# Defaults to kind-vicegerent. VICEGERENT_KUBE_CONTEXT selects another local Kind
+# context explicitly; the legacy VICEGERENT_USE_CURRENT_CONTEXT escape hatch targets
+# the active context instead. The result must still start with 'kind-' or this aborts.
+# require_kind_context sets the global KUBE_CONTEXT, or exits 1 --
 # call it at statement scope (never inside $(...)), since it may exit.
 # shellcheck source=cli-ui.sh
 if ! declare -F ui_error >/dev/null 2>&1; then
@@ -14,7 +15,9 @@ if ! declare -F ui_error >/dev/null 2>&1; then
 fi
 
 require_kind_context() {
-  if [ -n "${VICEGERENT_USE_CURRENT_CONTEXT:-}" ]; then
+  if [ -n "${VICEGERENT_KUBE_CONTEXT:-}" ]; then
+    KUBE_CONTEXT="$VICEGERENT_KUBE_CONTEXT"
+  elif [ -n "${VICEGERENT_USE_CURRENT_CONTEXT:-}" ]; then
     KUBE_CONTEXT="$(kubectl config current-context 2>/dev/null || true)"
     if [ -z "$KUBE_CONTEXT" ]; then
       ui_error "VICEGERENT_USE_CURRENT_CONTEXT is set, but kubectl has no active context."

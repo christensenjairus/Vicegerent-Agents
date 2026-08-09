@@ -63,13 +63,14 @@ Create the cluster (creates the Kind cluster on its docker network, removes kind
 Verify the cluster and CNI:
 
 ```bash
-kubectl --context kind-vicegerent get nodes -o wide
-kubectl --context kind-vicegerent get pods -n kube-system
-cilium status --context kind-vicegerent
-kubectl --context kind-vicegerent top nodes
+KUBE_CONTEXT="${VICEGERENT_KUBE_CONTEXT:-kind-vicegerent}"
+kubectl --context "$KUBE_CONTEXT" get nodes -o wide
+kubectl --context "$KUBE_CONTEXT" get pods -n kube-system
+cilium status --context "$KUBE_CONTEXT"
+kubectl --context "$KUBE_CONTEXT" top nodes
 ```
 
-If metrics are not ready immediately, wait a minute and rerun `kubectl --context kind-vicegerent top nodes`.
+If metrics are not ready immediately, wait a minute and rerun `kubectl --context "$KUBE_CONTEXT" top nodes`.
 
 ## Secrets setup
 
@@ -200,8 +201,9 @@ The `csi-hostpath-gc` CronJob handles node housekeeping daily at 06:00 America/D
 Check the result:
 
 ```bash
-kubectl --context kind-vicegerent get pods -A
-helm --kube-context kind-vicegerent list -A
+KUBE_CONTEXT="${VICEGERENT_KUBE_CONTEXT:-kind-vicegerent}"
+kubectl --context "$KUBE_CONTEXT" get pods -A
+helm --kube-context "$KUBE_CONTEXT" list -A
 ```
 
 ## Back up and restore the cluster
@@ -242,6 +244,19 @@ $EDITOR values.yaml                    # this machine's cluster vars + agents
 ```
 
 `scripts/install/kind-config.yaml`'s NodePort pool (`30119-30128`) only needs editing if you run two clusters on the same host at once — a single laptop running one cluster can leave it as-is.
+
+### Testing a second local Kind cluster
+
+The default target remains `kind-vicegerent`. To test an existing alternate local Kind cluster without changing kubectl's active context, set `VICEGERENT_KUBE_CONTEXT` for every Vicegerent command in that test session:
+
+```bash
+export VICEGERENT_KUBE_CONTEXT=kind-test-cluster
+./vicegerent setup cluster
+./vicegerent install --stage cni
+./vicegerent mcp start
+```
+
+The context must start with `kind-`; non-Kind contexts are rejected. The selected cluster name drives Cilium's `cluster.name`, and the Kubernetes MCP workload discovers the selected control-plane Docker network and mounts that cluster's internal kubeconfig. A user-supplied Kubernetes MCP kubeconfig continues to take precedence.
 
 ## Host-side MCP control plane
 

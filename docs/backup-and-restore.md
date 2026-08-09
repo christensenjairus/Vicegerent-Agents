@@ -140,37 +140,38 @@ NS=agent-sandbox
 OLD_AGENT=hermes
 NEW_AGENT=bot-jchristensen
 BACKUP="pre-rename-${OLD_AGENT}-to-${NEW_AGENT}-$(date +%Y%m%d%H%M)"
+KUBE_CONTEXT="${VICEGERENT_KUBE_CONTEXT:-kind-vicegerent}"
 
 test "$OLD_AGENT" != "$NEW_AGENT"
 test "$(yq -r '.agents[0].name' values.yaml)" = "$OLD_AGENT"
-helm --kube-context kind-vicegerent status "$OLD_AGENT" -n "$NS"
-kubectl --context kind-vicegerent -n "$NS" get \
+helm --kube-context "$KUBE_CONTEXT" status "$OLD_AGENT" -n "$NS"
+kubectl --context "$KUBE_CONTEXT" -n "$NS" get \
   pvc/data-"$OLD_AGENT" pvc/gitrepos-"$OLD_AGENT" pvc/models-"$OLD_AGENT" \
   secret/"$OLD_AGENT"-secrets secret/"$OLD_AGENT"-ssh-key
-kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json \
+kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json \
   | jq -e 'if .data.agent_ed25519 != null or .data.hermes_agent_ed25519 != null then true else error("source Secret lacks an SSH private key") end'
 
 for resource in \
   pvc/data-"$NEW_AGENT" pvc/gitrepos-"$NEW_AGENT" pvc/models-"$NEW_AGENT" \
   secret/"$NEW_AGENT"-secrets secret/"$NEW_AGENT"-ssh-key; do
-  if kubectl --context kind-vicegerent -n "$NS" get "$resource" >/dev/null 2>&1; then
+  if kubectl --context "$KUBE_CONTEXT" -n "$NS" get "$resource" >/dev/null 2>&1; then
     echo "target already exists: $resource" >&2
     exit 1
   fi
 done
 
-helm --kube-context kind-vicegerent uninstall "$OLD_AGENT" -n "$NS" --wait
+helm --kube-context "$KUBE_CONTEXT" uninstall "$OLD_AGENT" -n "$NS" --wait
 ```
 
 Take the rollback backup after quiescing the old agent. It contains the `data` and `gitrepos` volume data and both old-name Secret objects. The `models` PVC is deliberately excluded from Velero; the CSI clone below preserves it, but a backup-only recovery reseeds it from the image.
 
 ```bash
 velero backup create "$BACKUP" --exclude-namespaces velero --wait
-test "$(kubectl --context kind-vicegerent -n velero get backup "$BACKUP" -o jsonpath='{.status.phase}')" = Completed
+test "$(kubectl --context "$KUBE_CONTEXT" -n velero get backup "$BACKUP" -o jsonpath='{.status.phase}')" = Completed
 
 for volume in data gitrepos; do
-  uid="$(kubectl --context kind-vicegerent -n "$NS" get pvc "${volume}-${OLD_AGENT}" -o jsonpath='{.metadata.uid}')"
-  kubectl --context kind-vicegerent -n velero get datauploads \
+  uid="$(kubectl --context "$KUBE_CONTEXT" -n "$NS" get pvc "${volume}-${OLD_AGENT}" -o jsonpath='{.metadata.uid}')"
+  kubectl --context "$KUBE_CONTEXT" -n velero get datauploads \
     -l "velero.io/backup-name=$BACKUP" -o json \
     | jq -e --arg uid "$uid" '[.items[] | select(.metadata.labels["velero.io/pvc-uid"] == $uid and .status.phase == "Completed")] | length == 1'
 done
@@ -181,7 +182,7 @@ velero backup describe "$BACKUP" --details
 Copy the two Secrets to release-named targets without decoding their data into the shell. The general agent Secret keeps its data keys unchanged, while the SSH Secret maps the retired `hermes_agent_ed25519` data key to the new `agent_ed25519` contract. `kubectl create` intentionally fails if either target already exists; inspect and remove a target from an abandoned attempt rather than silently overwriting it.
 
 ```bash
-kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-secrets" -o json \
+kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${OLD_AGENT}-secrets" -o json \
   | jq -e --arg destination "${NEW_AGENT}-secrets" --arg namespace "$NS" '
       if ((.data // {}) | length) == 0 then
         error("source Secret has no data")
@@ -194,9 +195,9 @@ kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-secrets" -o 
           data: .data
         }
       end' \
-  | kubectl --context kind-vicegerent create -f -
+  | kubectl --context "$KUBE_CONTEXT" create -f -
 
-kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json \
+kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json \
   | jq -e --arg destination "${NEW_AGENT}-ssh-key" --arg namespace "$NS" '
       (.data.agent_ed25519 // .data.hermes_agent_ed25519) as $private_key
       | if $private_key == null then
@@ -210,13 +211,13 @@ kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o 
             data: {agent_ed25519: $private_key}
           }
         end' \
-  | kubectl --context kind-vicegerent create -f -
+  | kubectl --context "$KUBE_CONTEXT" create -f -
 ```
 
 If an earlier version of this runbook already created the target SSH Secret by copying the retired data key unchanged, normalize that existing Secret in place. The read-back object retains the resource version required by `kubectl replace`, and the private key remains base64-encoded inside the pipeline.
 
 ```bash
-kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json \
+kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json \
   | jq -e '
       (.data.agent_ed25519 // .data.hermes_agent_ed25519) as $private_key
       | if $private_key == null then
@@ -224,7 +225,7 @@ kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o 
         else
           .data = {agent_ed25519: $private_key}
         end' \
-  | kubectl --context kind-vicegerent replace -f -
+  | kubectl --context "$KUBE_CONTEXT" replace -f -
 ```
 
 Create independently provisioned, Helm-owned target PVCs from the quiesced source claims. The labels and annotations let the new release adopt the claims on its first install while preserving the models-volume backup exclusion.
@@ -234,7 +235,7 @@ for volume in data gitrepos models; do
   source="${volume}-${OLD_AGENT}"
   destination="${volume}-${NEW_AGENT}"
 
-  kubectl --context kind-vicegerent -n "$NS" get pvc "$source" -o json \
+  kubectl --context "$KUBE_CONTEXT" -n "$NS" get pvc "$source" -o json \
     | jq -e --arg destination "$destination" --arg release "$NEW_AGENT" --arg volume "$volume" '
         . as $source
         | {
@@ -268,10 +269,10 @@ for volume in data gitrepos models; do
               }
             }
           }' \
-    | kubectl --context kind-vicegerent create -f -
+    | kubectl --context "$KUBE_CONTEXT" create -f -
 done
 
-kubectl --context kind-vicegerent -n "$NS" wait \
+kubectl --context "$KUBE_CONTEXT" -n "$NS" wait \
   --for=jsonpath='{.status.phase}'=Bound \
   pvc/data-"$NEW_AGENT" pvc/gitrepos-"$NEW_AGENT" pvc/models-"$NEW_AGENT" \
   --timeout=30m
@@ -284,20 +285,20 @@ ${EDITOR:-vi} values.yaml
 test "$(yq -r '.agents[0].name' values.yaml)" = "$NEW_AGENT"
 ./vicegerent install --stage agents
 
-helm --kube-context kind-vicegerent status "$NEW_AGENT" -n "$NS"
-kubectl --context kind-vicegerent -n "$NS" get sandbox "$NEW_AGENT"
-kubectl --context kind-vicegerent -n "$NS" get \
+helm --kube-context "$KUBE_CONTEXT" status "$NEW_AGENT" -n "$NS"
+kubectl --context "$KUBE_CONTEXT" -n "$NS" get sandbox "$NEW_AGENT"
+kubectl --context "$KUBE_CONTEXT" -n "$NS" get \
   pvc/data-"$NEW_AGENT" pvc/gitrepos-"$NEW_AGENT" pvc/models-"$NEW_AGENT" \
   secret/"$NEW_AGENT"-secrets secret/"$NEW_AGENT"-ssh-key
 
-source_hash="$(kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-secrets" -o json | jq -Sc '.data' | shasum -a 256 | cut -d ' ' -f 1)"
-destination_hash="$(kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-secrets" -o json | jq -Sc '.data' | shasum -a 256 | cut -d ' ' -f 1)"
+source_hash="$(kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${OLD_AGENT}-secrets" -o json | jq -Sc '.data' | shasum -a 256 | cut -d ' ' -f 1)"
+destination_hash="$(kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${NEW_AGENT}-secrets" -o json | jq -Sc '.data' | shasum -a 256 | cut -d ' ' -f 1)"
 test "$source_hash" = "$destination_hash"
 
-source_ssh="$(kubectl --context kind-vicegerent -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json | jq -er '.data.agent_ed25519 // .data.hermes_agent_ed25519')"
-destination_ssh="$(kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json | jq -er '.data.agent_ed25519')"
+source_ssh="$(kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${OLD_AGENT}-ssh-key" -o json | jq -er '.data.agent_ed25519 // .data.hermes_agent_ed25519')"
+destination_ssh="$(kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json | jq -er '.data.agent_ed25519')"
 test "$source_ssh" = "$destination_ssh"
-kubectl --context kind-vicegerent -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json \
+kubectl --context "$KUBE_CONTEXT" -n "$NS" get secret "${NEW_AGENT}-ssh-key" -o json \
   | jq -e '.data.agent_ed25519 != null and .data.hermes_agent_ed25519 == null'
 ```
 
