@@ -88,4 +88,10 @@ if ZOEKT_INDEX_DIR="$work/no-index" bash "$repo_root/images/agent/repo-map" sear
 fi
 
 bash "$repo_root/images/agent/repo-map" --help | grep -q 'committed Git content'
+bash "$repo_root/images/agent/repo-map" index --help | grep -q 'Index committed Git content'
+bash "$repo_root/images/agent/repo-map" list --help | grep -q 'List indexed repositories'
+if bash "$repo_root/images/agent/repo-map" list unexpected >/dev/null 2>&1; then
+  echo 'repo-map accepted an unexpected list argument' >&2
+  exit 1
+fi
 printf 'PASS - repo-map indexes direct clones only and routes search/list to the local Zoekt index\n'
