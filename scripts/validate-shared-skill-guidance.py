@@ -29,6 +29,8 @@ REQUIRED_GUIDANCE: tuple[str, ...] = (
     "use `repo-map search -r <query>`",
     "`-r` prefixes results with their repository so same-named paths are unambiguous",
     "reserve `repo-map index --all` for deliberate whole-workspace indexing",
+    "Prefer `repo-map` over shell search or opening files whenever the goal is locating something across a repository or across repositories",
+    "consult `repo-map --help` for its query syntax",
     "Zoekt is a navigation aid, not current-file evidence:",
     "use ordinary file search for uncommitted worktree changes.",
 )
