@@ -85,7 +85,7 @@ RUN case "${TARGETARCH}" in \
 
 # Bake local repository inspection, formatting, and linting tools. Cluster/cloud
 # CLIs belong in MCP servers, not the sandbox image.
-# renovate: datasource=github-releases depName=jqlang/jq
+# renovate: datasource=github-tags depName=jqlang/jq
 ARG JQ_VERSION=1.8.2
 # renovate: datasource=github-releases depName=mikefarah/yq
 ARG YQ_VERSION=v4.53.3
