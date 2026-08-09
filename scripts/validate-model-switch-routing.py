@@ -120,10 +120,41 @@ def inspect(label: str, rendered: str, config: dict, enabled: set[str], failures
             failures.append(f"{label}: providers.{provider_id}.api bypasses Agentgateway: {api!r}")
 
     assert_route(f"{label}.model", config.get("model") or {}, providers, failures)
-    for alias, route in (config.get("model_aliases") or {}).items():
+    aliases = config.get("model_aliases") or {}
+    expected_aliases = {
+        "anthropic": {
+            "haiku": ("anthropic", "claude-haiku-4-5"),
+            "sonnet": ("anthropic", "claude-sonnet-5"),
+            "opus": ("anthropic", "claude-opus-5"),
+            "fable": ("anthropic", "claude-fable-5"),
+        },
+        "openai": {
+            "sol": ("openai-api", "gpt-5.6-sol"),
+            "terra": ("openai-api", "gpt-5.6-terra"),
+            "luna": ("openai-api", "gpt-5.6-luna"),
+        },
+        "deepseek": {"deepseek": ("deepseek", "deepseek-v4-pro")},
+        "zai": {"zai": ("zai", "glm-5.2")},
+    }
+    expected_aliases = {
+        alias: target
+        for provider in enabled
+        for alias, target in expected_aliases[provider].items()
+    }
+    if set(aliases) != set(expected_aliases):
+        failures.append(
+            f"{label}: model aliases are {sorted(aliases)}, expected {sorted(expected_aliases)}"
+        )
+    for alias, route in aliases.items():
         assert_route(
             f"{label}.model_aliases.{alias}", route, providers, failures, connection=False
         )
+        expected = expected_aliases.get(alias)
+        if expected and (route.get("provider"), route.get("model")) != expected:
+            failures.append(
+                f"{label}.model_aliases.{alias}: route is "
+                f"{(route.get('provider'), route.get('model'))!r}, expected {expected!r}"
+            )
     moa = config.get("moa") or {}
     presets = moa.get("presets") or {}
     if moa.get("default_preset") != "default" or set(presets) != {"default", "frontier"}:
@@ -348,7 +379,6 @@ def main() -> int:
                     "OPENAI_BASE_URL": PROVIDERS["openai"]["api"],
                 })
                 for current, expected, requested in (
-                    ("anthropic", "openai-api", "gpt-5"),
                     ("anthropic", "openai-api", "sol"),
                     ("anthropic", "openai-api", "terra"),
                     ("anthropic", "openai-api", "luna"),
