@@ -10,15 +10,15 @@
       "registry": "harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server:v0.2.2",
       "transport": "stdio",
       "server_args": ["--read-only","--toolsets=config,core,helm"],
-      "kind_cluster": "vicegerent",
-      "run_flags": ["--network", "vicegerent", "--isolate-network=false"],
+      "kind_cluster": "${KIND_CLUSTER}",
+      "run_flags": ["--network", "${KIND_DOCKER_NETWORK}", "--isolate-network=false"],
       "network": {
         "exempt": true
       },
       "params": [
         {
           "name": "kubeconfig",
-          "prompt": "Kubeconfig path for the target cluster (blank = auto-generate from the kind 'vicegerent' cluster)",
+          "prompt": "Kubeconfig path for the target cluster (blank = auto-generate from the selected Kind cluster)",
           "apply": "kubeconfig",
           "secret": true
         },

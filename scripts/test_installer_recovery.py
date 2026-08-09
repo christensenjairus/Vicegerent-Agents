@@ -24,6 +24,8 @@ CSI_RESTORE = REPO_ROOT / "stages/kustomize/csi-driver-host-path/gc/restore-csi-
 CSI_CRONJOB = REPO_ROOT / "stages/kustomize/csi-driver-host-path/gc/cronjob.yaml"
 CSI_PRUNE = REPO_ROOT / "stages/kustomize/csi-driver-host-path/gc/prune-node-images.sh"
 MCP_MODULE = REPO_ROOT / "host/mcp/vicegerent_mcp.py"
+KUBE_CONTEXT_LIB = REPO_ROOT / "scripts/lib/kube-context.sh"
+HELM_LIB = REPO_ROOT / "scripts/install/lib/helm.sh"
 
 
 def load_mcp_module():
@@ -32,6 +34,98 @@ def load_mcp_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+class KubeContextTests(unittest.TestCase):
+    def test_explicit_kind_context_overrides_the_default(self) -> None:
+        harness = textwrap.dedent(
+            f"""
+            source {KUBE_CONTEXT_LIB!s}
+            require_kind_context
+            printf '%s\\n' "$KUBE_CONTEXT"
+            """
+        )
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "VICEGERENT_KUBE_CONTEXT": "kind-test-cluster"},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "kind-test-cluster")
+
+    def test_context_value_sets_cilium_cluster_name(self) -> None:
+        harness = textwrap.dedent(
+            f"""
+            set -euo pipefail
+            REPO_ROOT={REPO_ROOT!s}
+            KUBE_CONTEXT=kind-test-cluster
+            source {HELM_LIB!s}
+            _do_helm() {{ printf '%s\\n' "${{VALS[*]}}"; }}
+            helm_remote cilium https://helm.cilium.io cilium 1.20.0 kube-system cilium.yaml false cluster.name
+            """
+        )
+        result = subprocess.run(["bash", "-c", harness], text=True, capture_output=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "-f " + str(REPO_ROOT / "stages/values/cilium.yaml") + " --set cluster.name=test-cluster")
+
+    def test_cluster_setup_creates_the_selected_kind_context(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            log = root / "commands.log"
+            for command, body in {
+                "kind": """\
+                    #!/bin/sh
+                    printf 'kind %s\\n' "$*" >> "$LOG"
+                    exit 0
+                """,
+                "kubectl": """\
+                    #!/bin/sh
+                    printf 'kubectl %s\\n' "$*" >> "$LOG"
+                    exit 0
+                """,
+                "docker": """\
+                    #!/bin/sh
+                    printf 'docker %s\\n' "$*" >> "$LOG"
+                    case "$1" in
+                      exec) printf '755\\n' ;;
+                      run) printf '192.0.2.1 host.docker.internal\\n' ;;
+                    esac
+                """,
+                "cilium": """\
+                    #!/bin/sh
+                    printf 'cilium %s\\n' "$*" >> "$LOG"
+                """,
+                "yq": """\
+                    #!/bin/sh
+                    printf '1.20.0\\n'
+                """,
+            }.items():
+                executable = bin_dir / command
+                executable.write_text(textwrap.dedent(body), encoding="utf-8")
+                executable.chmod(0o755)
+
+            result = subprocess.run(
+                [str(REPO_ROOT / "vicegerent"), "setup", "cluster"],
+                text=True,
+                capture_output=True,
+                env={
+                    **os.environ,
+                    "LOG": str(log),
+                    "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                    "VICEGERENT_KUBE_CONTEXT": "kind-test-cluster",
+                },
+            )
+
+            commands = log.read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("kind create cluster --name test-cluster", commands)
+        self.assertIn("kubectl --context kind-test-cluster delete storageclass standard", commands)
+        self.assertIn("cilium install --version 1.20.0 --context kind-test-cluster --set cluster.name=test-cluster", commands)
 
 
 class InstallerConvergenceTests(unittest.TestCase):

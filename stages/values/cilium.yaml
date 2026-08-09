@@ -1,8 +1,6 @@
 ---
 # https://github.com/cilium/cilium/blob/v1.20.0/install/kubernetes/cilium/values.yaml
 # Captured from the live cilium-cli install so helm adoption is non-disruptive.
-cluster:
-  name: kind-vicegerent
 ipam:
   mode: kubernetes
 operator:

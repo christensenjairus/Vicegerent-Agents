@@ -42,11 +42,14 @@ _vals_from_file() {
   if [[ -n "$values" ]]; then VALS=(-f "$REPO_ROOT/stages/values/$values"); fi
 }
 
-# helm_remote <name> <repo> <chart> <version> <namespace> <values> <crds>
+# helm_remote <name> <repo> <chart> <version> <namespace> <values> <crds> [contextValue]
+# contextValue maps a chart setting to the selected Kind cluster name, keeping
+# cluster-scoped controller identities aligned when testing another Kind context.
 helm_remote() {
-  local name="$1" repo="$2" chart="$3" version="$4" namespace="$5" values="$6" crds="$7"
+  local name="$1" repo="$2" chart="$3" version="$4" namespace="$5" values="$6" crds="$7" context_value="${8:-}"
   LOC=("$chart" --repo "$repo" --version "$version")
   _vals_from_file "$values"
+  [[ -n "$context_value" ]] && VALS+=(--set "$context_value=${KUBE_CONTEXT#kind-}")
   _do_helm "$name" "$namespace" "$crds"
 }
 

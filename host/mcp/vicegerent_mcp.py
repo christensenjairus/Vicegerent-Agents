@@ -1091,7 +1091,7 @@ def build_thv_run_argv(
     if transport:
         argv += ["--transport", transport]
 
-    argv += list(server.get("run_flags", []))
+    argv += resolved_run_flags(server)
 
     # Network egress lockdown: isolation is ToolHive's default since
     # v0.30.1, so an unrestricted workload here would be one that already
@@ -1129,10 +1129,11 @@ def build_thv_run_argv(
                 kubeconfig = Path(value).expanduser()
                 if not kubeconfig.is_file():
                     raise SystemExit(f"{name}: kubeconfig not found: {kubeconfig}")
-            elif server.get("kind_cluster"):
-                kubeconfig = write_internal_kubeconfig(server["kind_cluster"], runtime_dir)
             else:
-                raise SystemExit(f"{name}: no kubeconfig set — run `./vicegerent setup mcp`")
+                cluster = kind_cluster(server)
+                if not cluster:
+                    raise SystemExit(f"{name}: no kubeconfig set — run `./vicegerent setup mcp`")
+                kubeconfig = write_internal_kubeconfig(cluster, runtime_dir)
             argv += ["-v", f"{kubeconfig}:{KUBECONFIG_CONTAINER_PATH}:ro"]
             argv += ["-e", f"KUBECONFIG={KUBECONFIG_CONTAINER_PATH}"]
             server_args += ["--kubeconfig", KUBECONFIG_CONTAINER_PATH]
@@ -1229,6 +1230,44 @@ def write_internal_kubeconfig(cluster: str, runtime_dir: Path) -> Path:
     return dest
 
 
+def kind_cluster(server: dict[str, Any]) -> str | None:
+    """Resolve a configured Kind cluster, including the selected-context placeholder."""
+    configured = server.get("kind_cluster")
+    if configured != "${KIND_CLUSTER}":
+        return configured
+    context = resolve_kind_context()
+    if not context:
+        raise SystemExit("cannot resolve the selected Kind cluster")
+    return context.removeprefix("kind-")
+
+
+def kind_docker_network(cluster: str) -> str:
+    """Return the sole Docker network of a Kind control-plane node."""
+    result = subprocess.run(
+        ["docker", "inspect", "--format", "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}\n{{end}}", f"{cluster}-control-plane"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    networks = [line for line in result.stdout.splitlines() if line]
+    if result.returncode != 0 or len(networks) != 1:
+        detail = result.stderr.strip() or f"found {networks!r}"
+        raise SystemExit(f"could not determine the Docker network for Kind cluster {cluster!r}: {detail}")
+    return networks[0]
+
+
+def resolved_run_flags(server: dict[str, Any]) -> list[str]:
+    """Expand Kind network placeholders in a workload's ToolHive run flags."""
+    flags = list(server.get("run_flags", []))
+    if not any("${KIND_DOCKER_NETWORK}" in flag for flag in flags):
+        return flags
+    cluster = kind_cluster(server)
+    if not cluster:
+        raise SystemExit(f"{server['name']}: Kind network placeholder needs kind_cluster")
+    network = kind_docker_network(cluster)
+    return [flag.replace("${KIND_DOCKER_NETWORK}", network) for flag in flags]
+
+
 def _ca_data(text: str) -> str:
     m = re.search(r"certificate-authority-data:\s*(\S+)", text)
     return m.group(1) if m else ""
@@ -1240,7 +1279,7 @@ def kind_kubeconfig_stale(server: dict[str, Any], runtime_dir: Path) -> bool:
     MCP server then fails API calls with 'certificate signed by unknown authority'.
     Detect this by comparing the mounted CA to the current one so start can recreate.
     """
-    cluster = server.get("kind_cluster")
+    cluster = kind_cluster(server)
     if not cluster:
         return False
     dest = runtime_dir / f"kubeconfig-{cluster}.yaml"
@@ -1336,7 +1375,7 @@ def server_spec_fingerprint(server: dict[str, Any], runtime_dir: Path) -> str:
         "package": server.get("package"),
         "registry": server.get("registry"),
         "transport": server.get("transport"),
-        "run_flags": list(server.get("run_flags", [])),
+        "run_flags": resolved_run_flags(server),
         "server_args": list(server.get("server_args", [])),
         "server_args_after": list(server.get("server_args_after", [])),
         "env": dict(sorted(server.get("env", {}).items())),
@@ -2076,15 +2115,15 @@ def status(
 def resolve_kind_context() -> str | None:
     """Return the Kind context vicegerent should target, or None on error.
 
-    By default this is the canonical ``kind-vicegerent`` context, so the host stack
-    works without the user ever selecting a kubectl context. The undocumented
-    ``VICEGERENT_USE_CURRENT_CONTEXT`` escape hatch (any non-empty value) instead
-    targets whatever context kubectl is currently on, for a developer running several
-    Kind clusters at once (mirrors scripts/lib/kube-context.sh). Either way the result
-    must be a Kind context (name starts with 'kind-'), so callers fail closed on a
-    stray or production context.
+    By default this is the canonical ``kind-vicegerent`` context. Set
+    ``VICEGERENT_KUBE_CONTEXT`` to select another local Kind context explicitly;
+    the legacy ``VICEGERENT_USE_CURRENT_CONTEXT`` escape hatch targets kubectl's
+    active context instead. Either way the result must be a Kind context (name starts
+    with 'kind-'), so callers fail closed on a stray or production context.
     """
-    if os.environ.get("VICEGERENT_USE_CURRENT_CONTEXT"):
+    if os.environ.get("VICEGERENT_KUBE_CONTEXT"):
+        ctx = os.environ["VICEGERENT_KUBE_CONTEXT"]
+    elif os.environ.get("VICEGERENT_USE_CURRENT_CONTEXT"):
         ctx = subprocess.run(
             ["kubectl", "config", "current-context"], capture_output=True, text=True,
         ).stdout.strip()
@@ -2757,7 +2796,7 @@ def doctor(
     cluster_table.add_column("Target", style="bold")
     cluster_table.add_column("Status")
     cluster_table.add_row("[bold cyan]Runtime[/bold cyan]", "")
-    clusters = {s.get("kind_cluster") for s in servers if s.get("kind_cluster")}
+    clusters = {kind_cluster(s) for s in servers if s.get("kind_cluster")}
     for cluster in sorted(c for c in clusters if c):
         reachable = subprocess.run(
             ["kind", "get", "kubeconfig", "--name", cluster, "--internal"],
@@ -2841,7 +2880,7 @@ def _server_auth_line(server: dict[str, Any]) -> str:
     if secrets:
         return "auth: API key stored securely by ToolHive."
     if server.get("kind_cluster"):
-        return f"auth: uses the kind '{server['kind_cluster']}' cluster kubeconfig (no secret)."
+        return f"auth: uses the kind '{kind_cluster(server)}' cluster kubeconfig (no secret)."
     return "auth: none."
 
 

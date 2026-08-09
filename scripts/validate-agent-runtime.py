@@ -149,7 +149,7 @@ def validate_ssh_secret_migration() -> None:
         "      (.data.agent_ed25519 // .data.hermes_agent_ed25519) "
         "as $private_key\n"
     )
-    end_marker = "        end' \\\n  | kubectl --context kind-vicegerent create -f -"
+    end_marker = "        end' \\\n  | kubectl --context \"$KUBE_CONTEXT\" create -f -"
     try:
         start = guide.index(start_marker)
         end = guide.index(end_marker, start) + len("        end")

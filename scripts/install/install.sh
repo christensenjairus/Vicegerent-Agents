@@ -128,13 +128,16 @@ run_action() {
   name="$(yq -r "$a.name" "$STAGES_FILE")"
   case "$type" in
     helm)
+      local context_value
+      context_value="$(yq -r "$a.contextValue // \"\"" "$STAGES_FILE")"
       helm_remote "$name" \
         "$(yq -r "$a.repo" "$STAGES_FILE")" \
         "$(yq -r "$a.chart" "$STAGES_FILE")" \
         "$(yq -r "$a.version" "$STAGES_FILE")" \
         "$(yq -r "$a.namespace" "$STAGES_FILE")" \
         "$(yq -r "$a.values // \"\"" "$STAGES_FILE")" \
-        "$(yq -r "$a.crds // false" "$STAGES_FILE")"
+        "$(yq -r "$a.crds // false" "$STAGES_FILE")" \
+        "$context_value"
       ;;
     helm-oci)
       local extra_set="" rvp rsk rv

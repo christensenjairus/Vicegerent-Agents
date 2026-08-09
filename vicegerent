@@ -584,9 +584,8 @@ patch_coredns() {
 # Create the Kind cluster (Kind's default CNI disabled) and install Cilium so it
 # owns pod networking — the CiliumNetworkPolicy egress lock is the security model.
 cluster_setup() {
-  # The creation path legitimately hardcodes the cluster name (nothing exists yet to
-  # read a context from); every command below pins --context kind-vicegerent explicitly.
-  local cluster_name="vicegerent"
+  require_kind_context
+  local cluster_name="${KUBE_CONTEXT#kind-}"
   local kind_config="${KIND_CONFIG:-$REPO_ROOT/scripts/install/kind-config.yaml}"
   # Read from the same pin the `cni` stage installs, so a Renovate bump to
   # stages.yaml can't leave the bootstrap on an older Cilium than the install.
@@ -600,7 +599,7 @@ cluster_setup() {
   fi
   # Dedicated docker network so this cluster's node containers are isolated from the
   # default shared `kind` network and any other kind clusters.
-  local docker_network="${KIND_DOCKER_NETWORK:-vicegerent}"
+  local docker_network="${KIND_DOCKER_NETWORK:-$cluster_name}"
 
   for cmd in kind kubectl docker; do
     command -v "$cmd" >/dev/null 2>&1 || { ui_error "$cmd is not installed or not on PATH"; exit 1; }
@@ -628,15 +627,15 @@ cluster_setup() {
   # --ignore-not-found makes this safe to rerun; the namespace delete cascades onto its
   # Deployment/ServiceAccount/Role/RoleBinding.
   ui_info "Removing kind's local-path-provisioner and 'standard' default StorageClass…"
-  kubectl --context "kind-${cluster_name}" delete storageclass standard --ignore-not-found
-  kubectl --context "kind-${cluster_name}" delete clusterrole local-path-provisioner-role --ignore-not-found
-  kubectl --context "kind-${cluster_name}" delete clusterrolebinding local-path-provisioner-bind --ignore-not-found
-  kubectl --context "kind-${cluster_name}" delete namespace local-path-storage --ignore-not-found
+  kubectl --context "$KUBE_CONTEXT" delete storageclass standard --ignore-not-found
+  kubectl --context "$KUBE_CONTEXT" delete clusterrole local-path-provisioner-role --ignore-not-found
+  kubectl --context "$KUBE_CONTEXT" delete clusterrolebinding local-path-provisioner-bind --ignore-not-found
+  kubectl --context "$KUBE_CONTEXT" delete namespace local-path-storage --ignore-not-found
 
   ui_info "Installing Cilium ${cilium_version} as the CNI…"
-  cilium install --version "$cilium_version" --context "kind-${cluster_name}" 2>/dev/null \
+  cilium install --version "$cilium_version" --context "$KUBE_CONTEXT" --set "cluster.name=${cluster_name}" 2>/dev/null \
     || ui_info "Cilium already installed or install skipped; checking status…"
-  cilium status --wait --context "kind-${cluster_name}"
+  cilium status --wait --context "$KUBE_CONTEXT"
 
   patch_coredns "$cluster_name" "$docker_network"
 }
@@ -691,7 +690,7 @@ case "${1:-}" in
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
       echo "vicegerent start — start the Kind cluster, then bring up the host ToolHive stack"
-      echo "  1. docker start vicegerent-control-plane   (start the Kind node container)"
+      echo "  1. docker start <selected-kind-cluster>-control-plane   (start the Kind node container)"
       echo "  2. ./vicegerent mcp start                   (host-package preflight + ToolHive workloads + supervised services)"
       echo "  Extra args pass through to 'vicegerent mcp start' (e.g. --operator-vmcp or --caffeinate)."
       exit 0
@@ -708,7 +707,7 @@ case "${1:-}" in
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
       echo "vicegerent stop — stop the host ToolHive stack, then stop the Kind cluster"
       echo "  1. ./vicegerent mcp stop                    (tears down every supervised process — vMCP, ghostunnel, rclone-s3, health-watch, caffeinate — and stops the ToolHive workloads)"
-      echo "  2. docker stop vicegerent-control-plane     (stop the Kind node container to free CPU)"
+      echo "  2. docker stop <selected-kind-cluster>-control-plane     (stop the Kind node container to free CPU)"
       exit 0
     fi
     ui_section "Stopping Vicegerent"
@@ -726,7 +725,7 @@ case "${1:-}" in
         [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && { setup_usage; exit 0; }
         # cluster_setup is configured entirely by env; reject a positional arg here
         # (most likely a mistaken cluster name) instead of silently ignoring it.
-        [[ $# -eq 0 ]] || { echo "vicegerent setup cluster takes no arguments (configure it via env: KIND_CONFIG CILIUM_VERSION KIND_DOCKER_NETWORK VICEGERENT_HOST_IP)" >&2; exit 2; }
+        [[ $# -eq 0 ]] || { echo "vicegerent setup cluster takes no arguments (configure it via env: VICEGERENT_KUBE_CONTEXT KIND_CONFIG CILIUM_VERSION KIND_DOCKER_NETWORK VICEGERENT_HOST_IP)" >&2; exit 2; }
         cluster_setup
         ;;
       secrets)

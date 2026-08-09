@@ -104,6 +104,34 @@ class InternalKubeconfigTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
             self.assertEqual(path.read_text(encoding="utf-8"), completed.stdout)
 
+    def test_selected_context_sets_the_automatic_kind_cluster(self) -> None:
+        server = {"kind_cluster": "${KIND_CLUSTER}"}
+        with patch.dict(os.environ, {"VICEGERENT_KUBE_CONTEXT": "kind-test-cluster"}, clear=False):
+            self.assertEqual(vicegerent_mcp.kind_cluster(server), "test-cluster")
+
+    def test_selected_context_uses_the_control_plane_network(self) -> None:
+        server = {
+            "name": "kubernetes",
+            "kind_cluster": "${KIND_CLUSTER}",
+            "run_flags": ["--network", "${KIND_DOCKER_NETWORK}", "--isolate-network=false"],
+        }
+        with (
+            patch.dict(os.environ, {"VICEGERENT_KUBE_CONTEXT": "kind-test-cluster"}, clear=False),
+            patch.object(vicegerent_mcp, "kind_docker_network", return_value="kind-test-network") as network,
+        ):
+            flags = vicegerent_mcp.resolved_run_flags(server)
+
+        network.assert_called_once_with("test-cluster")
+        self.assertEqual(flags, ["--network", "kind-test-network", "--isolate-network=false"])
+
+    def test_explicit_context_is_preferred_over_the_legacy_current_context_escape_hatch(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"VICEGERENT_KUBE_CONTEXT": "kind-test-cluster", "VICEGERENT_USE_CURRENT_CONTEXT": "1"},
+            clear=False,
+        ):
+            self.assertEqual(vicegerent_mcp.resolve_kind_context(), "kind-test-cluster")
+
 
 class WorkloadRecoveryTests(unittest.TestCase):
     def test_error_recovery_stops_before_starting(self) -> None:
