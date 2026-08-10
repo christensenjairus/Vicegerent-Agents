@@ -1,6 +1,7 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/agent
-TAG   ?= v2026.8.3-rev38
+TAG   ?= v2026.8.3-rev41
 REF   := $(IMAGE):$(TAG)
+CACHE_REF ?= $(IMAGE):buildcache
 
 DOCKER    ?= docker
 # Set PLATFORM (e.g. linux/arm64) to cross-build; empty = native.
@@ -16,7 +17,10 @@ help: ## Show this help
 
 .PHONY: image
 image: ## Build the container image ($(REF))
-	$(DOCKER) build $(PLAT_FLAG) -t $(REF) .
+	$(DOCKER) build $(PLAT_FLAG) \
+		--cache-from=type=registry,ref=$(CACHE_REF) \
+		--cache-to=type=registry,ref=$(CACHE_REF),mode=max \
+		-t $(REF) .
 
 .PHONY: push
 push: ## Push the image ($(REF)) to Harbor

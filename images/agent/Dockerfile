@@ -386,8 +386,9 @@ RUN apt-get -o Acquire::Retries=3 update \
 # `rm`. Cache mounts keep the uv/npm download caches out of the image while
 # still speeding up rebuilds.
 # ---------------------------------------------------------------------------
-FROM dhi.io/python:3.13-debian13-dev
-ARG HERMES_GIT_SHA
+# Keep the readable tag for update discovery and pin its multi-platform index so
+# an upstream DHI rebuild cannot silently invalidate the entire runtime stage.
+FROM dhi.io/python:3.13-debian13-dev@sha256:5985b54ea3f145c9106890612792a0eb17c99e742e11fd9c391658f1946e1777 AS runtime
 USER root
 
 LABEL org.opencontainers.image.title="vicegerent-agent" \
@@ -544,6 +545,7 @@ RUN cd web \
     && npm run build
 
 COPY --link --chmod=a+rX,go-w --from=hermes_source /src/ .
+ARG HERMES_GIT_SHA
 RUN uv pip install --no-cache-dir --no-deps -e "." \
     && mkdir -p /opt/hermes/bin \
     && printf 'docker\n' > /opt/hermes/.install_method \

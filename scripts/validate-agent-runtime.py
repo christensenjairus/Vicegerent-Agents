@@ -316,14 +316,30 @@ def validate_platform_naming_contracts() -> None:
     image_makefile = (REPO / "images/agent/Makefile").read_text(encoding="utf-8")
     if f"IMAGE := {expected_image}" not in image_makefile:
         die("the agent image Makefile must publish the generic image repository")
+    cache_contracts = (
+        "CACHE_REF ?= $(IMAGE):buildcache",
+        "--cache-from=type=registry,ref=$(CACHE_REF)",
+        "--cache-to=type=registry,ref=$(CACHE_REF),mode=max",
+    )
+    missing_cache_contracts = [
+        item for item in cache_contracts if item not in image_makefile
+    ]
+    if missing_cache_contracts:
+        die(
+            "the agent image build must preserve all stages in its registry cache: "
+            + ", ".join(missing_cache_contracts)
+        )
     dockerfile = (REPO / "images/agent/Dockerfile").read_text(encoding="utf-8")
     dhi_base = re.search(
-        r"^FROM dhi\.io/python:\d+\.\d+-debian\d+-dev(?:@sha256:[0-9a-f]{64})?$",
+        r"^FROM dhi\.io/python:\d+\.\d+-debian\d+-dev@sha256:[0-9a-f]{64} AS runtime$",
         dockerfile,
         re.MULTILINE,
     )
     if dhi_base is None:
-        die("the generic agent image must use a tagged DHI Python dev base")
+        die(
+            "the generic agent image runtime stage must use a tagged and "
+            "digest-pinned DHI base"
+        )
     runtime_packages = dockerfile[
         dhi_base.end() : dockerfile.index("COPY --from=sqlite_build", dhi_base.end())
     ]
@@ -333,6 +349,19 @@ def validate_platform_naming_contracts() -> None:
     apt_layers = re.findall(r"^RUN apt-get(?:\s|$)", runtime_stage, re.MULTILINE)
     if len(apt_layers) != 1:
         die("the DHI runtime must keep all directly managed OS packages in one apt layer")
+    hermes_sha_install = (
+        "COPY --link --chmod=a+rX,go-w --from=hermes_source /src/ .\n"
+        "ARG HERMES_GIT_SHA\n"
+        'RUN uv pip install --no-cache-dir --no-deps -e "."'
+    )
+    if (
+        runtime_stage.count("\nARG HERMES_GIT_SHA\n") != 1
+        or hermes_sha_install not in runtime_stage
+    ):
+        die(
+            "the runtime HERMES_GIT_SHA argument must be declared only at its "
+            "first use so Hermes updates preserve the stable runtime cache prefix"
+        )
     shim_first_path = (
         'PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"'
     )
