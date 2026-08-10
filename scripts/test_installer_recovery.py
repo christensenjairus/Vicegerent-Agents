@@ -9,6 +9,7 @@ import importlib.util
 import io
 import os
 import signal
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -123,6 +124,59 @@ class KubeContextTests(unittest.TestCase):
         self.assertIn("kind create cluster --name test-cluster", commands)
         self.assertIn("kubectl --context kind-test-cluster delete storageclass standard", commands)
         self.assertNotIn("cilium ", commands)
+
+    def test_start_waits_for_kind_node_readiness_before_starting_mcp_stack(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            venv_bin = root / ".venv" / "bin"
+            log = root / "commands.log"
+            shutil.copy2(REPO_ROOT / "vicegerent", root / "vicegerent")
+            shutil.copytree(REPO_ROOT / "scripts" / "lib", root / "scripts" / "lib")
+            bin_dir.mkdir()
+            venv_bin.mkdir(parents=True)
+            for command, body in {
+                "docker": """\
+                    #!/bin/sh
+                    printf 'docker %s\\n' "$*" >> "$LOG"
+                """,
+                "kubectl": """\
+                    #!/bin/sh
+                    printf 'kubectl %s\\n' "$*" >> "$LOG"
+                """,
+            }.items():
+                executable = bin_dir / command
+                executable.write_text(textwrap.dedent(body), encoding="utf-8")
+                executable.chmod(0o755)
+            python = venv_bin / "python"
+            python.write_text(
+                "#!/bin/sh\nprintf 'mcp %s\\n' \"$*\" >> \"$LOG\"\n",
+                encoding="utf-8",
+            )
+            python.chmod(0o755)
+
+            result = subprocess.run(
+                [str(root / "vicegerent"), "start"],
+                text=True,
+                capture_output=True,
+                env={
+                    **os.environ,
+                    "LOG": str(log),
+                    "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                    "VICEGERENT_KUBE_CONTEXT": "kind-test-cluster",
+                },
+            )
+
+            commands = log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            commands,
+            [
+                "docker start test-cluster-control-plane",
+                "kubectl --context kind-test-cluster wait --for=condition=Ready node --all --timeout=60s",
+                "mcp " + str(root / "host/mcp/vicegerent_mcp.py") + " start",
+            ],
+        )
 
 
 class InstallerConvergenceTests(unittest.TestCase):

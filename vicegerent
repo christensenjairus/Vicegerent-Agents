@@ -677,6 +677,8 @@ case "${1:-}" in
     ui_section "Starting Vicegerent"
     ui_info "Starting Kind cluster…"
     docker start "$(kind_node_container)" >/dev/null
+    ui_info "Waiting for Kind cluster readiness…"
+    kubectl --context "$KUBE_CONTEXT" wait --for=condition=Ready node --all --timeout=60s
     ui_info "Starting host MCP stack…"
     mcp_py start "$@"
     ;;
