@@ -5,6 +5,7 @@ scan) and load-bearing agent runtime ownership in the rendered Sandbox."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -66,6 +67,93 @@ def render_documents(
         if result.returncode != 0:
             die(f"helm template failed: {result.stderr.strip()[:400]}")
         return [document for document in yaml.safe_load_all(result.stdout) if document]
+
+
+def validate_slack_dotenv_sync(seed_script: str) -> None:
+    start = seed_script.index("slack_credentials_dir=/reload/slack-credentials")
+    end = seed_script.index("# Bazel ignores JAVA_TOOL_OPTIONS", start)
+    sync_script = seed_script[start:end]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        home = root / "home"
+        hermes_home = home / ".hermes"
+        hermes_home.mkdir(parents=True)
+        dotenv = hermes_home / ".env"
+        credentials = root / "credentials"
+        credentials.mkdir()
+        slack_values = {
+            "SLACK_BOT_TOKEN": "bot-token",
+            "SLACK_APP_TOKEN": "app-token",
+            "SLACK_ALLOWED_USERS": "U0123456789",
+            "SLACK_HOME_CHANNEL": "D0123456789",  # pragma: allowlist secret
+        }
+        for name, value in slack_values.items():
+            (credentials / name).write_text(value, encoding="utf-8")
+
+        # The init container runs under `set -euo pipefail`; without it here a
+        # regression that trips errexit in the real Sandbox would pass.
+        executable = "set -euo pipefail\n" + sync_script.replace(
+            "/reload/slack-credentials", str(credentials)
+        )
+
+        def run() -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                ["bash", "-c", executable],
+                env={"HOME": str(home), "PATH": os.environ["PATH"]},
+                capture_output=True,
+                text=True,
+            )
+
+        managed = "".join(f"{name}={value}\n" for name, value in slack_values.items())
+
+        result = run()
+        if result.returncode != 0:
+            die(f"Slack dotenv synchronization on a fresh home failed: {result.stderr.strip()}")
+        if dotenv.read_text(encoding="utf-8") != managed:
+            die("Slack dotenv synchronization must create Hermes .env when none exists")
+
+        # `export`-prefixed assignments are the other spelling Hermes' loader accepts.
+        dotenv.write_text(
+            "TERMINAL_TIMEOUT=120\nSLACK_BOT_TOKEN=old\nexport SLACK_HOME_CHANNEL=old\n",
+            encoding="utf-8",
+        )
+        result = run()
+        if result.returncode != 0:
+            die(f"Slack dotenv synchronization failed: {result.stderr.strip()}")
+        if dotenv.read_text(encoding="utf-8") != "TERMINAL_TIMEOUT=120\n" + managed:
+            die("Slack dotenv synchronization must preserve non-Slack entries and replace managed Slack keys")
+        if dotenv.stat().st_mode & 0o777 != 0o600:
+            die("Slack dotenv synchronization must keep Hermes .env private")
+
+        for credential in credentials.iterdir():
+            credential.unlink()
+        result = run()
+        if result.returncode != 0:
+            die(f"Slack dotenv cleanup failed: {result.stderr.strip()}")
+        if dotenv.read_text(encoding="utf-8") != "TERMINAL_TIMEOUT=120\n":
+            die("Slack dotenv synchronization must remove stale Slack credentials when Slack is disabled")
+
+        # An unreadable dotenv makes grep exit 2; that must abort rather than
+        # replace Hermes .env with the empty output. Root can read it regardless.
+        if os.geteuid() != 0:
+            dotenv.chmod(0o000)
+            result = run()
+            dotenv.chmod(0o600)
+            if result.returncode == 0:
+                die("a dotenv read failure must abort the Slack sync")
+            if dotenv.read_text(encoding="utf-8") != "TERMINAL_TIMEOUT=120\n":
+                die("a dotenv read failure must not truncate Hermes .env")
+
+        (credentials / "SLACK_BOT_TOKEN").write_text("partial-token", encoding="utf-8")
+        result = run()
+        if result.returncode == 0:
+            die("Slack dotenv synchronization must reject incomplete Slack credentials")
+        # By name, so a downstream crash on the missing file cannot pass for a rejection.
+        if "Slack is configured but SLACK_APP_TOKEN is missing" not in result.stderr:
+            die("incomplete Slack credentials must be rejected by the explicit guard: " + result.stderr.strip())
+        if dotenv.read_text(encoding="utf-8") != "TERMINAL_TIMEOUT=120\n":
+            die("incomplete Slack credentials must not alter Hermes .env")
 
 
 def render_sandbox(
@@ -508,6 +596,41 @@ def main() -> None:
     missing_layout = [item for item in required_home_layout if item not in seed_script]
     if missing_layout:
         die("seed-data is missing the split Hermes-home contract: " + ", ".join(missing_layout))
+
+    slack_keys = ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS", "SLACK_HOME_CHANNEL"]
+    slack_volume = volumes.get("slack-credentials", {}).get("secret", {})
+    if slack_volume != {
+        "secretName": "agent-secrets",  # pragma: allowlist secret
+        "defaultMode": 0o440,
+        "optional": True,
+        "items": [{"key": key, "path": key} for key in slack_keys],
+    }:
+        die("seed-data must receive only the Slack keys of the release-named Secret, never password/signing-secret")
+    slack_mount = next(
+        (
+            mount
+            for mount in seed_data.get("volumeMounts", [])
+            if mount.get("name") == "slack-credentials"
+        ),
+        None,
+    )
+    if slack_mount != {
+        "name": "slack-credentials",
+        "mountPath": "/reload/slack-credentials",
+        "readOnly": True,
+    }:
+        die("seed-data must mount Slack credentials read-only outside the Hermes home")
+    required_slack_sync = (
+        "slack_credentials_dir=/reload/slack-credentials",
+        'slack_dotenv="${HOME}/.hermes/.env"',
+        f'slack_names="{" ".join(slack_keys)}"',
+        "mv \"${slack_dotenv_tmp}\" \"${slack_dotenv}\"",
+        "chmod 600 \"${slack_dotenv}\"",
+    )
+    missing_slack_sync = [item for item in required_slack_sync if item not in seed_script]
+    if missing_slack_sync:
+        die("seed-data must atomically synchronize Slack credentials into Hermes .env: " + ", ".join(missing_slack_sync))
+    validate_slack_dotenv_sync(seed_script)
 
     if pod_spec.get("hostUsers") is not False:
         die("Sandbox pods must use a private user namespace")
