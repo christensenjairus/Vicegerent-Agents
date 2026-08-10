@@ -678,7 +678,17 @@ case "${1:-}" in
     ui_info "Starting Kind cluster…"
     docker start "$(kind_node_container)" >/dev/null
     ui_info "Waiting for Kind cluster readiness…"
-    kubectl --context "$KUBE_CONTEXT" wait --for=condition=Ready node --all --timeout=60s
+    for attempt in {1..12}; do
+      if kubectl --context "$KUBE_CONTEXT" wait --for=condition=Ready node --all --timeout=5s; then
+        break
+      fi
+      if [[ "$attempt" -eq 12 ]]; then
+        ui_error "Kind cluster did not become ready after 12 attempts."
+        exit 1
+      fi
+      ui_info "Kind cluster is not ready; retrying (${attempt}/12)…"
+      sleep 1
+    done
     ui_info "Starting host MCP stack…"
     mcp_py start "$@"
     ;;
