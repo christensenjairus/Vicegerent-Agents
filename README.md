@@ -4,7 +4,7 @@
 
 Give a coding agent your repositories, cloud APIs, ticket tracker, and monitoring stack, and it can do real work. Let it do that work unattended — on a schedule, triggered by events, with nobody approving each individual action — and you have a harder problem. The agent's permissions are now enforced by the agent's own judgment.
 
-Vicegerent moves that boundary out of the agent. Each agent runs in its own Kubernetes sandbox where filesystem access, network egress, available MCP tools, and the arguments those tools are invoked with are all enforced by infrastructure the agent cannot reach or reconfigure.
+Vicegerent moves that boundary out of the agent. Each agent runs in its own Kubernetes sandbox where filesystem access, network egress, available MCP tools, and the arguments those tools are invoked with are all enforced by infrastructure outside the agent's control.
 
 > The goal isn't to make the agent trustworthy. It's to make the agent's authority enforceable when the agent is wrong, manipulated, or compromised.
 
@@ -70,7 +70,7 @@ Because the kubelet and the kernel enforce this against the whole container, it 
 
 ### 2. Network egress control
 
-The sandbox does not get general internet access. Two mechanisms stack here, and the distinction matters: Cilium decides which destinations exist at all, at the packet level, while an HTTP egress proxy decides what a request to an allowed destination may look like — method restrictions, secret scrubbing, SSRF protection, no WebSocket upgrades.
+The sandbox does not get general internet access. Two mechanisms stack here, and the distinction matters: Cilium decides which destinations the sandbox can reach at all, at the packet level, while an HTTP egress proxy decides what a request to an allowed destination may look like — method restrictions, secret scrubbing, SSRF protection, no WebSocket upgrades.
 
 Because Cilium sits underneath, getting around the HTTP proxy does not turn the sandbox into an unrestricted network client. It just means reaching the same short list of destinations without the proxy's inspection.
 
@@ -194,7 +194,7 @@ Claude Code, Codex, OpenCode, and Hermes all run in the same sandbox today, and 
 
 This repository runs Vicegerent for a single user on a local Kind cluster. It is not a multi-tenant enterprise platform and doesn't pretend to be one.
 
-What it is, though, is a complete working model of the control pattern — Kubernetes for workload boundaries, Cilium and a proxy for egress, an MCP gateway that exposes capabilities without shipping credentials into the sandbox, and Cerbos for per-call authorization. Every piece of that is ordinary infrastructure an organization already knows how to operate. The local deployment is this repository's scope, not the ceiling of the architecture it demonstrates.
+What it is, though, is a complete working model of the control pattern — Kubernetes for workload boundaries, Cilium and a proxy for egress, an MCP gateway that exposes capabilities without shipping credentials into the sandbox, and Cerbos for per-call authorization. Every piece of that is ordinary infrastructure an organization already knows how to operate in larger environments.
 
 ## Architecture
 
@@ -305,7 +305,7 @@ It exists to work on one question: how do you let increasingly capable agents do
 
 The interesting question about an AI agent is no longer whether it *can* do something. It's how much authority you can hand it without having to watch everything it does. Don't rely on a model to hold a network boundary, or on a prompt to protect a credential, or on the agent to judge which version of an otherwise-valid tool call is acceptable. Put those boundaries outside the agent.
 
-**The agent gets capabilities. Vicegerent enforces the limits.**
+**The agent gets capabilities. Vicegerent enforces the boundaries.**
 
 ## License
 
