@@ -173,7 +173,76 @@ class KubeContextTests(unittest.TestCase):
             commands,
             [
                 "docker start test-cluster-control-plane",
-                "kubectl --context kind-test-cluster wait --for=condition=Ready node --all --timeout=60s",
+                "kubectl --context kind-test-cluster wait --for=condition=Ready node --all --timeout=5s",
+                "mcp " + str(root / "host/mcp/vicegerent_mcp.py") + " start",
+            ],
+        )
+
+    def test_start_retries_kind_readiness_before_starting_mcp_stack(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            venv_bin = root / ".venv" / "bin"
+            log = root / "commands.log"
+            retry_count = root / "kubectl-count"
+            shutil.copy2(REPO_ROOT / "vicegerent", root / "vicegerent")
+            shutil.copytree(REPO_ROOT / "scripts" / "lib", root / "scripts" / "lib")
+            bin_dir.mkdir()
+            venv_bin.mkdir(parents=True)
+            for command, body in {
+                "docker": """\
+                    #!/bin/sh
+                    printf 'docker %s\\n' "$*" >> "$LOG"
+                """,
+                "kubectl": """\
+                    #!/bin/sh
+                    printf 'kubectl %s\\n' "$*" >> "$LOG"
+                    count=0
+                    if [ -f "$KUBECTL_COUNT" ]; then count="$(cat "$KUBECTL_COUNT")"; fi
+                    count=$((count + 1))
+                    printf '%s' "$count" > "$KUBECTL_COUNT"
+                    if [ "$count" -eq 1 ]; then
+                      echo 'Error from server (Forbidden): nodes is forbidden' >&2
+                      exit 1
+                    fi
+                """,
+                "sleep": """\
+                    #!/bin/sh
+                    printf 'sleep %s\\n' "$*" >> "$LOG"
+                """,
+            }.items():
+                executable = bin_dir / command
+                executable.write_text(textwrap.dedent(body), encoding="utf-8")
+                executable.chmod(0o755)
+            python = venv_bin / "python"
+            python.write_text(
+                "#!/bin/sh\nprintf 'mcp %s\\n' \"$*\" >> \"$LOG\"\n",
+                encoding="utf-8",
+            )
+            python.chmod(0o755)
+
+            result = subprocess.run(
+                [str(root / "vicegerent"), "start"],
+                text=True,
+                capture_output=True,
+                env={
+                    **os.environ,
+                    "KUBECTL_COUNT": str(retry_count),
+                    "LOG": str(log),
+                    "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                    "VICEGERENT_KUBE_CONTEXT": "kind-test-cluster",
+                },
+            )
+
+            commands = log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            commands,
+            [
+                "docker start test-cluster-control-plane",
+                "kubectl --context kind-test-cluster wait --for=condition=Ready node --all --timeout=5s",
+                "sleep 1",
+                "kubectl --context kind-test-cluster wait --for=condition=Ready node --all --timeout=5s",
                 "mcp " + str(root / "host/mcp/vicegerent_mcp.py") + " start",
             ],
         )
