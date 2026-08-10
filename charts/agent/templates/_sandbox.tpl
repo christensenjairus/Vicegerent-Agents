@@ -141,6 +141,45 @@ spec:
               # The agent container mounts ~/.gitconfig read-only from a ConfigMap; this
               # init container has no such mount, so the path it sees is the stale PVC file.
               rm -f /opt/data/.gitconfig
+              slack_credentials_dir=/reload/slack-credentials
+              slack_dotenv="${HOME}/.hermes/.env"
+              slack_dotenv_tmp="${slack_dotenv}.tmp"
+              slack_names="SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS SLACK_HOME_CHANNEL"
+              slack_pattern="$(printf '%s' "${slack_names}" | tr ' ' '|')"
+              slack_configured=0
+              for name in ${slack_names}; do
+                [ -s "${slack_credentials_dir}/${name}" ] && slack_configured=1
+              done
+              if [ "${slack_configured}" -eq 1 ]; then
+                for name in ${slack_names}; do
+                  [ -s "${slack_credentials_dir}/${name}" ] || {
+                    echo "Slack is configured but ${name} is missing" >&2
+                    exit 1
+                  }
+                done
+              fi
+              # Subshell so the tight umask covers the temp file's window without
+              # leaking into the rest of this script.
+              (
+                umask 077
+                if [ -f "${slack_dotenv}" ]; then
+                  # grep exit 1 is "no non-Slack lines"; exit 2 is a read failure and
+                  # must not silently truncate the dotenv.
+                  grep -v -E "^(export[[:space:]]+)?(${slack_pattern})=" \
+                    "${slack_dotenv}" > "${slack_dotenv_tmp}" || [ "$?" -eq 1 ]
+                else
+                  : > "${slack_dotenv_tmp}"
+                fi
+                if [ "${slack_configured}" -eq 1 ]; then
+                  for name in ${slack_names}; do
+                    printf '%s=' "${name}" >> "${slack_dotenv_tmp}"
+                    cat "${slack_credentials_dir}/${name}" >> "${slack_dotenv_tmp}"
+                    printf '\n' >> "${slack_dotenv_tmp}"
+                  done
+                fi
+                mv "${slack_dotenv_tmp}" "${slack_dotenv}"
+                chmod 600 "${slack_dotenv}"
+              )
               # Bazel ignores JAVA_TOOL_OPTIONS; give it a ~/.bazelrc instead.
               printf '%s\n' \
                 'startup --host_jvm_args=-Djavax.net.ssl.trustStore=/opt/data/certs/java-cacerts.p12' \
@@ -253,6 +292,9 @@ spec:
               readOnly: true
             - name: egress-proxy-ca-cert
               mountPath: /reload/egress-proxy-ca
+              readOnly: true
+            - name: slack-credentials
+              mountPath: /reload/slack-credentials
               readOnly: true
         # Slack is optional; once configured it is deliberately single-operator and DM-only.
         - name: validate-slack-access
@@ -606,6 +648,23 @@ spec:
             secretName: {{ include "vicegerent-agent.name" . }}-ssh-key  # pragma: allowlist secret
             defaultMode: 0400
             optional: true
+        - name: slack-credentials
+          secret:
+            secretName: {{ include "vicegerent-agent.name" . }}-secrets
+            defaultMode: 0440
+            # Key-scoped: seed-data must not see password/signing-secret. `items`
+            # fails the mount on an absent key unless optional, and Slack is
+            # optional; validate-slack-access still requires the Secret itself.
+            optional: true
+            items:
+              - key: SLACK_BOT_TOKEN
+                path: SLACK_BOT_TOKEN
+              - key: SLACK_APP_TOKEN
+                path: SLACK_APP_TOKEN
+              - key: SLACK_ALLOWED_USERS
+                path: SLACK_ALLOWED_USERS
+              - key: SLACK_HOME_CHANNEL
+                path: SLACK_HOME_CHANNEL
         - name: egress-proxy-ca-cert
           secret:
             secretName: egress-proxy-ca-cert  # pragma: allowlist secret
