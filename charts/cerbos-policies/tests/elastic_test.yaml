@@ -1,6 +1,6 @@
 ---
 # Fixtures use the literal denied tokens matching test-values.yaml's
-# elasticDeniedIndexPatterns ("snowflake", "Salesforce") — validate.sh compiles
+# elasticDeniedIndexPatterns ("snowflake", "Salesforce") - validate.sh compiles
 # the rendered policy against them, so keep the two in sync.
 name: elastic_denied_index_block_test
 description: Data-access calls targeting a denied index/datastream token are denied

@@ -13,12 +13,12 @@ Two separate Hermes modules each decide whether a configured
    used for background/auxiliary calls (approval checks, title generation,
    memory compression, vision fallback, etc). It reads ``model.base_url``
    from config.yaml, but only honors it when the host is in
-   ``_ANTHROPIC_COMPATIBLE_HOSTS`` — a hardcoded frozenset containing
+   ``_ANTHROPIC_COMPATIBLE_HOSTS`` - a hardcoded frozenset containing
    exactly one hostname: ``api.anthropic.com``. This platform's
    ``model.base_url`` is
    ``http://agentgateway-proxy.agentgateway-system.svc.cluster.local/anthropic``
    (agentgateway is the sealed egress-locked sandbox's single approved path
-   to any model API — see AGENTS.md "Environment" section). That hostname
+   to any model API - see AGENTS.md "Environment" section). That hostname
    is obviously never in the allowlist, so
    ``_is_anthropic_compatible_host()`` always returns False for us, and
    ``_try_anthropic()`` silently discards our configured base_url and
@@ -27,8 +27,8 @@ Two separate Hermes modules each decide whether a configured
 
 2. ``hermes_cli/runtime_provider.py`` resolves credentials for the MAIN
    agent loop and every ``delegate_task()`` subagent. It already has the
-   right idea — ``_anthropic_base_url_override_ok(url)`` additionally
-   trusts any URL whose path ends in ``/anthropic`` — but the *caller*
+   right idea - ``_anthropic_base_url_override_ok(url)`` additionally
+   trusts any URL whose path ends in ``/anthropic`` - but the *caller*
    logic around that check (``cfg_provider``/``cfg_base_url`` derivation +
    the override-ok gate) is copy-pasted verbatim in THREE separate places:
    ``_resolve_runtime_from_pool_entry()`` (credential-pool path),
@@ -41,18 +41,18 @@ Two separate Hermes modules each decide whether a configured
    route through ANY of these three paths depending on whether a
    credential pool is populated, a desync here is exactly the kind of bug
    that surfaces as "subagents intermittently call
-   https://api.anthropic.com directly instead of the gateway" —
+   https://api.anthropic.com directly instead of the gateway" -
    non-deterministic, hard to repro, and easy to reintroduce even after
    fixing one instance.
 
 Because direct egress to ``api.anthropic.com`` is sealed by design in this
 sandbox (approved channels only: web_search, MCP servers, agentgateway,
-git-over-SSH — see AGENTS.md "Limitations to expect"), every call that
+git-over-SSH - see AGENTS.md "Limitations to expect"), every call that
 falls back to the bare hostname default gets an httpx connection error,
 which Hermes's own capacity-error classifier (``_is_connection_error``)
 correctly but confusingly treats as "provider unreachable" and fails over
 to the configured OpenAI fallback (``fallback_providers`` in config.yaml)
-— burning fallback capacity and OpenAI quota on a problem that was never
+- burning fallback capacity and OpenAI quota on a problem that was never
 an Anthropic outage. Observed on both paths: an ``APIConnectionError``
 against the bare ``api.anthropic.com`` default, immediately followed by a
 fallback to the configured OpenAI provider -- on the main/subagent path,
@@ -66,7 +66,7 @@ an operator who routes their *main* session through a non-Anthropic host
 foreign host leak into auxiliary calls. But a single literal hostname
 can't distinguish "OpenRouter masquerading as Anthropic" (should stay
 blocked) from "our own trusted gateway proxying to real Anthropic"
-(should be trusted) — exactly the ambiguity ``runtime_provider.py``
+(should be trusted) - exactly the ambiguity ``runtime_provider.py``
 already solves for the main client via
 ``_anthropic_base_url_override_ok()``, which trusts any URL whose path
 ends in ``/anthropic`` (the conventional suffix this platform's own
@@ -88,13 +88,13 @@ and are logically one change:
    ``_resolve_anthropic_base_url_override(model_cfg)``, that encapsulates
    the ``cfg_provider``/``cfg_base_url``/``override_ok`` logic exactly
    once, and rewrite all three call sites to use it. Behavior is
-   identical (same inputs, same outputs) — this is a refactor for
+   identical (same inputs, same outputs) - this is a refactor for
    correctness durability, not a behavior change.
 
 Fail-loud by design: if any anchor is absent or appears an unexpected
 number of times in either file (upstream refactored it), the patch raises
 and the image build fails, signalling a re-verify. The two file edits are
-independent — a failure in one is reported before the other is attempted,
+independent - a failure in one is reported before the other is attempted,
 and neither silently partially applies.
 
 Once upstream unifies the auxiliary-client and main-client Anthropic-host
@@ -107,7 +107,7 @@ import importlib.util
 import sys
 
 # ===========================================================================
-# Part 1 — agent/auxiliary_client.py: gateway-host trust for aux calls
+# Part 1 - agent/auxiliary_client.py: gateway-host trust for aux calls
 # ===========================================================================
 
 AUX_APPLIED_MARKER = "Vicegerent patch 0014"
@@ -131,7 +131,7 @@ AUX_REPLACEMENT = (
     "\n"
     "    Vicegerent patch 0014: trust either an exact hostname match against\n"
     "    _ANTHROPIC_COMPATIBLE_HOSTS, or a path ending in /anthropic (or\n"
-    "    /anthropic/v1) — the conventional suffix used by our own in-cluster\n"
+    "    /anthropic/v1) - the conventional suffix used by our own in-cluster\n"
     "    agentgateway proxy route and by third-party Anthropic-compatible\n"
     "    proxies (Azure Foundry, MiniMax, Zhipu GLM, LiteLLM). Mirrors the\n"
     "    suffix check hermes_cli.runtime_provider._detect_api_mode_for_url()\n"
@@ -163,14 +163,14 @@ def _patch_auxiliary_client() -> None:
         src = f.read()
 
     if AUX_APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return
 
     count = src.count(AUX_ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 _is_anthropic_compatible_host anchor "
-            f"in {path}, found {count} (upstream drifted — re-verify)"
+            f"in {path}, found {count} (upstream drifted - re-verify)"
         )
 
     src = src.replace(AUX_ANCHOR, AUX_REPLACEMENT, 1)
@@ -186,7 +186,7 @@ def _patch_auxiliary_client() -> None:
 
 
 # ===========================================================================
-# Part 2 — hermes_cli/runtime_provider.py: factor the triple-duplicated
+# Part 2 - hermes_cli/runtime_provider.py: factor the triple-duplicated
 # "is model.base_url a valid Anthropic override" resolution into one
 # function, so the three copies can never silently desync.
 # ===========================================================================
@@ -239,7 +239,7 @@ BLOCK_MAIN_BODY = (
     "    # Anthropic (native Messages API)\n"
     "    if provider == \"anthropic\":\n"
     "        # Allow base URL override from config.yaml model.base_url, but only\n"
-    "        # when the configured provider is anthropic — otherwise a non-Anthropic\n"
+    "        # when the configured provider is anthropic - otherwise a non-Anthropic\n"
     "        # base_url (e.g. Codex endpoint) would leak into Anthropic requests.\n"
     "        cfg_provider = str(model_cfg.get(\"provider\") or \"\").strip().lower()\n"
     "        cfg_base_url = \"\"\n"
@@ -253,7 +253,7 @@ BLOCK_MAIN_BODY_REPLACEMENT = (
     "    # Anthropic (native Messages API)\n"
     "    if provider == \"anthropic\":\n"
     "        # Allow base URL override from config.yaml model.base_url, but only\n"
-    "        # when the configured provider is anthropic — otherwise a non-Anthropic\n"
+    "        # when the configured provider is anthropic - otherwise a non-Anthropic\n"
     "        # base_url (e.g. Codex endpoint) would leak into Anthropic requests.\n"
     "        # (Vicegerent patch 0014: factored into _resolve_anthropic_base_url_override\n"
     "        # so this logic can't silently desync from the other two call sites.)\n"
@@ -298,13 +298,13 @@ def _patch_runtime_provider() -> None:
 
     if RP_HELPER_FUNCTION.split("\n", 1)[0] in content:
         # Helper already inserted -> whole patch already applied.
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return
 
     if content.count(RP_HELPER_ANCHOR) != 1:
         raise SystemExit(
             f"patch: expected exactly 1 occurrence of helper anchor in {path}, "
-            f"found {content.count(RP_HELPER_ANCHOR)} (upstream drifted — re-verify)"
+            f"found {content.count(RP_HELPER_ANCHOR)} (upstream drifted - re-verify)"
         )
 
     blocks = [
@@ -317,7 +317,7 @@ def _patch_runtime_provider() -> None:
         if count != 1:
             raise SystemExit(
                 f"patch: expected exactly 1 occurrence of the '{name}' block in {path}, "
-                f"found {count} (upstream drifted — re-verify)"
+                f"found {count} (upstream drifted - re-verify)"
             )
         content = content.replace(anchor, replacement)
 
@@ -329,7 +329,7 @@ def _patch_runtime_provider() -> None:
         raise SystemExit(
             f"patch: expected exactly 1 occurrence of insertion-point anchor "
             f"'{RP_NEXT_DEF_ANCHOR.strip()}' in {path}, found "
-            f"{content.count(RP_NEXT_DEF_ANCHOR)} (upstream drifted — re-verify)"
+            f"{content.count(RP_NEXT_DEF_ANCHOR)} (upstream drifted - re-verify)"
         )
     content = content.replace(RP_NEXT_DEF_ANCHOR, RP_HELPER_FUNCTION + RP_NEXT_DEF_ANCHOR)
 

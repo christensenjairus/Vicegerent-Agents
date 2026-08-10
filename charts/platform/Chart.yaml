@@ -1,6 +1,6 @@
 ---
 apiVersion: v2
 name: platform
-description: Vicegerent platform — Gateway, model backends/routes, vMCP, searxng,
+description: Vicegerent platform - Gateway, model backends/routes, vMCP, searxng,
   host firewall
 version: 0.1.0

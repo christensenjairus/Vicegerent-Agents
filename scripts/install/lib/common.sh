@@ -67,7 +67,7 @@ resolve_value_or_default() {
 require_secret() {
   local ns="$1" name="$2" hint="$3"
   kc -n "$ns" get secret "$name" >/dev/null 2>&1 \
-    || die "missing Secret ${ns}/${name} — run: ${hint}"
+    || die "missing Secret ${ns}/${name} - run: ${hint}"
 }
 
 preflight_controller_secrets() {

@@ -60,14 +60,14 @@ def main() -> int:
     source = path.read_text(encoding="utf-8")
 
     if MARKER in source:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return 0
 
     count = source.count(ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 shell-hook registration anchor in {path}, "
-            f"found {count} (upstream drifted — re-verify)"
+            f"found {count} (upstream drifted - re-verify)"
         )
 
     patched = source.replace(ANCHOR, REPLACEMENT, 1)

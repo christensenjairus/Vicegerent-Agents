@@ -4,7 +4,7 @@ secret-pattern JSON.
 
 The Vector agent's log-scrubbing leg lives in a static upstream-chart values file
 (stages/values/victoria-logs.yaml) that Helm consumes with `-f`, and VRL cannot
-build a regex from a runtime string — so unlike the egress-proxy scrubber
+build a regex from a runtime string - so unlike the egress-proxy scrubber
 (helm --set-file) and the shim (//go:embed), this leg cannot derive its patterns
 at render time. Instead it keeps a GENERATED copy of the same
 images/mcp-cerbos-shim/internal/server/secret-patterns.json, emitted here between
@@ -32,11 +32,11 @@ def statements(patterns_file):
     """One VRL statement per pattern. The first uses `replace!` because `.message`
     is not yet proven to be a string coming out of the parser transform; every
     subsequent call operates on the string the previous one returned, so plain
-    (infallible) `replace` is correct — and `!` on an infallible call is a VRL
+    (infallible) `replace` is correct - and `!` on an infallible call is a VRL
     compile error, so the split is load-bearing, not stylistic."""
     defs = json.loads(Path(patterns_file).read_text())
     if not defs:
-        sys.exit("secret-patterns.json decoded to an empty list — refusing to generate an empty redactor")
+        sys.exit("secret-patterns.json decoded to an empty list - refusing to generate an empty redactor")
     out = []
     for i, d in enumerate(defs):
         fn = "replace!" if i == 0 else "replace"

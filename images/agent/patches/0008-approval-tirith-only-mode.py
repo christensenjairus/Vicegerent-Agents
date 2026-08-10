@@ -63,7 +63,7 @@ import importlib.util
 import sys
 
 # ---------------------------------------------------------------------------
-# Anchor \u2014 warning filter insertion point in check_all_command_guards
+# Anchor - warning filter insertion point in check_all_command_guards
 #
 # Inserted between the warning-accumulation phase and the smart-approval
 # phase.  Tirith findings are never filtered; uncancellable descriptions
@@ -148,14 +148,14 @@ def main() -> int:
         src = f.read()
 
     if APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} \u2014 no-op")
+        print(f"patch: already applied to {path} - no-op")
         return 0
 
     count = src.count(ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 anchor in {path}, found {count} "
-            "(upstream drifted \u2014 re-verify this patch)"
+            "(upstream drifted - re-verify this patch)"
         )
 
     src = src.replace(ANCHOR, REPLACEMENT)
@@ -164,7 +164,7 @@ def main() -> int:
         f.write(src)
 
     compile(src, path, "exec")
-    print(f"patch: pattern_silence filter applied and compiled OK \u2014 {path}")
+    print(f"patch: pattern_silence filter applied and compiled OK - {path}")
     return 0
 
 

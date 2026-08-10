@@ -9,7 +9,7 @@ Owns the full local ToolHive stack that backs the cluster's MCP access:
                        elastic, aws, aws_profiles) run by `thv run` into
                        the group `vicegerent`.
                        Managed by ToolHive's own daemon (Docker containers),
-                       NOT by supervisord — they persist across stack restarts
+                       NOT by supervisord - they persist across stack restarts
                        so OAuth tokens are not re-prompted.
   vMCP                 `thv vmcp serve` aggregates the group behind one
                        loopback endpoint on 127.0.0.1:4483, prefixing every
@@ -82,7 +82,7 @@ DEFAULT_GROUP = "vicegerent"
 DEFAULT_VMCP_HOST = "127.0.0.1"
 DEFAULT_VMCP_PORT = 4483
 DEFAULT_OPERATOR_VMCP_PORT = 4484
-# Loopback only — Kind reaches it via host.docker.internal (Docker Desktop proxies
+# Loopback only - Kind reaches it via host.docker.internal (Docker Desktop proxies
 # to the host's localhost). Binding 0.0.0.0 would expose the tunnel to the LAN.
 DEFAULT_LISTEN = "127.0.0.1:8453"
 DEFAULT_AGENT_CLIENT_CN = "agent-client"
@@ -374,7 +374,7 @@ def is_server_enabled(server: dict[str, Any], state: dict[str, bool]) -> bool:
     """Effective enabled state: a runtime override wins over the config default.
 
     A companion (`companion_of`) mirrors its parent's state via `_param_owner`,
-    so enabling/disabling the parent flips both as one unit — the companion is
+    so enabling/disabling the parent flips both as one unit - the companion is
     never enabled independently. Keep a companion's own `enabled` default equal
     to its parent's so the pre-configure default matches too.
     """
@@ -946,7 +946,7 @@ def _resolve_param_value(server: dict[str, Any], param_name: str, runtime_dir: P
 def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[str, Any] | None:
     """Build a ToolHive network permission-profile dict for one server, or None
     if the server is declared `network.exempt` (network-mode carve-out, e.g.
-    kubernetes' raw docker-network access — out of scope for permission-profile
+    kubernetes' raw docker-network access - out of scope for permission-profile
     allowlisting entirely).
 
     Isolation is ToolHive's default since v0.30.1 (no `--isolate-network` flag
@@ -958,14 +958,14 @@ def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[
     alertmanager('_secondary')'s url); `host_from_secret` reads it out of a top-level
     `secrets[]` entry instead (jira_url, grafana('_secondary')_url) via `thv secret get`
     directly, since those aren't in `params` at all. Either way, raise a clear
-    error if the value isn't set yet — same pattern as the existing kubeconfig
+    error if the value isn't set yet - same pattern as the existing kubeconfig
     "run `./vicegerent setup mcp`" error.
     """
     name = server["name"]
     net = server.get("network")
     if net is None:
         raise SystemExit(
-            f"{name}: no 'network' config in toolhive-servers.json — every server "
+            f"{name}: no 'network' config in toolhive-servers.json - every server "
             "must declare network.allow_hosts/host_from_param/host_from_secret, "
             "network.none=true, or network.exempt=true (see host/mcp/README.md)"
         )
@@ -989,7 +989,7 @@ def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[
         if not value:
             raise SystemExit(
                 f"{name}: network.host_from_param {host_from_param!r} has no value yet "
-                "— run `./vicegerent setup mcp` to set it"
+                "- run `./vicegerent setup mcp` to set it"
             )
         host = urllib.parse.urlparse(value).hostname
         if not host:
@@ -1005,7 +1005,7 @@ def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[
         if not value:
             raise SystemExit(
                 f"{name}: network.host_from_secret {host_from_secret!r} has no value yet "
-                "— run `./vicegerent setup mcp` (or `thv secret set` it) first"
+                "- run `./vicegerent setup mcp` (or `thv secret set` it) first"
             )
         host = urllib.parse.urlparse(value).hostname
         if not host:
@@ -1017,7 +1017,7 @@ def build_permission_profile(server: dict[str, Any], runtime_dir: Path) -> dict[
 
     if not allow_hosts:
         raise SystemExit(
-            f"{name}: network config resolved to an empty allow_hosts list — "
+            f"{name}: network config resolved to an empty allow_hosts list - "
             "refusing to run with a permission profile that blocks all egress "
             "unless that's actually intended (set network.none=true for a "
             "deliberate no-egress server)"
@@ -1038,7 +1038,7 @@ def write_permission_profile(
     server: dict[str, Any], runtime_dir: Path
 ) -> Path | None:
     """Build and persist the permission-profile JSON for one server; return its
-    path, or None if the server is `network.exempt` (no profile — it opts out of
+    path, or None if the server is `network.exempt` (no profile - it opts out of
     permission-profile allowlisting entirely, e.g. kubernetes' docker-network mode).
     """
     profile = build_permission_profile(server, runtime_dir)
@@ -1066,7 +1066,7 @@ def build_thv_run_argv(
     elif stype in ("remote", "registry"):
         # A registry name (notion/linear) is a static positional; a bare remote
         # URL that's per-operator (elastic's Kibana host) comes from a configured
-        # param instead — ToolHive accepts either as the `thv run` positional.
+        # param instead - ToolHive accepts either as the `thv run` positional.
         positional = server.get("registry")
         if not positional and server.get("registry_from_param"):
             positional = _resolve_param_value(
@@ -1075,7 +1075,7 @@ def build_thv_run_argv(
         if not positional:
             raise SystemExit(
                 f"server {name!r}: remote type needs 'registry' or a resolvable "
-                "'registry_from_param' — run `./vicegerent setup mcp` to set it"
+                "'registry_from_param' - run `./vicegerent setup mcp` to set it"
             )
     else:
         raise SystemExit(f"server {name!r}: unknown type {stype!r}")
@@ -1097,7 +1097,7 @@ def build_thv_run_argv(
     # v0.30.1, so an unrestricted workload here would be one that already
     # opted out via run_flags (kubernetes: --isolate-network=false, needs raw
     # docker-network TCP to the kind API server and can't go through the
-    # egress proxy — see README "Kubernetes networking"). Every other server
+    # egress proxy - see README "Kubernetes networking"). Every other server
     # gets an explicit --permission-profile: a narrow static/dynamic allowlist,
     # or (network.none) a deny-all-egress profile.
     profile_path = write_permission_profile(server, runtime_dir)
@@ -1132,7 +1132,7 @@ def build_thv_run_argv(
             else:
                 cluster = kind_cluster(server)
                 if not cluster:
-                    raise SystemExit(f"{name}: no kubeconfig set — run `./vicegerent setup mcp`")
+                    raise SystemExit(f"{name}: no kubeconfig set - run `./vicegerent setup mcp`")
                 kubeconfig = write_internal_kubeconfig(cluster, runtime_dir)
             argv += ["-v", f"{kubeconfig}:{KUBECONFIG_CONTAINER_PATH}:ro"]
             argv += ["-e", f"KUBECONFIG={KUBECONFIG_CONTAINER_PATH}"]
@@ -1147,7 +1147,7 @@ def build_thv_run_argv(
             aws_dir = Path(value).expanduser() if value else Path.home() / ".aws"
             if not aws_dir.is_dir():
                 raise SystemExit(
-                    f"{name}: AWS config dir not found: {aws_dir} — run `aws configure` "
+                    f"{name}: AWS config dir not found: {aws_dir} - run `aws configure` "
                     "/ `aws sso login` first, or set the path via `./vicegerent setup mcp`"
                 )
             # The two overlay mounts below land *inside* the read-only aws_dir mount,
@@ -1177,7 +1177,7 @@ def build_thv_run_argv(
             argv += ["-e", f"HOME={AWS_HOME_CONTAINER_PATH}"]
         elif apply == "remote_header":
             # Inject a static auth header into a `remote` server by NAME reference
-            # so the credential stays in the `thv` secret store — never argv, never
+            # so the credential stays in the `thv` secret store - never argv, never
             # read into this process. ToolHive resolves it and does NO OAuth flow
             # (that only runs under --remote-auth, which we never pass), so header
             # auth works directly against endpoints whose OAuth-discovery paths
@@ -1275,7 +1275,7 @@ def _ca_data(text: str) -> str:
 
 def kind_kubeconfig_stale(server: dict[str, Any], runtime_dir: Path) -> bool:
     """A kind_cluster workload mounts an internal kubeconfig captured at `thv run`
-    time. If the cluster is recreated its CA rotates, leaving the mount stale — the
+    time. If the cluster is recreated its CA rotates, leaving the mount stale - the
     MCP server then fails API calls with 'certificate signed by unknown authority'.
     Detect this by comparing the mounted CA to the current one so start can recreate.
     """
@@ -1290,7 +1290,7 @@ def kind_kubeconfig_stale(server: dict[str, Any], runtime_dir: Path) -> bool:
         capture_output=True, text=True, check=False,
     )
     if result.returncode != 0:
-        return False  # can't tell (cluster down?) — don't force a needless recreate
+        return False  # can't tell (cluster down?) - don't force a needless recreate
     return _ca_data(result.stdout) != _ca_data(dest.read_text(encoding="utf-8"))
 
 
@@ -1298,7 +1298,7 @@ def _path_content_digest(path: Path) -> str:
     """sha256 over a file's bytes, or a directory's sorted (relpath, bytes)
     manifest; "" if absent/unreadable. Folds the CONTENT of a server's mounted
     host config into its spec fingerprint so an on-disk change forces a recreate
-    on the next `start`. A live bind mount alone isn't enough — some MCP servers
+    on the next `start`. A live bind mount alone isn't enough - some MCP servers
     read/cache their config once at startup, so a fresh `aws sso login` token, a
     new profile in ~/.aws/config, or an edited kubeconfig wouldn't take effect
     until the container is recreated."""
@@ -1349,15 +1349,15 @@ def server_spec_fingerprint(server: dict[str, Any], runtime_dir: Path) -> str:
     """Hash the parts of a server's config entry that determine its running
     container: type/package-or-registry/transport/run_flags/server_args/
     server_args_after/env/
-    secret TARGETS (never secret values — those live in `thv secret`, not this
+    secret TARGETS (never secret values - those live in `thv secret`, not this
     repo) and configured PARAM NAMES (not their values, which come from runtime
     state and may reasonably change without forcing a rebuild here; a changed
     kubeconfig path is covered by `kind_kubeconfig_stale`, and the CONTENT of a
-    server's mounted host config — the aws `~/.aws` dir, a user kubeconfig — is
+    server's mounted host config - the aws `~/.aws` dir, a user kubeconfig - is
     folded in via `mounted_config` so an `aws sso login`, a new profile, or an
     edited kubeconfig recreates the workload on the next start).
 
-    Also hashes the *content* of the generated network permission profile —
+    Also hashes the *content* of the generated network permission profile -
     unlike ordinary params, a change here (a new GitLab/Alertmanager/
     Jira/Grafana hostname, or an edited allow_hosts list) must force a recreate,
     since the profile is baked into the container at `thv run` time and a plain
@@ -1440,20 +1440,20 @@ def _apply_workload(
     concurrently since each server only touches its own workload. The actual
     `thv run`/`thv restart` call is serialized via `start_lock`: ToolHive's
     network-isolation ingress-proxy port allocator is a shared, global resource,
-    and issuing two of those calls at once can race — both pick the same free
+    and issuing two of those calls at once can race - both pick the same free
     host port, one bind wins and the other's ingress container is left
     permanently stuck in `Created`. This does mean `thv run`/`thv restart` calls
     (and any image pull they trigger) now run one at a time rather than
-    overlapping — correctness over the pull-overlap speedup, since a lost race
+    overlapping - correctness over the pull-overlap speedup, since a lost race
     leaves a workload down until someone notices and manually restarts it.
     """
     name = server["name"]
     state = in_group.get(name)
     # A kind_cluster workload with a stale kubeconfig (cluster CA rotated) must be
-    # recreated so it remounts a fresh internal kubeconfig — restart won't remount.
+    # recreated so it remounts a fresh internal kubeconfig - restart won't remount.
     stale = kind_kubeconfig_stale(server, runtime_dir)
     # A workload whose declared spec (package/env/flags/secret targets/...) has
-    # drifted from what's actually running must also be recreated — `thv restart`
+    # drifted from what's actually running must also be recreated - `thv restart`
     # reuses the container's original `thv run` args, so it would silently keep
     # running the OLD spec forever otherwise (e.g. an added `env` var never
     # actually reaches the container).
@@ -1523,7 +1523,7 @@ def run_workloads(
 
     Enabled workloads are brought up concurrently for their per-workload prep
     (fingerprint/stale checks), but the actual `thv run`/`thv restart` call is
-    serialized via `start_lock` — see `_apply_workload` for why (a shared
+    serialized via `start_lock` - see `_apply_workload` for why (a shared
     ToolHive port allocator, not a per-workload lock, guards the container's
     network-isolation ingress proxy).
     """
@@ -1555,7 +1555,7 @@ def wait_for_workloads_running(
 
     `thv vmcp init` only captures backends that are healthy at that instant, so
     generating the config before slow npx workloads finish starting would silently
-    drop them. Warn (don't fail) on any that never come up — they'll just be absent.
+    drop them. Warn (don't fail) on any that never come up - they'll just be absent.
 
     A workload stuck in `error` is recovered with an explicit stop followed by
     a start (up to MAX_ERROR_RETRIES times). ToolHive also retries failed
@@ -1584,7 +1584,7 @@ def wait_for_workloads_running(
             if state == "error" and name not in stopping and retries.get(name, 0) < MAX_ERROR_RETRIES:
                 retries[name] = retries.get(name, 0) + 1
                 stopping.add(name)
-                print(f"  workload {name} is in error state — stopping before recovery "
+                print(f"  workload {name} is in error state - stopping before recovery "
                       f"(attempt {retries[name]}/{MAX_ERROR_RETRIES}) …")
                 thv("stop", name)
             elif state == "stopped" and name in stopping:
@@ -1593,7 +1593,7 @@ def wait_for_workloads_running(
                 thv("start", name)
         time.sleep(2)
     print(f"  warning: workloads not running after {int(timeout)}s: {pending} "
-          "— they will be omitted from the vMCP until healthy", file=sys.stderr)
+          "- they will be omitted from the vMCP until healthy", file=sys.stderr)
 
 
 def reconcile_vmcp_membership(config: dict[str, Any], runtime_dir: Path) -> bool:
@@ -2039,7 +2039,7 @@ def _style_proc(state: str) -> str:
         return f"[yellow]{state}[/yellow]"
     if state in ("STOPPED", "EXITED", "FATAL", "UNKNOWN"):
         return f"[red]{state}[/red]"
-    return f"[dim]{state or '—'}[/dim]"
+    return f"[dim]{state or '-'}[/dim]"
 
 
 def _style_workload(state: str) -> str:
@@ -2152,7 +2152,7 @@ def ensure_ghostunnel_material() -> None:
     ghostunnel (server side) needs server.crt/server.key/ca.cert. Those are written
     to ~/.vicegerent/ghostunnel by setup-secrets-platform.sh, which also mirrors them
     to the kind Secret `ghostunnel-server`. On a host that's missing them, pull them
-    back from the cluster before ghostunnel starts. (The CA *key* is never mirrored —
+    back from the cluster before ghostunnel starts. (The CA *key* is never mirrored -
     it's only needed to re-issue certs, so run setup-secrets to fully rebuild.)
     """
     hd = Path(os.environ.get("GHOSTUNNEL_HOST_DIR", str(DEFAULT_GHOSTUNNEL_DIR)))
@@ -2382,7 +2382,7 @@ def start_stack(
         _ui("Ensuring enabled workloads are ready …", "dim")
         run_workloads(config, runtime_dir)
         # `thv vmcp init` only captures backends that are HEALTHY right now, so wait
-        # for the (often slow, npx-download) workloads to come up first — otherwise
+        # for the (often slow, npx-download) workloads to come up first - otherwise
         # they're silently omitted from the vMCP config and never aggregated.
         wait_for_workloads_running(config, runtime_dir)
 
@@ -2393,7 +2393,7 @@ def start_stack(
     thv_bin = _thv_path()
     # Tier 1 FTS5 keyword optimizer: collapses every backend's tools down to
     # find_tool/call_tool, cutting the tokens spent on tool definitions as more
-    # servers are enabled. Requires mcp-cerbos-shim to unwrap call_tool (it does —
+    # servers are enabled. Requires mcp-cerbos-shim to unwrap call_tool (it does -
     # see server.go callToolMeta) or Cerbos-guarded tools would silently bypass
     # authorization. Set VMCP_OPTIMIZER=0 to fall back to exposing all tools raw.
     optimizer_flag = "" if os.environ.get("VMCP_OPTIMIZER", "1") == "0" else " --optimizer"
@@ -2875,7 +2875,7 @@ def _store_hidden_secret(secret_name: str, prompt: str, prefix: str = "") -> int
 
 def _server_auth_line(server: dict[str, Any]) -> str:
     if server.get("type") == "remote":
-        return "auth: OAuth — a browser opens on first `start` to authorize (token then persists)."
+        return "auth: OAuth - a browser opens on first `start` to authorize (token then persists)."
     secrets = server.get("secrets", [])
     if secrets:
         return "auth: API key stored securely by ToolHive."
@@ -2919,7 +2919,7 @@ def configure(
     for server in servers:
         name = server["name"]
         # Hidden companions (companion_of) are enabled/configured with their
-        # parent as one unit and never shown on their own — skip entirely.
+        # parent as one unit and never shown on their own - skip entirely.
         if server.get("companion_of"):
             continue
         secrets = server.get("secrets", [])
@@ -2966,7 +2966,7 @@ def configure(
             if sname and sensitive:
                 prefix = param.get("value_prefix", "")
                 exists = thv("secret", "get", sname).returncode == 0
-                if exists and not _prompt_yn(f"   {prompt} is already configured — replace it?", default=False):
+                if exists and not _prompt_yn(f"   {prompt} is already configured - replace it?", default=False):
                     _ui_ok(f"   Keeping existing {prompt}")
                 else:
                     rc = _store_hidden_secret(sname, prompt, prefix)
@@ -3005,7 +3005,7 @@ def configure(
             sname = sec["name"]
             secret_prompt = sec.get("prompt") or sname
             exists = thv("secret", "get", sname).returncode == 0
-            if exists and not _prompt_yn(f"   {secret_prompt} is already configured — replace it?", default=False):
+            if exists and not _prompt_yn(f"   {secret_prompt} is already configured - replace it?", default=False):
                 _ui_ok(f"   Keeping existing {secret_prompt}")
                 continue
             rc = _store_hidden_secret(sname, secret_prompt)
@@ -3016,7 +3016,7 @@ def configure(
 
     save_server_state(runtime_dir, state)
     save_server_params(runtime_dir, params_all)
-    # Companions are hidden — they follow their parent and aren't listed.
+    # Companions are hidden - they follow their parent and aren't listed.
     visible = [s for s in servers if not s.get("companion_of")]
     on = [s["name"] for s in visible if is_server_enabled(s, state)]
     off = [s["name"] for s in visible if not is_server_enabled(s, state)]
@@ -3042,7 +3042,7 @@ def set_enabled(
     if parent:
         raise SystemExit(
             f"{name!r} is a hidden companion of {parent!r} and follows it "
-            f"automatically — enable/disable {parent!r} instead."
+            f"automatically - enable/disable {parent!r} instead."
         )
     state = load_server_state(runtime_dir)
     state[name] = enabled
@@ -3131,7 +3131,7 @@ def cmd_tui(args: argparse.Namespace) -> int:
 
 
 _HELP = """\
-vicegerent mcp — host-side ToolHive stack controller
+vicegerent mcp - host-side ToolHive stack controller
 
 Owns the local ToolHive stack behind the cluster's MCP access:
   ToolHive workloads (group 'vicegerent') -> vMCP aggregator on :4483

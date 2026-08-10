@@ -46,7 +46,7 @@ func TestShippedMappingsParse(t *testing.T) {
 // deployed mapping: alertmanager createSilence force-stamps this machine's
 // ${alertmanagerCreatedBy} so deleteSilence's live ownership lookup has
 // something real to verify against. On a machine that never set it the force
-// block must be absent entirely — an unquoted empty value would render a YAML
+// block must be absent entirely - an unquoted empty value would render a YAML
 // null and stamp createdBy: nil onto every silence, which no later ownership
 // check could match.
 func TestDeployedMappingForcedCreatedBy(t *testing.T) {
@@ -86,7 +86,7 @@ func TestDeployedMappingForcedCreatedBy(t *testing.T) {
 }
 
 // renderDeployedMapping renders charts/mcp-cerbos-shim's ConfigMap through helm
-// — mirroring scripts/validate.sh's layering — and returns the mapping.yaml it
+// - mirroring scripts/validate.sh's layering - and returns the mapping.yaml it
 // carries. machineValues is layered over values.defaults.yaml, or "" for a
 // defaults-only render. Skips only when helm is unavailable or the chart is
 // missing (bare checkout); a render/parse failure is a real error.

@@ -80,7 +80,7 @@ vector:
         type: remap
         inputs: [parser]
         source: |
-          # BEGIN GENERATED redactor (scripts/gen-vector-redactor.py from images/mcp-cerbos-shim/internal/server/secret-patterns.json — do not edit; run: python3 scripts/gen-vector-redactor.py)
+          # BEGIN GENERATED redactor (scripts/gen-vector-redactor.py from images/mcp-cerbos-shim/internal/server/secret-patterns.json - do not edit; run: python3 scripts/gen-vector-redactor.py)
           .message = replace!(.message, r'-----BEGIN (?:RSA |EC |OPENSSH |DSA |ED25519 |ENCRYPTED )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |OPENSSH |DSA |ED25519 |ENCRYPTED )?PRIVATE KEY-----', "<masked>", count: -1)
           .message = replace(.message, r'xox[bpraescd]-[A-Za-z0-9\-_]+', "<masked>", count: -1)
           .message = replace(.message, r'xapp-[A-Za-z0-9\-_]+', "<masked>", count: -1)

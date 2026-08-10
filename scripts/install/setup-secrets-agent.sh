@@ -13,7 +13,7 @@
 #
 # Generated material (dashboard auth, SSH key) is generated once and
 # reused on re-run; Slack values are taken from the environment or prompted for.
-# Secrets are disposable/recreatable — keep your own copy of any Slack tokens.
+# Secrets are disposable/recreatable - keep your own copy of any Slack tokens.
 #
 # Flags:
 #   -y, --yes     auto-approve every change (non-interactive)
@@ -72,7 +72,7 @@ confirm() {
 
 kc() { kubectl --context "$KUBE_CONTEXT" "$@"; }
 ensure_ns() { kc create namespace "$1" --dry-run=client -o yaml | kc apply -f - >/dev/null; }
-# secret_val <name> <key> — decoded value of a secret key (empty if absent).
+# secret_val <name> <key> - decoded value of a secret key (empty if absent).
 secret_val() {
   local json b64
   json="$(kc -n "$NS" get secret "$1" -o json 2>/dev/null)" || return 0
@@ -115,7 +115,7 @@ else
     ui_key_value "Public key" "$pubkey"
     ui_info "Next: add this key to your GitLab/GitHub deploy keys."
   else
-    warn "SSH key generation skipped — git push/pull from the sandbox will not work until set."
+    warn "SSH key generation skipped - git push/pull from the sandbox will not work until set."
   fi
 fi
 
@@ -181,7 +181,7 @@ info "Applied $ITEM."
 step "Verification"
 missing=0
 check() { if [[ -n "$(secret_val "$1" "$2")" ]]; then ui_success "$NS/$1 ($2)"; else ui_error "$NS/$1 ($2) is missing"; missing=1; fi; }
-check_optional() { if [[ -n "$(secret_val "$1" "$2")" ]]; then ui_success "$NS/$1 ($2)"; else ui_info "$NS/$1 ($2) — optional, not set"; fi; }
+check_optional() { if [[ -n "$(secret_val "$1" "$2")" ]]; then ui_success "$NS/$1 ($2)"; else ui_info "$NS/$1 ($2) - optional, not set"; fi; }
 check "$ITEM" password
 check "$ITEM" signing-secret
 check_optional "$ITEM" public-key

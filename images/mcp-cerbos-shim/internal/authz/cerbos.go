@@ -72,11 +72,11 @@ func (cc *CerbosClient) IsAllowed(ctx context.Context, principalID string, roles
 	// know the rule name ahead of time (any deny rule in the policy could have
 	// matched) or the policy version at the call site. Cerbos's own
 	// ResourceResult.Output(key) requires the exact src key, which defeats the
-	// purpose here — so we walk the raw Outputs list directly (same
+	// purpose here - so we walk the raw Outputs list directly (same
 	// underlying field ResourceResult.buildOutputMap reads, just without
 	// requiring the caller to already know the winning rule name).
 	// engine.v1.OutputEntry (this repo's pinned genpb) carries only Src/Val,
-	// no per-entry action — but this call always requests exactly one
+	// no per-entry action - but this call always requests exactly one
 	// resource+action pair (see the single .Add(resource, action) above), so
 	// every entry in GetOutputs() already belongs to that one action; no
 	// action filter is needed or possible. Take the first non-empty string

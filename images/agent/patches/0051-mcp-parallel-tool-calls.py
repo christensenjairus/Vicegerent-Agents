@@ -25,9 +25,9 @@ import sys
 
 
 DISPATCH_MARKER = "Vicegerent patch 0051: classify deferred MCP bridges"
-DISPATCH_ANCHOR = '''        if not isinstance(function_args, dict):
+DISPATCH_ANCHOR = f'''        if not isinstance(function_args, dict):
             logging.debug(
-                "Non-dict args for %s (%s) — treating as sequential barrier",
+                "Non-dict args for %s (%s) {chr(8212)} treating as sequential barrier",
                 tool_name,
                 type(function_args).__name__,
             )
@@ -38,7 +38,7 @@ DISPATCH_ANCHOR = '''        if not isinstance(function_args, dict):
 '''
 DISPATCH_REPLACEMENT = f'''        if not isinstance(function_args, dict):
             logging.debug(
-                "Non-dict args for %s (%s) — treating as sequential barrier",
+                "Non-dict args for %s (%s) - treating as sequential barrier",
                 tool_name,
                 type(function_args).__name__,
             )
@@ -191,7 +191,7 @@ def _patch_dispatch(source: str, path: Path) -> str:
     if count != 1:
         raise SystemExit(
             f"patch 0051: expected exactly 1 deferred-planner anchor in {path}, "
-            f"found {count} (upstream drifted — re-verify)"
+            f"found {count} (upstream drifted - re-verify)"
         )
     patched = source.replace(DISPATCH_ANCHOR, DISPATCH_REPLACEMENT, 1)
     compile(patched, str(path), "exec")
@@ -213,12 +213,12 @@ def _patch_mcp(source: str, path: Path) -> str:
         if count != expected:
             raise SystemExit(
                 f"patch 0051: expected {expected} {label} anchor(s) in {path}, "
-                f"found {count} (upstream drifted — re-verify)"
+                f"found {count} (upstream drifted - re-verify)"
             )
     if source.count("_rpc_lock") != 12:
         raise SystemExit(
             f"patch 0051: expected 12 total _rpc_lock references in {path}, "
-            f"found {source.count('_rpc_lock')} (upstream changed the lock API — re-verify)"
+            f"found {source.count('_rpc_lock')} (upstream changed the lock API - re-verify)"
         )
 
     patched = source.replace(MCP_CLASS_ANCHOR, MCP_CLASS_REPLACEMENT, 1)
@@ -247,11 +247,11 @@ def main() -> int:
     dispatch_applied = DISPATCH_MARKER in dispatch_source
     mcp_applied = MCP_MARKER in mcp_source
     if dispatch_applied and mcp_applied:
-        print("patch: already applied to Hermes MCP dispatch — no-op")
+        print("patch: already applied to Hermes MCP dispatch - no-op")
         return 0
     if dispatch_applied != mcp_applied:
         raise SystemExit(
-            "patch 0051: partially applied state detected — restore both source "
+            "patch 0051: partially applied state detected - restore both source "
             "files before retrying"
         )
 

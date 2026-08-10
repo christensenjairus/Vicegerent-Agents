@@ -83,14 +83,14 @@ def _patch_mcp_tool() -> None:
         src = f.read()
 
     if APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return
 
     count = src.count(ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 _PARKED_RETRY_INTERVAL anchor in {path}, "
-            f"found {count} (upstream drifted — re-verify)"
+            f"found {count} (upstream drifted - re-verify)"
         )
 
     src = src.replace(ANCHOR, REPLACEMENT, 1)

@@ -74,7 +74,7 @@ def _print_entrypoint_coverage() -> None:
         if c not in agent_commands and c not in registers
     ]
     if excluded:
-        print(f"      ✗ {', '.join(excluded)} — configured hooks are a SILENT NO-OP here")
+        print(f"      ✗ {', '.join(excluded)} - configured hooks are a SILENT NO-OP here")
         print("        (a hook can pass every check above and still never fire)")
     print()'''
 

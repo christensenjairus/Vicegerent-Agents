@@ -331,7 +331,7 @@ func TestCheckRequest_ListResourcesReachesPolicy(t *testing.T) {
 // back to the generic, backend-agnostic denyMessage and must NOT leak the
 // probed resource type or action (those go only to the shim log).
 func TestCheckRequest_PolicyDenyMessageIsGeneric(t *testing.T) {
-	d := &stubDecider{allow: false} // reason: "" — no policy output configured
+	d := &stubDecider{allow: false} // reason: "" - no policy output configured
 	s := newTestServer(t, d)
 	r, err := s.CheckRequest(context.Background(), mcpReq("kubernetes", "tools/call",
 		toolCall("getResource", map[string]any{"kind": "Secret", "name": "x"})))
@@ -487,7 +487,7 @@ func TestCheckRequest_AllowDefaultBackendPassesUnmappedTool(t *testing.T) {
 // (thv vmcp serve --optimizer): every real invocation arrives wrapped as
 // call_tool{tool_name, parameters}. If the shim didn't unwrap it, the mapping
 // lookup would only ever see "call_tool" and silently pass every call on this
-// allow-default backend — including Secret reads.
+// allow-default backend - including Secret reads.
 func TestCheckRequest_OptimizerCallToolUnwrap(t *testing.T) {
 	t.Run("call_tool wrapping a Secret read still denies", func(t *testing.T) {
 		d := &stubDecider{allow: false}
@@ -603,7 +603,7 @@ func TestCheckRequest_OptimizerCallToolUnwrap(t *testing.T) {
 
 // TestCheckRequest_ForceOverride covers a mapping `force` block (used to make
 // GitHub PR creation always draft: true): on allow, the call must be
-// forwarded with the forced key rewritten regardless of what was sent — as a
+// forwarded with the forced key rewritten regardless of what was sent - as a
 // Mutated result, not a bare Pass. On deny, force must never apply.
 func TestCheckRequest_ForceOverride(t *testing.T) {
 	t.Run("allow: forces the key and forwards other args unchanged", func(t *testing.T) {
@@ -967,7 +967,7 @@ func TestRedactString(t *testing.T) {
 	twilioKey := "SK" + strings.Repeat("f", 32)                                                                           // pragma: allowlist secret
 	npmTok := "npm" + "_" + strings.Repeat("m", 36)                                                                       // pragma: allowlist secret
 	jwtVal := "eyJ" + strings.Repeat("h", 10) + "." + "eyJ" + strings.Repeat("p", 10) + "." + strings.Repeat("s", 10)     // pragma: allowlist secret
-	// PII (fake) — SSN, two card issuer shapes, and a US phone number. Built by
+	// PII (fake) - SSN, two card issuer shapes, and a US phone number. Built by
 	// concatenation like the secret fixtures above.
 	ssnVal := "123" + "-" + "45" + "-" + "6789"
 	visaCard := "4" + strings.Repeat("1", 15)        // 16-digit Visa (starts 4)

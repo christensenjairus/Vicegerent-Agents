@@ -29,7 +29,7 @@ The remaining sections explain each step, every required or optional credential,
 
 ## Configuring for your machine
 
-Each person runs their own clone against their own laptop and their own local Kind cluster. All machine-specific configuration lives in a single gitignored `values.yaml` (policy, agents, egress, models, and replicas) that you copy from the committed `values.example.yaml` — like copying `.env.example` to `.env`. Your `values.yaml` carries only the **deltas** for your machine; it is layered over the committed `values.defaults.yaml` (the full annotated default for every setting) by the installer and `scripts/validate.sh`, so anything you omit falls through to that default. The installer validates the merged values as a strict configuration API before it mutates the cluster: unknown keys, wrong types, invalid release names, invalid content-safety statuses, duplicate agents, and consumers without their required model backend fail with a path-specific error. Nothing machine-specific is committed, so a second machine is just a second clone with its own `values.yaml` (see [Adding a second machine](#adding-a-second-machine)).
+Each person runs their own clone against their own laptop and their own local Kind cluster. All machine-specific configuration lives in a single gitignored `values.yaml` (policy, agents, egress, models, and replicas) that you copy from the committed `values.example.yaml` - like copying `.env.example` to `.env`. Your `values.yaml` carries only the **deltas** for your machine; it is layered over the committed `values.defaults.yaml` (the full annotated default for every setting) by the installer and `scripts/validate.sh`, so anything you omit falls through to that default. The installer validates the merged values as a strict configuration API before it mutates the cluster: unknown keys, wrong types, invalid release names, invalid content-safety statuses, duplicate agents, and consumers without their required model backend fail with a path-specific error. Nothing machine-specific is committed, so a second machine is just a second clone with its own `values.yaml` (see [Adding a second machine](#adding-a-second-machine)).
 
 ### Values to change for your machine
 
@@ -42,17 +42,17 @@ $EDITOR values.yaml
 
 Every setting carries an inline comment in `values.defaults.yaml`; review these starter fields before installing:
 
-- **`policy.sourceControl.github`** — replace `your-github-username` in the fork repositories, `forkOwners`, and `username`. The starter requires pull requests into the shared `moveworks-emu` repositories and the public platform mirror to use your fork, preventing agents from attempting direct upstream branches. Do not add a private GitLab policy block unless you actually have access and enable that MCP backend.
-- **`policy.workManagement`** — Jira, Linear, and PagerDuty already contain the maintained shared DevOps scopes. Replace only the Jira/Linear assignee identity placeholders. Cerbos permits the listed project, issue types, team identifiers, and service IDs and denies targets outside those lists.
-- **`policy.dataAccess`** — Grafana and Elastic use blocklists, not allowlists. The starter carries the work profile's Moveworks-wide blocks for the `fess5o6x6evb4b` / `dev-opensearch-datasource` Grafana datasource and Elastic indices matching `snowflake`. Keep those entries when enabling either permissive read-only backend, and add narrower blocks if your work requires them.
-- **`policy.notion` / `policy.alertmanager`** — Notion includes the maintained DevOps, DevSecOps, DevOps WIP, and Major Incidents parent IDs; replace the Scratchpad and user placeholders after OAuth. Alertmanager permits silences up to 24 hours; replace `your-username` with the normal username used for silence ownership.
-- **`agents[].git`** — replace `Your Name` / `you@moveworks.ai` with the identity each agent should commit as.
-- **`egress`** — the starter includes public source/package endpoints and Moveworks Artifactory. Artifactory resolves into `10.230.0.0/16`, so that internal range must also be allowed. Any hostname that resolves to an internal IP needs its corresponding CIDR here; add only the ranges your allowed hosts require.
-- **`agents[].directEgress.ssh.hosts`** — each map key is an SSH connection hostname from a git remote, and its `cnameChain` contains only the intermediate DNS aliases returned while resolving that hostname. Defaults provide no SSH hosts; every machine profile explicitly lists GitHub and any additional host it needs. Cilium rejects a CNAME answer unless each intermediate name is allowlisted. SSH bypasses the HTTP egress proxy and content scrubbing.
-- **`agents[].directEgress.slackFQDNs`** — keep the four starter entries. Slack's Web API, Socket Mode WebSockets, failover WebSocket, and file downloads require direct TCP/443 because the HTTP proxy is GET-only. These network destinations do not enable Slack by themselves; Slack remains unavailable until all four required secret values are configured.
-- **`agents[].config.agent.system_prompt` / `agents[].soul`** — these are intentional working defaults, not setup placeholders. Leave them intact for the standard technical-expert role and personality; edit them only when you deliberately want different agent behavior. Universal vMCP discovery guidance is rendered separately by the chart for every agent and does not belong in a machine-specific soul.
-- **Container registry** (`values.defaults.yaml`'s `agentDefaults.image` and `charts/mcp-cerbos-shim/templates/deployment.yaml`) — these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave them as-is and install directly against it. Only repoint them if you want to build and host your own copies of `agent` or `mcp-cerbos-shim` — see each image's README under `images/*/README.md` for the build and push steps. The agentgateway controller and proxy use upstream images from `cr.agentgateway.dev`.
-- **`.gitlab-ci.yml` / `renovate.json`** — these are wired for this repository's self-hosted GitLab instance. Adapt them if you host the repository elsewhere, or ignore them; they validate and update this repository but are not installed in the cluster.
+- **`policy.sourceControl.github`** - replace `your-github-username` in the fork repositories, `forkOwners`, and `username`. The starter requires pull requests into the shared `moveworks-emu` repositories and the public platform mirror to use your fork, preventing agents from attempting direct upstream branches. Do not add a private GitLab policy block unless you actually have access and enable that MCP backend.
+- **`policy.workManagement`** - Jira, Linear, and PagerDuty already contain the maintained shared DevOps scopes. Replace only the Jira/Linear assignee identity placeholders. Cerbos permits the listed project, issue types, team identifiers, and service IDs and denies targets outside those lists.
+- **`policy.dataAccess`** - Grafana and Elastic use blocklists, not allowlists. The starter carries the work profile's Moveworks-wide blocks for the `fess5o6x6evb4b` / `dev-opensearch-datasource` Grafana datasource and Elastic indices matching `snowflake`. Keep those entries when enabling either permissive read-only backend, and add narrower blocks if your work requires them.
+- **`policy.notion` / `policy.alertmanager`** - Notion includes the maintained DevOps, DevSecOps, DevOps WIP, and Major Incidents parent IDs; replace the Scratchpad and user placeholders after OAuth. Alertmanager permits silences up to 24 hours; replace `your-username` with the normal username used for silence ownership.
+- **`agents[].git`** - replace `Your Name` / `you@moveworks.ai` with the identity each agent should commit as.
+- **`egress`** - the starter includes public source/package endpoints and Moveworks Artifactory. Artifactory resolves into `10.230.0.0/16`, so that internal range must also be allowed. Any hostname that resolves to an internal IP needs its corresponding CIDR here; add only the ranges your allowed hosts require.
+- **`agents[].directEgress.ssh.hosts`** - each map key is an SSH connection hostname from a git remote, and its `cnameChain` contains only the intermediate DNS aliases returned while resolving that hostname. Defaults provide no SSH hosts; every machine profile explicitly lists GitHub and any additional host it needs. Cilium rejects a CNAME answer unless each intermediate name is allowlisted. SSH bypasses the HTTP egress proxy and content scrubbing.
+- **`agents[].directEgress.slackFQDNs`** - keep the four starter entries. Slack's Web API, Socket Mode WebSockets, failover WebSocket, and file downloads require direct TCP/443 because the HTTP proxy is GET-only. These network destinations do not enable Slack by themselves; Slack remains unavailable until all four required secret values are configured.
+- **`agents[].config.agent.system_prompt` / `agents[].soul`** - these are intentional working defaults, not setup placeholders. Leave them intact for the standard technical-expert role and personality; edit them only when you deliberately want different agent behavior. Universal vMCP discovery guidance is rendered separately by the chart for every agent and does not belong in a machine-specific soul.
+- **Container registry** (`values.defaults.yaml`'s `agentDefaults.image` and `charts/mcp-cerbos-shim/templates/deployment.yaml`) - these point at the original operator's Harbor registry (`harbor.hahomelabs.com/vicegerent/...`), which is public to pull from, so you can leave them as-is and install directly against it. Only repoint them if you want to build and host your own copies of `agent` or `mcp-cerbos-shim` - see each image's README under `images/*/README.md` for the build and push steps. The agentgateway controller and proxy use upstream images from `cr.agentgateway.dev`.
+- **`.gitlab-ci.yml` / `renovate.json`** - these are wired for this repository's self-hosted GitLab instance. Adapt them if you host the repository elsewhere, or ignore them; they validate and update this repository but are not installed in the cluster.
 
 ### Migrating values from the former schema
 
@@ -71,12 +71,12 @@ Prerequisites:
 - macOS with Docker (Kind runs its node as a container)
 - `kind`
 - `kubectl`
-- `helm` 4+ — the installer uses Helm 4 flags (`--rollback-on-failure`, `--force-replace`, `--hide-notes`) and refuses to run on Helm 3
+- `helm` 4+ - the installer uses Helm 4 flags (`--rollback-on-failure`, `--force-replace`, `--hide-notes`) and refuses to run on Helm 3
 - `yq` v4
 - `jq`
 - `git`
-- A Homebrew-provided OpenSSL release with `req -addext` support — macOS's stock LibreSSL lacks it. Put its `bin` directory ahead of `/usr/bin` on `PATH`.
-- SSH access to your git host — see "Configuring for your machine" above
+- A Homebrew-provided OpenSSL release with `req -addext` support - macOS's stock LibreSSL lacks it. Put its `bin` directory ahead of `/usr/bin` on `PATH`.
+- SSH access to your git host - see "Configuring for your machine" above
 
 Create the cluster (creates the Kind cluster on its docker network, removes Kind's auto-installed local-path-provisioner and `standard` StorageClass, and patches CoreDNS to resolve `host.docker.internal`):
 
@@ -97,7 +97,7 @@ If metrics are not ready immediately, wait a minute and rerun `kubectl --context
 
 ## Secrets setup
 
-Cluster secrets are plain Kubernetes Secrets — Kind etcd is the source of truth, and no secret values live in git. The setup scripts generate crypto material (CAs, certificates, SSH keys, random tokens) and read user-supplied API keys from the environment or interactive prompts, then `kubectl apply` the Secrets directly. They are provisioned in two passes: **platform-wide** material (shared by the whole cluster) and **per-agent** material (one set per named agent). Both are idempotent — generated material already present is reused, and re-running reseeds a fresh cluster. The installer never creates secrets; it only pre-flights that the ones its workloads block on exist, and fails fast with a pointer if they don't.
+Cluster secrets are plain Kubernetes Secrets - Kind etcd is the source of truth, and no secret values live in git. The setup scripts generate crypto material (CAs, certificates, SSH keys, random tokens) and read user-supplied API keys from the environment or interactive prompts, then `kubectl apply` the Secrets directly. They are provisioned in two passes: **platform-wide** material (shared by the whole cluster) and **per-agent** material (one set per named agent). Both are idempotent - generated material already present is reused, and re-running reseeds a fresh cluster. The installer never creates secrets; it only pre-flights that the ones its workloads block on exist, and fails fast with a pointer if they don't.
 
 MCP-server API keys are the exception: they are `thv` (ToolHive) secrets on the host, not Kubernetes Secrets. Configure them with `./vicegerent setup mcp` (see [`host/mcp`](../host/mcp)), not the scripts below.
 
@@ -171,13 +171,13 @@ agent-sandbox        egress-proxy-ca-cert          ca.crt                 (MITM 
 velero               velero-credentials            cloud                  (rclone S3 SigV4 credentials)
 ```
 
-MCP-server API keys (tavily/firecrawl/gitlab) are **not** here — they are `thv` secrets on the host (`./vicegerent setup mcp`); notion/linear use OAuth.
+MCP-server API keys (tavily/firecrawl/gitlab) are **not** here - they are `thv` secrets on the host (`./vicegerent setup mcp`); notion/linear use OAuth.
 
-The ghostunnel files under `~/.vicegerent/ghostunnel`: `ca.cert`, `ca.key`, `server.crt`, `server.key`, `client.crt`, `client.key`. Only `ca.key` is host-exclusive — it stays here so a re-run can re-issue a leaf without rebuilding the chain — and the host ghostunnel server reads its material from this directory.
+The ghostunnel files under `~/.vicegerent/ghostunnel`: `ca.cert`, `ca.key`, `server.crt`, `server.key`, `client.crt`, `client.key`. Only `ca.key` is host-exclusive - it stays here so a re-run can re-issue a leaf without rebuilding the chain - and the host ghostunnel server reads its material from this directory.
 
 ### Per-agent
 
-Run once per named agent, using the name you gave it in `values.yaml`'s `agents:` list. Each agent gets its own independently generated dashboard credentials and SSH key — no material is shared between agents. Run this before `./vicegerent install`, or the install's agents-stage pre-flight will stop and point you here.
+Run once per named agent, using the name you gave it in `values.yaml`'s `agents:` list. Each agent gets its own independently generated dashboard credentials and SSH key - no material is shared between agents. Run this before `./vicegerent install`, or the install's agents-stage pre-flight will stop and point you here.
 
 ```bash
 ./vicegerent setup secrets agent <name>   # accepts -y/--yes
@@ -196,9 +196,9 @@ Slack remains optional. If any Slack value is configured, all four Slack values 
 
 ## Install the platform
 
-`./vicegerent install` runs the staged Helm installer in `scripts/install/install.sh`. The control plane (stage order, chart coordinates, pinned versions, image tags) lives in `stages/stages.yaml`; the machine plane (`policy` / `agents` / `egress` / `models` / `replicas`) is your `values.yaml`. It does not run continuously — re-run it yourself after a `git pull` to apply upstream changes.
+`./vicegerent install` runs the staged Helm installer in `scripts/install/install.sh`. The control plane (stage order, chart coordinates, pinned versions, image tags) lives in `stages/stages.yaml`; the machine plane (`policy` / `agents` / `egress` / `models` / `replicas`) is your `values.yaml`. It does not run continuously - re-run it yourself after a `git pull` to apply upstream changes.
 
-Each stage runs `helm upgrade --install --wait --rollback-on-failure` (or `kubectl apply -k` for the vendored/CRD manifests) in order and health-gates before moving on, so a re-run delivers upgrades with no gaps. It is idempotent — an immediate re-run with no changes is a no-op. It confirms before each change; pass `-y`/`--yes` for a non-interactive run.
+Each stage runs `helm upgrade --install --wait --rollback-on-failure` (or `kubectl apply -k` for the vendored/CRD manifests) in order and health-gates before moving on, so a re-run delivers upgrades with no gaps. It is idempotent - an immediate re-run with no changes is a no-op. It confirms before each change; pass `-y`/`--yes` for a non-interactive run.
 
 The first stage installs Cilium as the CNI.
 
@@ -233,15 +233,15 @@ helm --kube-context "$KUBE_CONTEXT" list -A
 
 ## Back up and restore the cluster
 
-Velero takes a full-cluster backup daily (13:00 America/Denver, 7-day retention) — every namespaced and cluster-scoped object, the Helm release state, and the contents of the agent `data` and `gitrepos` PVCs — into an rclone S3 bucket on your laptop that survives a cluster nuke. It is the failsafe for a lost agent volume, a botched `./vicegerent install`, and an unrecoverable cluster alike.
+Velero takes a full-cluster backup daily (13:00 America/Denver, 7-day retention) - every namespaced and cluster-scoped object, the Helm release state, and the contents of the agent `data` and `gitrepos` PVCs - into an rclone S3 bucket on your laptop that survives a cluster nuke. It is the failsafe for a lost agent volume, a botched `./vicegerent install`, and an unrecoverable cluster alike.
 
 **See [`docs/backup-and-restore.md`](backup-and-restore.md)** for the full guide: why it is built on CSI snapshots + data movement instead of a hostPath copy, which volumes are skipped, ad-hoc backups, per-agent volume restores, object-only repair restores, full-cluster restores, and the `/etc/hosts` gotcha that breaks the `velero` CLI.
 
 ## Agent volume lifecycle
 
-The three agent PVCs (`data-<agent>`, `gitrepos-<agent>`, `models-<agent>`) are declared by the agent chart in `charts/agent/templates/pvc.yaml` and referenced from the Sandbox pod template as ordinary `persistentVolumeClaim` volumes. They are deliberately **not** Sandbox `volumeClaimTemplates`: the sandbox controller makes itself controller-owner of any claim it creates, so `kubectl delete sandbox <agent>` would garbage-collect all three claims and — since `csi-hostpath-sc` reclaims with `Delete` — take the PVs and their data with them. Chart-owned claims are unowned by the Sandbox, so deleting and recreating the Sandbox CR reattaches the same volumes. They also carry `helm.sh/resource-policy: keep`, so `helm uninstall` leaves them behind.
+The three agent PVCs (`data-<agent>`, `gitrepos-<agent>`, `models-<agent>`) are declared by the agent chart in `charts/agent/templates/pvc.yaml` and referenced from the Sandbox pod template as ordinary `persistentVolumeClaim` volumes. They are deliberately **not** Sandbox `volumeClaimTemplates`: the sandbox controller makes itself controller-owner of any claim it creates, so `kubectl delete sandbox <agent>` would garbage-collect all three claims and - since `csi-hostpath-sc` reclaims with `Delete` - take the PVs and their data with them. Chart-owned claims are unowned by the Sandbox, so deleting and recreating the Sandbox CR reattaches the same volumes. They also carry `helm.sh/resource-policy: keep`, so `helm uninstall` leaves them behind.
 
-The second reason to own them in the chart is that labels are then re-asserted on every `helm upgrade`. A claim template's metadata is read only when the controller first creates the PVC, so a label added later never reaches an existing volume — and a Velero restore, which recreates the PVC from a backup taken before the label existed, silently drops it.
+The second reason to own them in the chart is that labels are then re-asserted on every `helm upgrade`. A claim template's metadata is read only when the controller first creates the PVC, so a label added later never reaches an existing volume - and a Velero restore, which recreates the PVC from a backup taken before the label existed, silently drops it.
 
 Because the data no longer depends on the Sandbox surviving, **the Sandbox CR itself is freely disposable**. It carries no `helm.sh/resource-policy: keep`, so Helm deletes and recreates it like any other object: an agent removed from `values.yaml` is `helm uninstall`ed and its Sandbox really goes away, and `kubectl delete sandbox <agent>` followed by `./vicegerent install` is a clean way to rebuild an agent from scratch. The replacement Pod remounts the same three claims; only `runtime` and `tmp` are lost, and both are `emptyDir` that the Pod rebuilds anyway.
 
@@ -268,7 +268,7 @@ $EDITOR values.yaml                    # this machine's cluster vars + agents
 ./vicegerent install
 ```
 
-`scripts/install/kind-config.yaml`'s NodePort pool (`30119-30128`) only needs editing if you run two clusters on the same host at once — a single laptop running one cluster can leave it as-is.
+`scripts/install/kind-config.yaml`'s NodePort pool (`30119-30128`) only needs editing if you run two clusters on the same host at once - a single laptop running one cluster can leave it as-is.
 
 ### Testing a second local Kind cluster
 
@@ -285,7 +285,7 @@ The context must start with `kind-`; non-Kind contexts are rejected. The selecte
 
 ## Host-side MCP control plane
 
-Every MCP server runs on the laptop under ToolHive (`thv`). The control plane lives in [`host/mcp`](../host/mcp): `vicegerent mcp` brings up the 17 ToolHive workloads declared in `toolhive-servers.json` (kubernetes, github, gitlab, tavily, firecrawl, notion, linear, jira, grafana, alertmanager, pagerduty, elastic, aws — plus the `aws_profiles` companion and three `_secondary` variants — all off by default) and supervises four long-lived host processes — the scoped `thv vmcp serve` on `127.0.0.1:4483`, `ghostunnel` (terminates cluster mTLS, listens `127.0.0.1:8453`, forwards to that vMCP), `rclone serve s3` (the Velero backup bucket on `127.0.0.1:9899`), and `mcp-health-watch` (polls workload health + AWS credential expiry and notifies) — plus opt-in `operator-vmcp` and `caffeinate` processes.
+Every MCP server runs on the laptop under ToolHive (`thv`). The control plane lives in [`host/mcp`](../host/mcp): `vicegerent mcp` brings up the 17 ToolHive workloads declared in `toolhive-servers.json` (kubernetes, github, gitlab, tavily, firecrawl, notion, linear, jira, grafana, alertmanager, pagerduty, elastic, aws - plus the `aws_profiles` companion and three `_secondary` variants - all off by default) and supervises four long-lived host processes - the scoped `thv vmcp serve` on `127.0.0.1:4483`, `ghostunnel` (terminates cluster mTLS, listens `127.0.0.1:8453`, forwards to that vMCP), `rclone serve s3` (the Velero backup bucket on `127.0.0.1:9899`), and `mcp-health-watch` (polls workload health + AWS credential expiry and notifies) - plus opt-in `operator-vmcp` and `caffeinate` processes.
 
 The cluster reaches the vMCP at `host.docker.internal:8453`. agentgateway fronts it with one `AgentgatewayBackend` + HTTPRoute + `AgentgatewayPolicy` trio per Gateway listener: `vmcp` on `/mcp/vmcp` for agent traffic (guardrail phase `Full`), and `vmcp-internal` on the internal `:81` listener for the shim's own re-entrant ownership lookups (phase `Request` only, so a lookup can't recurse into response inspection). Through the vMCP, tools are named `{workload}_<tool>` (e.g. `kubernetes_resources_get`).
 
@@ -299,14 +299,14 @@ When macOS first prompts, allow Vicegerent notifications, then select **Persiste
 
 Re-run it any time to reconfigure, or toggle an individual server later with `./vicegerent mcp enable <key>` / `disable <key>`.
 
-Start and stop the whole local platform — the Kind cluster and the host MCP stack together — with the top-level commands:
+Start and stop the whole local platform - the Kind cluster and the host MCP stack together - with the top-level commands:
 
 ```bash
 ./vicegerent start   # start the Kind cluster, then bring up the host MCP stack
 ./vicegerent stop    # stop the host MCP stack (including ToolHive workloads), then stop the cluster
 ```
 
-For finer control of just the host stack, drive it with `./vicegerent mcp` (`configure`, `enable`/`disable`, `start [--caffeinate] [--operator-vmcp]`, `stop`, `status`, `logs`, `doctor`); the interactive TUI is the top-level `./vicegerent tui`. `--operator-vmcp` adds an unscoped, optimized endpoint at `http://127.0.0.1:4484/mcp` for native harnesses in manual mode. Both vMCPs aggregate the same ToolHive backends and enable the `find_tool`/`call_tool` optimizer, but only the sandbox vMCP uses the `aggregation.tools` filter. The operator endpoint deliberately bypasses that filter and agentgateway/Cerbos; this repo attempts no operator-side tool selection or argument authorization. Use it only while actively supervising every action. If you are not willing to supervise every command, run the work in the sandbox. A later `start` without the flag removes the operator process. There is one more subcommand, `mcp-health-watch` — supervisord runs it as the fourth always-on supervised process, and you should not invoke it by hand. See [`host/mcp/README.md`](../host/mcp/README.md) for the full reference and host-trust warning.
+For finer control of just the host stack, drive it with `./vicegerent mcp` (`configure`, `enable`/`disable`, `start [--caffeinate] [--operator-vmcp]`, `stop`, `status`, `logs`, `doctor`); the interactive TUI is the top-level `./vicegerent tui`. `--operator-vmcp` adds an unscoped, optimized endpoint at `http://127.0.0.1:4484/mcp` for native harnesses in manual mode. Both vMCPs aggregate the same ToolHive backends and enable the `find_tool`/`call_tool` optimizer, but only the sandbox vMCP uses the `aggregation.tools` filter. The operator endpoint deliberately bypasses that filter and agentgateway/Cerbos; this repo attempts no operator-side tool selection or argument authorization. Use it only while actively supervising every action. If you are not willing to supervise every command, run the work in the sandbox. A later `start` without the flag removes the operator process. There is one more subcommand, `mcp-health-watch` - supervisord runs it as the fourth always-on supervised process, and you should not invoke it by hand. See [`host/mcp/README.md`](../host/mcp/README.md) for the full reference and host-trust warning.
 
 ```bash
 ./vicegerent mcp start
@@ -317,7 +317,7 @@ For finer control of just the host stack, drive it with `./vicegerent mcp` (`con
 
 ## Dashboards
 
-Each agent's Hermes dashboard is published on a Kind NodePort — derived as 30119 plus the agent's index in your `agents:` list (pool `30119-30128`, mapped to the host via kind `extraPortMappings`) — and reachable directly at `http://127.0.0.1:<nodePort>/`. Print its URL + basic-auth credentials, then open the URL in a browser:
+Each agent's Hermes dashboard is published on a Kind NodePort - derived as 30119 plus the agent's index in your `agents:` list (pool `30119-30128`, mapped to the host via kind `extraPortMappings`) - and reachable directly at `http://127.0.0.1:<nodePort>/`. Print its URL + basic-auth credentials, then open the URL in a browser:
 
 ```bash
 ./vicegerent creds <name>   # print dashboard URL + login

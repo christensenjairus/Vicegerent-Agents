@@ -3,8 +3,8 @@ startup via PYTHONPATH=/opt/patch (Python imports `sitecustomize` before main).
 
 Why: the server's `call_aws` tool is `async def`, but it runs the actual AWS
 call (`interpret_command` / `execute_awscli_customization`, both synchronous
-botocore/CLI work) directly on the asyncio event loop. A long call — e.g.
-`secretsmanager list-secrets` paginating a whole account — therefore blocks the
+botocore/CLI work) directly on the asyncio event loop. A long call - e.g.
+`secretsmanager list-secrets` paginating a whole account - therefore blocks the
 loop and freezes the server's MCP stdio protocol until it returns. Upstream that
 freezes the ToolHive vMCP: it re-aggregates every backend's capabilities on
 each `tools/list` under one shared deadline, so a backend stuck mid-call

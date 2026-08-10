@@ -105,7 +105,7 @@ SYSTEM_PROMPT_IMPORT_REPLACEMENT = (
 )
 
 SYSTEM_PROMPT_FALLBACK_ANCHOR = (
-    '    # Kanban worker/orchestrator lifecycle — only present when the\n'
+    '    # Kanban worker/orchestrator lifecycle - only present when the\n'
     '    # dispatcher spawned this process (kanban_show check_fn gates on\n'
     '    # HERMES_KANBAN_TASK env var). Normal chat sessions never see\n'
     '    # this block. Resolved once at __init__ (see _kanban_worker_guidance).\n'

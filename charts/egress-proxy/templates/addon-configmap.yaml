@@ -3,7 +3,7 @@
 #
 # ALL sandbox outbound traffic (internal cluster services + internet) flows through
 # this proxy. Secrets in headers, bodies, and URL path/query are scrubbed before
-# forwarding. Pattern-based scrubbing does NOT cover encoded forms (base64, hex) —
+# forwarding. Pattern-based scrubbing does NOT cover encoded forms (base64, hex) -
 # the FQDN allowlist is the primary external control.
 #
 # Secret patterns (REDACT_PATTERNS) come from the single canonical source
@@ -24,7 +24,7 @@
 # Method enforcement (GET/HEAD only) applies to EXTERNAL destinations only.
 # Internal cluster services (*.svc.cluster.local) need POST and are passed through
 # after scrubbing. External exceptions are declarative (METHOD_EXEMPTIONS): each
-# entry requires host + method + path suffix + content-type to ALL match — any
+# entry requires host + method + path suffix + content-type to ALL match - any
 # one alone is client-controlled and doesn't bound the destination. Multi-tenant
 # allowlisted hosts (object storage, CDNs) are further scoped to path prefixes
 # via EXTERNAL_PATH_SCOPES, since Cilium's toFQDNs allowlist is host-only.
@@ -36,9 +36,9 @@
 # for trusted WS endpoints (e.g. Slack, which bypasses this proxy entirely).
 #
 # Accepted risk:
-#   - Slack (*.slack.com) bypasses proxy entirely — POST + WebSocket required for
+#   - Slack (*.slack.com) bypasses proxy entirely - POST + WebSocket required for
 #     Socket Mode. The agent communicates via Slack by design; this is a trusted channel.
-#   - SSH (port 22) bypasses proxy — SSH is not HTTP. Content in git pushes (commits,
+#   - SSH (port 22) bypasses proxy - SSH is not HTTP. Content in git pushes (commits,
 #     files) is not inspected. The agent's deploy key scope limits blast radius.
 apiVersion: v1
 kind: ConfigMap
@@ -84,7 +84,7 @@ data:
         except Exception:
             return "-"
     ALLOWED_METHODS = {"GET", "HEAD"}
-    # URL length limit — blocks naive base64/hex query-string exfiltration.
+    # URL length limit - blocks naive base64/hex query-string exfiltration.
     # 2048 chars is generous for all legitimate API/search use cases.
     MAX_URL_LENGTH = 2048
 
@@ -92,13 +92,13 @@ data:
     # (MCP-CALL, uncapped) are typically small; tool RESULTS can be huge (full
     # file reads, long command output), and this proxy's logs share
     # VictoriaLogs' cluster-wide 5GiB disk cap with three other sources
-    # (the victoria-logs stage) — this bounds a pathological
+    # (the victoria-logs stage) - this bounds a pathological
     # single response, not aggregate volume (even 10k calls/day at this cap is
     # a few percent of the budget). Generous on purpose so ordinary tool
     # output is never truncated, only outliers.
     MAX_MCP_RESPONSE_LOG_LENGTH = 32768
 
-    # In-cluster service hostnames — exempt from method/FQDN enforcement only (POST
+    # In-cluster service hostnames - exempt from method/FQDN enforcement only (POST
     # allowed). Secret scrubbing (headers, URL, body) applies to them too; see request().
     INTERNAL_SUFFIXES = (".cluster.local", ".svc")
 
@@ -114,7 +114,7 @@ data:
 
     # Lets specific external destinations bypass the GET/HEAD-only restriction
     # under narrow, fully-specified conditions. Host + method + path suffix +
-    # content-type must ALL match — any one alone is client-controlled and
+    # content-type must ALL match - any one alone is client-controlled and
     # doesn't bound the destination.
     METHOD_EXEMPTIONS: list[dict] = [
         {
@@ -134,7 +134,7 @@ data:
         {{- range .Values.egress.exactDomains }}
         "{{ . }}",
         {{- end }}
-        "httpbin.io",  # echo service — used by the redaction test suite only.
+        "httpbin.io",  # echo service - used by the redaction test suite only.
     }
     EXTERNAL_FQDN_WILDCARD_SUFFIXES = (
         {{- range .Values.egress.wildcardDomains }}
@@ -150,25 +150,25 @@ data:
     # Secret patterns, injected from the canonical secret-patterns.json at render
     # time (helm --set-file secretPatterns=…). This is the SAME file the Go shim
     # embeds via //go:embed, so the egress scrubber and the shim compile identical
-    # shapes from one source — no hand-sync. `required` fails the render if the flag
+    # shapes from one source - no hand-sync. `required` fails the render if the flag
     # is missing, so a bare `helm template` can never ship an empty pattern set.
     # re.ASCII gives RE2 parity with the Go regexp engine; `(?i)` is inline in the
     # JSON where a pattern needs case-insensitivity. Pattern-based scrubbing does
     # NOT cover encoded forms (base64, hex); the FQDN allowlist is the primary
     # external control. The r'''…''' quoting is safe because the JSON contains
     # double-quotes but no single-quotes (so ''' cannot appear) and JSON-escapes
-    # every backslash — a regex added to the JSON must never contain '''.
+    # every backslash - a regex added to the JSON must never contain '''.
     _PATTERN_DEFS = json.loads(r'''
-    {{- .Values.secretPatterns | required "egress-proxy: secretPatterns unset — render with helm --set-file secretPatterns=images/mcp-cerbos-shim/internal/server/secret-patterns.json" | nindent 4 }}
+    {{- .Values.secretPatterns | required "egress-proxy: secretPatterns unset - render with helm --set-file secretPatterns=images/mcp-cerbos-shim/internal/server/secret-patterns.json" | nindent 4 }}
     ''')
     REDACT_PATTERNS = [(d["name"], re.compile(d["regex"], re.ASCII)) for d in _PATTERN_DEFS]
 
-    # Authorization Bearer scrubbing — applied to every destination.
-    # Match Bearer token permissively — strip everything after "Bearer " regardless of
+    # Authorization Bearer scrubbing - applied to every destination.
+    # Match Bearer token permissively - strip everything after "Bearer " regardless of
     # trailing content (avoids header variants like "Bearer token; extra=data" leaking).
     BEARER_PATTERN = re.compile(r"(?i)^(Bearer\s+)\S+")
 
-    # RFC1918, link-local, loopback, CGNAT, and IPv6 private ranges — SSRF protection.
+    # RFC1918, link-local, loopback, CGNAT, and IPv6 private ranges - SSRF protection.
     PRIVATE_NETWORKS = [
         ipaddress.ip_network("10.0.0.0/8"),
         ipaddress.ip_network("172.16.0.0/12"),
@@ -197,13 +197,13 @@ data:
             addr = ipaddress.ip_address(host)
             return any(addr in net for net in PRIVATE_NETWORKS)
         except ValueError:
-            return False  # hostname — Cilium enforces destination boundary
+            return False  # hostname - Cilium enforces destination boundary
     def _is_text(content_type: str) -> bool:
         ct = content_type.split(";")[0].strip().lower()
         return any(ct.startswith(t) for t in TEXT_CONTENT_TYPES)
     def _matching_method_exemption(flow: http.HTTPFlow) -> dict | None:
-        # Every field on an exemption entry must match — host, method, path
-        # suffix, AND content-type — before it's granted. Any one alone is
+        # Every field on an exemption entry must match - host, method, path
+        # suffix, AND content-type - before it's granted. Any one alone is
         # client-controlled and doesn't bound the destination.
         host = flow.request.pretty_host
         method = flow.request.method
@@ -247,7 +247,7 @@ data:
         return ",".join(f"{k}:{v}" for k, v in sorted(breakdown.items(), key=lambda kv: -kv[1]))
 
     def _truncate_for_log(text: str, max_len: int) -> str:
-        # Truncated form is for human/grep consumption only — it is not valid
+        # Truncated form is for human/grep consumption only - it is not valid
         # JSON and must not be parsed back out.
         if len(text) <= max_len:
             return text
@@ -256,15 +256,15 @@ data:
     def _mcp_tool_calls(flow: http.HTTPFlow) -> list[tuple[object, str, object]]:
         # Extract (id, tool, arguments) for every JSON-RPC tools/call in the
         # request body; [] for anything that isn't one. id is the JSON-RPC
-        # request id, echoed back in the response — used to match this call to
+        # request id, echoed back in the response - used to match this call to
         # its result/error in _mcp_tool_responses (response() below), since
         # client=ip:port alone doesn't disambiguate concurrent/keep-alive calls
         # from the same sandbox. Only the HTTP vmcp server transits this proxy
         # (mnemosyne is stdio/local), so every call here is vmcp's
-        # call_tool/find_tool wrapper — call_tool is unwrapped so the REAL nested
+        # call_tool/find_tool wrapper - call_tool is unwrapped so the REAL nested
         # tool surfaces. Fail-quiet on any parse error: logging must never break
         # the request path. Runs AFTER body redaction (request() below), so the
-        # arguments returned are already <masked>-scrubbed — secrets never logged.
+        # arguments returned are already <masked>-scrubbed - secrets never logged.
         if flow.request.method != "POST":
             return []
         ct = flow.request.headers.get("content-type", "").split(";")[0].strip().lower()
@@ -298,16 +298,16 @@ data:
     def _mcp_response_entries(flow: http.HTTPFlow) -> list[dict] | None:
         # Parse the JSON-RPC response entries (single object or batch) out of
         # flow.response, accepting either a plain application/json body or a
-        # single-event text/event-stream body carrying one "data: <json>" line —
+        # single-event text/event-stream body carrying one "data: <json>" line -
         # the streamable-HTTP transport lets agentgateway answer a tools/call
         # either way (mirrors mcp-cerbos-shim's extractJSONRPCBody,
         # images/mcp-cerbos-shim/internal/upstream/client.go, which hits this
         # SAME agentgateway vmcp route and has to handle both shapes). Chunked
-        # transfer-encoding needs no special-casing here — it's a wire encoding,
+        # transfer-encoding needs no special-casing here - it's a wire encoding,
         # not a content framing, and flow.response.get_text() already returns the
         # fully assembled body regardless of it (this addon never sets
         # flow.response.stream, so mitmproxy fully buffers before response()
-        # fires). Returns None if unparseable/not JSON-RPC-shaped — fail-quiet,
+        # fires). Returns None if unparseable/not JSON-RPC-shaped - fail-quiet,
         # logging must never break the response path.
         if not flow.response or not flow.response.content:
             return None
@@ -328,7 +328,7 @@ data:
             if raw is None:
                 return None
             # This body bypassed the main response()-body redaction above (which
-            # skips SSE to avoid buffering issues) — it's about to be logged, so
+            # skips SSE to avoid buffering issues) - it's about to be logged, so
             # it must get the same secret-scrubbing every other logged string in
             # this file gets. Only the local copy used for the log line is
             # redacted; the bytes actually forwarded to the agent are untouched.
@@ -343,18 +343,18 @@ data:
         return [e for e in entries if isinstance(e, dict)]
     def _mcp_tool_responses(flow: http.HTTPFlow) -> list[tuple[object, str, bool, object]]:
         # Match each JSON-RPC tools/call in this flow's request (_mcp_tool_calls)
-        # to its entry in the response by id, returning (id, tool, ok, payload) —
+        # to its entry in the response by id, returning (id, tool, ok, payload) -
         # payload is the exact result (or error) object the agent receives,
         # already secret-redacted. ok is False for a JSON-RPC-level error OR an
         # MCP tool-level isError:true result, True otherwise (including the
-        # non-compliant case of neither key present — fail-open, matching this
+        # non-compliant case of neither key present - fail-open, matching this
         # file's philosophy elsewhere). [] if this flow has no tools/call
         # requests or the response can't be parsed as JSON-RPC.
         #
         # Matching is a linear scan, not an id -> entry dict: a hostile/buggy
         # sandbox can send a JSON-RPC id that's a list or object (invalid per
         # spec, but json.loads won't reject it), which would raise
-        # "unhashable type" if used as a dict key — logging must never break the
+        # "unhashable type" if used as a dict key - logging must never break the
         # response path. Batches are tiny-to-nonexistent in practice (MCP
         # 2025-06-18, which this stack speaks, dropped JSON-RPC batching), so
         # there's no real cost to the linear scan.
@@ -382,12 +382,12 @@ data:
         url = flow.request.pretty_url
         internal = _is_internal(host)
 
-        # SSRF protection — external destinations only.
+        # SSRF protection - external destinations only.
         if not internal and _is_private(host):
             log.warning("client=%s BLOCKED private-dest method=%s url=%s", _client(flow), method, url)
             flow.response = http.Response.make(
                 403,
-                f"[egress-proxy] {host} is a private address — blocked",
+                f"[egress-proxy] {host} is a private address - blocked",
                 {"Content-Type": "text/plain"},
             )
             return
@@ -397,12 +397,12 @@ data:
             log.warning("client=%s BLOCKED websocket-upgrade method=%s url=%s", _client(flow), method, url)
             flow.response = http.Response.make(
                 403,
-                "[egress-proxy] WebSocket upgrade blocked — add host to no_proxy",
+                "[egress-proxy] WebSocket upgrade blocked - add host to no_proxy",
                 {"Content-Type": "text/plain"},
             )
             return
 
-        # URL length limit on external requests — caps naive query-string exfiltration.
+        # URL length limit on external requests - caps naive query-string exfiltration.
         # Legitimate API/search URLs are well under 2048 chars.
         if not internal and len(url) > MAX_URL_LENGTH:
             log.warning("client=%s BLOCKED url-too-long len=%d method=%s url=%.120s…", _client(flow), len(url), method, url)
@@ -416,7 +416,7 @@ data:
         # Scrub secrets from request URL path + query string on every destination.
         # Headers and body are scrubbed later; the URL is the only remaining data channel
         # for GET requests (bodies blocked below), so it must also be scrubbed.
-        # NOTE: scrubbing is pattern-based — encoding (base64, hex) evades it; the FQDN
+        # NOTE: scrubbing is pattern-based - encoding (base64, hex) evades it; the FQDN
         # allowlist is the primary external control, not this scrub.
         raw_path = flow.request.path
         new_path, n, bd = _redact(raw_path)
@@ -427,7 +427,7 @@ data:
                 _client(flow), n, _fmt_breakdown(bd), method, url,
             )
 
-        # Block GET/HEAD request bodies on external requests — no legitimate use,
+        # Block GET/HEAD request bodies on external requests - no legitimate use,
         # potential exfiltration channel. Checked before scrubbing so we avoid
         # unnecessary work and the log ordering stays semantically correct
         # (BLOCKED fires before any REDACTED line for the same flow).
@@ -473,7 +473,7 @@ data:
 
         # Scrub secrets from request body (text content only; skip binary).
         # Method-exemption bodies (e.g. git-upload-pack) are scrubbed too despite
-        # non-text content-type — cheap defense-in-depth in case a secret ends up
+        # non-text content-type - cheap defense-in-depth in case a secret ends up
         # in one (e.g. a leaked token pasted into a branch name).
         method_exemption = _matching_method_exemption(flow)
         if flow.request.content:
@@ -495,14 +495,14 @@ data:
                 _client(flow), redacted, _fmt_breakdown(redact_breakdown), method, url,
             )
 
-        # Method enforcement — external destinations only, unless a narrowly-scoped
+        # Method enforcement - external destinations only, unless a narrowly-scoped
         # exemption in METHOD_EXEMPTIONS matches (e.g. git-upload-pack for
         # smart-HTTP clone/fetch, needed for pre-commit hook installs).
         if not internal and method not in ALLOWED_METHODS and not method_exemption:
             log.warning("client=%s BLOCKED method=%s url=%s", _client(flow), method, url)
             flow.response = http.Response.make(
                 403,
-                f"[egress-proxy] {method} blocked — GET/HEAD only for external destinations",
+                f"[egress-proxy] {method} blocked - GET/HEAD only for external destinations",
                 {"Content-Type": "text/plain"},
             )
             return
@@ -540,7 +540,7 @@ data:
     def response(flow: http.HTTPFlow) -> None:
         status = flow.response.status_code if flow.response else "-"
 
-        # Scrub secrets from response body — guards against echo attacks.
+        # Scrub secrets from response body - guards against echo attacks.
         # Skip streaming responses (SSE / chunked transfer) to avoid buffering issues.
         scrubbed = 0
         scrub_breakdown: dict[str, int] = {}
@@ -560,7 +560,7 @@ data:
                             scrub_breakdown[k] = scrub_breakdown.get(k, 0) + v
                 except Exception:
                     pass
-        # Independent of the MCP-RESPONSE/RESPONSE summary line below — mirrors
+        # Independent of the MCP-RESPONSE/RESPONSE summary line below - mirrors
         # how REDACTED/REDACTED-URL are independent of MCP-CALL/ALLOW in
         # request() above, so a scrubbed MCP tool response still gets its
         # correlation line instead of it being silently dropped.

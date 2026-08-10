@@ -71,7 +71,7 @@ def _read_referenced_script(path: Path) -> tuple[Optional[str], bool]:
     source = replace_once(
         source,
         '''    # A NUL byte in the first chunk means this is a binary (ELF/Mach-O/
-    # PE), not a shell script — scanning its decoded contents would
+    # PE), not a shell script - scanning its decoded contents would
     # tokenize machine code and feed junk paths into the recursion
     # (including a `ValueError: embedded null byte` from Path.resolve,
     # #76762). Treat it as "nothing to scan" rather than unsafe: a binary

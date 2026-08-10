@@ -1,7 +1,7 @@
 # Catalog of every tool exposed by the running vicegerent MCP backend(s),
 # with each tool's arguments (type, required, description, enum). Reference
 # for spotting missing tools and for writing cerbos argument-level policies.
-# GENERATED — do not edit by hand.
+# GENERATED - do not edit by hand.
 # Regenerate: scripts/probe-mcp-tools.py pagerduty --format yaml -o <this-file>
 group: vicegerent
 tool_count: 101
@@ -268,7 +268,7 @@ servers:
             type: "array|null"
             required: false
       list_schedules:
-        description: "List ALL PagerDuty schedules across BOTH scheduling systems in a single call. This returns classic layer-based (v2) schedules AND next-gen shift-based (v3) schedules together. It is the complete, authoritative schedule list \u2014 there is no other list tool. Each item's `kind` field (\"layer_based\" or \"shift_based\") says which system it belongs to. If either source fails, `response_summary`/`sources` explicitly mark the list INCOMPLETE; otherwise treat it as exhaustive. Never tell the user a schedule type is unsupported or missing. Args: query_model: Filters (name query, team_ids, user_ids, limit). Shift-based (v3) schedules are filtered by name `query` and `limit` only. enrich: When True (default), fill in names for shift-based (v3) schedules (bounded to the returned page, max 50). Set False to skip the extra lookups; v3 names may then be null. Returns: The merged schedule summaries with per-source status and a `degraded` flag."
+        description: "List ALL PagerDuty schedules across BOTH scheduling systems in a single call. This returns classic layer-based (v2) schedules AND next-gen shift-based (v3) schedules together. It is the complete, authoritative schedule list - there is no other list tool. Each item's `kind` field (\"layer_based\" or \"shift_based\") says which system it belongs to. If either source fails, `response_summary`/`sources` explicitly mark the list INCOMPLETE; otherwise treat it as exhaustive. Never tell the user a schedule type is unsupported or missing. Args: query_model: Filters (name query, team_ids, user_ids, limit). Shift-based (v3) schedules are filtered by name `query` and `limit` only. enrich: When True (default), fill in names for shift-based (v3) schedules (bounded to the returned page, max 50). Set False to skip the extra lookups; v3 names may then be null. Returns: The merged schedule summaries with per-source status and a `degraded` flag."
         arguments:
           enrich:
             type: "boolean"
@@ -277,7 +277,7 @@ servers:
             type: ""
             required: true
       get_schedule:
-        description: "Get a single schedule by ID \u2014 works for layer-based (v2) and shift-based (v3) schedules alike. You normally do not need to know the kind in advance; this resolves it automatically. Args: schedule_id: The ID of the schedule to retrieve. kind: Optional hint (\"layer_based\" or \"shift_based\", taken from a prior list result) to skip an extra lookup. A wrong or omitted hint still resolves correctly. Returns: The schedule details (a layer-based Schedule or a shift-based ScheduleV3)."
+        description: "Get a single schedule by ID - works for layer-based (v2) and shift-based (v3) schedules alike. You normally do not need to know the kind in advance; this resolves it automatically. Args: schedule_id: The ID of the schedule to retrieve. kind: Optional hint (\"layer_based\" or \"shift_based\", taken from a prior list result) to skip an extra lookup. A wrong or omitted hint still resolves correctly. Returns: The schedule details (a layer-based Schedule or a shift-based ScheduleV3)."
         arguments:
           kind:
             type: "string|null"
@@ -529,7 +529,7 @@ servers:
             type: "string"
             required: true
       get_responder_metrics:
-        description: "Get responder metrics aggregated by team from PagerDuty Analytics. Returns per-user oncall seconds, interruption counts (business hours, off hours, sleep hours), engaged time, and incident counts for a given date range. Powered by PagerDuty's analytics engine \u2014 oncall hours are computed authoritatively, accounting for schedule overlaps. Args: date_range_start: ISO8601 DateTime. Incidents with created_at before this value are omitted. date_range_end: ISO8601 DateTime. Incidents with created_at >= this value are omitted. team_ids: Only incidents related to these teams will be included. responder_ids: Only incidents related to these responders will be included. urgency: Filter by urgency: 'high' or 'low'. time_zone: The time zone to use for results and grouping (e.g. 'America/New_York'). order: Sort order: 'asc' or 'desc'. order_by: Field to sort results by. Returns: JSON string of ListResponseModel containing AnalyticsResponderMetrics objects."
+        description: "Get responder metrics aggregated by team from PagerDuty Analytics. Returns per-user oncall seconds, interruption counts (business hours, off hours, sleep hours), engaged time, and incident counts for a given date range. Powered by PagerDuty's analytics engine - oncall hours are computed authoritatively, accounting for schedule overlaps. Args: date_range_start: ISO8601 DateTime. Incidents with created_at before this value are omitted. date_range_end: ISO8601 DateTime. Incidents with created_at >= this value are omitted. team_ids: Only incidents related to these teams will be included. responder_ids: Only incidents related to these responders will be included. urgency: Filter by urgency: 'high' or 'low'. time_zone: The time zone to use for results and grouping (e.g. 'America/New_York'). order: Sort order: 'asc' or 'desc'. order_by: Field to sort results by. Returns: JSON string of ListResponseModel containing AnalyticsResponderMetrics objects."
         arguments:
           date_range_end:
             type: "string"
@@ -556,7 +556,7 @@ servers:
             type: "string|null"
             required: false
       get_incident_metrics_by_service:
-        description: "Get aggregated incident metrics per service from PagerDuty Analytics. Returns service-level MTTA, mean MTTR, escalation counts, incident volume, and uptime percentage. Use this instead of list_incidents when you need service health metrics \u2014 data is pre-aggregated by PagerDuty's analytics engine. Args: created_at_start: ISO8601 DateTime. Incidents created before this are omitted. created_at_end: ISO8601 DateTime. Incidents created on/after this are omitted. team_ids: Only incidents related to these teams will be included. service_ids: Only incidents related to these services will be included. urgency: Filter by urgency: 'high' or 'low'. time_zone: The time zone for results (e.g. 'America/New_York'). order: Sort order: 'asc' or 'desc'. order_by: Field to sort results by. Returns: JSON string of ListResponseModel containing AnalyticsServiceMetrics objects."
+        description: "Get aggregated incident metrics per service from PagerDuty Analytics. Returns service-level MTTA, mean MTTR, escalation counts, incident volume, and uptime percentage. Use this instead of list_incidents when you need service health metrics - data is pre-aggregated by PagerDuty's analytics engine. Args: created_at_start: ISO8601 DateTime. Incidents created before this are omitted. created_at_end: ISO8601 DateTime. Incidents created on/after this are omitted. team_ids: Only incidents related to these teams will be included. service_ids: Only incidents related to these services will be included. urgency: Filter by urgency: 'high' or 'low'. time_zone: The time zone for results (e.g. 'America/New_York'). order: Sort order: 'asc' or 'desc'. order_by: Field to sort results by. Returns: JSON string of ListResponseModel containing AnalyticsServiceMetrics objects."
         arguments:
           created_at_end:
             type: "string"
@@ -637,7 +637,7 @@ servers:
             type: "string|null"
             required: false
       get_incident_metrics_all:
-        description: "Get full-period aggregated incident metrics from PagerDuty Analytics. Returns rollup metrics for the entire requested period including percentile distributions (P50, P75, P90, P95) for ack and resolve times. These percentile fields are ONLY available from this endpoint \u2014 not from the per-team or per-service grouped endpoints. Args: created_at_start: ISO8601 DateTime. Incidents created before this are omitted. created_at_end: ISO8601 DateTime. Incidents created on/after this are omitted. team_ids: Only incidents related to these teams will be included. service_ids: Only incidents related to these services will be included. urgency: Filter by urgency: 'high' or 'low'. time_zone: The time zone for results (e.g. 'America/New_York'). order: Sort order: 'asc' or 'desc'. order_by: Field to sort results by. Returns: JSON string of AnalyticsAggregatedMetrics object."
+        description: "Get full-period aggregated incident metrics from PagerDuty Analytics. Returns rollup metrics for the entire requested period including percentile distributions (P50, P75, P90, P95) for ack and resolve times. These percentile fields are ONLY available from this endpoint - not from the per-team or per-service grouped endpoints. Args: created_at_start: ISO8601 DateTime. Incidents created before this are omitted. created_at_end: ISO8601 DateTime. Incidents created on/after this are omitted. team_ids: Only incidents related to these teams will be included. service_ids: Only incidents related to these services will be included. urgency: Filter by urgency: 'high' or 'low'. time_zone: The time zone for results (e.g. 'America/New_York'). order: Sort order: 'asc' or 'desc'. order_by: Field to sort results by. Returns: JSON string of AnalyticsAggregatedMetrics object."
         arguments:
           created_at_end:
             type: "string"
@@ -940,7 +940,7 @@ servers:
             type: "string"
             required: true
       update_schedule_v3_override:
-        description: "Update an existing override in a v3 schedule. Args: schedule_id: The ID of the v3 schedule override_id: The ID of the override to update start_time: ISO 8601 start datetime of the override end_time: ISO 8601 end datetime of the override overridden_member_type: Type of the member being replaced \u2014 'user_member' or 'empty_member' overriding_member_type: Type of the member taking over \u2014 'user_member' or 'empty_member' overridden_member_user_id: PagerDuty user ID of the member being replaced (required when type is 'user_member') overriding_member_user_id: PagerDuty user ID of the member taking over (required when type is 'user_member') Returns: The updated override"
+        description: "Update an existing override in a v3 schedule. Args: schedule_id: The ID of the v3 schedule override_id: The ID of the override to update start_time: ISO 8601 start datetime of the override end_time: ISO 8601 end datetime of the override overridden_member_type: Type of the member being replaced - 'user_member' or 'empty_member' overriding_member_type: Type of the member taking over - 'user_member' or 'empty_member' overridden_member_user_id: PagerDuty user ID of the member being replaced (required when type is 'user_member') overriding_member_user_id: PagerDuty user ID of the member taking over (required when type is 'user_member') Returns: The updated override"
         arguments:
           end_time:
             type: "string"
@@ -1021,7 +1021,7 @@ servers:
             type: ""
             required: true
       create_webhook_subscription:
-        description: "Create a new webhook subscription. The signing secret is included in the delivery_method of the returned subscription. It is only returned on this initial create response \u2014 store it securely. Args: webhook_data: Configuration for the new webhook subscription, including delivery URL, event types, and scope filter Returns: The created webhook subscription (includes the one-time signing secret in delivery_method.secret)"
+        description: "Create a new webhook subscription. The signing secret is included in the delivery_method of the returned subscription. It is only returned on this initial create response - store it securely. Args: webhook_data: Configuration for the new webhook subscription, including delivery URL, event types, and scope filter Returns: The created webhook subscription (includes the one-time signing secret in delivery_method.secret)"
         arguments:
           webhook_data:
             type: ""

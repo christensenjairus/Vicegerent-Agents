@@ -1,5 +1,5 @@
 ---
-# Fixtures use literal repos matching test-values.yaml's githubAllowedRepos —
+# Fixtures use literal repos matching test-values.yaml's githubAllowedRepos -
 # validate.sh compiles the rendered policy against them, so keep the two in sync.
 name: github_repo_allowlist_block_test
 description: GitHub calls targeting a repo outside the allowlist are denied; calls
@@ -19,7 +19,7 @@ resources:
     # owner/repo is compared case-insensitively (both sides lowercased):
     # GitHub's own repo lookups ignore case, so an allowlist that didn't would
     # false-deny a legitimate call spelled with different capitalization.
-    # Mirrors gitlab_test.yaml's mixed_case_path_project — the two forges'
+    # Mirrors gitlab_test.yaml's mixed_case_path_project - the two forges'
     # allowlists behave identically here by design.
     id: MoveWorks-EMU/MoveWorks
     kind: github_repo
@@ -73,7 +73,7 @@ resources:
     kind: github_repo
     attr: {owner: christensenjairus, repo: vicegerent-agents, branch: feature-x}
   create_pull_request_against_main:
-    # create_pull_request has no 'branch' arg (only base/head) — the shim's
+    # create_pull_request has no 'branch' arg (only base/head) - the shim's
     # branch attr resolves to '' for it, same as every other non-branch-writing
     # tool. Opening a PR against main must not be blocked.
     id: christensenjairus/vicegerent-agents

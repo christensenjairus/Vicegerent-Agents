@@ -1,7 +1,7 @@
 ---
 # elastic policy: deny any data-access call whose target index/datastream
 # matches a denied token (${elasticDeniedIndexPatterns}, from
-# policy.dataAccess.elastic.deniedIndexPatterns — substrings, CEL-list-ready same as
+# policy.dataAccess.elastic.deniedIndexPatterns - substrings, CEL-list-ready same as
 # grafanaDeniedDatasourceNames, lowercased at match time so a mixed-case entry
 # still matches); allow everything else. A `*` token denies every call,
 # including calls with no explicit target, so a starter can fail closed. The shim's
@@ -15,7 +15,7 @@
 #
 # Residual gap (documented, not closed here): a data-access call with NO target
 # arg and a query that never names the denied data (e.g. an index-less
-# platform_core_search) searches across all indices and can still surface it —
+# platform_core_search) searches across all indices and can still surface it -
 # arg inspection cannot see that. The airtight complement is scoping the
 # Elastic API key's own role to exclude those indices at the source. Do NOT add
 # tools/kinds here to permit them; tool exposure belongs in the gateway

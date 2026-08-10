@@ -21,6 +21,7 @@ REQUIRED_GUIDANCE: tuple[str, ...] = (
     "Never use Git in the vault:",
     "Treat the vault as a self-saving folder; any scheduled Git backup is operator-managed outside the agent's vault workflow.",
     "All pull requests and merge requests are forcibly kept as drafts by the platform. This is expected.",
+    "Never use em dashes. Use commas, parentheses, colons, semicolons, or separate sentences instead.",
     "Apply the KISS principle: break work into simple, focused pieces and prefer the simplest solution that satisfies the stated requirements.",
     "Before creating a worktree from a persistent `/workspace/<repo>` clone, run `git worktree prune`",
     "Prefer the current `upstream/HEAD`, then `upstream/main` or `upstream/master`",

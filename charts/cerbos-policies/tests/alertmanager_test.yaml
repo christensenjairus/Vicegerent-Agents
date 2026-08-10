@@ -1,5 +1,5 @@
 ---
-# Fixtures use durationSeconds values straddling the cap (86400s/24h) —
+# Fixtures use durationSeconds values straddling the cap (86400s/24h) -
 # validate.sh compiles against test-values.yaml's alertmanagerMaxSilenceSeconds,
 # so the "exceeds cap" fixtures are what actually get exercised in CI. createdBy
 # fixtures use "jchristensen", test-values.yaml's ${alertmanagerCreatedBy} value,

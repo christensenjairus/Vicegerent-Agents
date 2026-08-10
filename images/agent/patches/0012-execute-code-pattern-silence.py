@@ -6,21 +6,21 @@ Context
 -------
 ``tools/approval.py`` has two independent approval gates:
 
-  1. ``check_all_command_guards`` — regex-flagged ``terminal()`` commands.
+  1. ``check_all_command_guards`` - regex-flagged ``terminal()`` commands.
      Patch 0008 already lets ``approvals.pattern_silence`` (read from the
      immutable ``/opt/hermes/approval-policy.yaml`` ConfigMap mount) drop
      known-false-positive warnings here before the aux-LLM/gateway prompt.
-  2. ``check_execute_code_guard`` — a *separate* one-shot gate that fires
+  2. ``check_execute_code_guard`` - a *separate* one-shot gate that fires
      for every ``execute_code`` call in gateway/ask contexts (i.e. whenever
      ``HERMES_EXEC_ASK=1`` or the session is a gateway platform like
-     Slack). This gate never consulted ``pattern_silence`` at all — adding
+     Slack). This gate never consulted ``pattern_silence`` at all - adding
      an entry to the ConfigMap list did nothing for it, only for gate #1.
 
 Vicegerent sandboxes are single-tenant, non-privileged, network-locked
 (egress-proxy MITM + CiliumNetworkPolicy default-deny), with no Docker
 socket and no shared credentials beyond what's already scoped to the
 agent's own service account. Arbitrary local script execution inside this
-sandbox is the intended capability, not an escalation — the isolation
+sandbox is the intended capability, not an escalation - the isolation
 boundary is the pod/network layer, not this gate. So we let operators
 silence the ``execute_code`` gate the same way they silence a
 ``terminal()`` pattern: add ``execute_code`` (or a longer phrase from its
@@ -32,7 +32,7 @@ Design
 Same anchor style as patch 0008: a case-insensitive substring match of
 ``pattern_silence`` entries against ``check_execute_code_guard``'s fixed
 ``description`` string. Inserted immediately after the cron-session
-branch (cron's explicit deny/approve stance is authoritative — no user is
+branch (cron's explicit deny/approve stance is authoritative - no user is
 present there regardless of silence-list config) and before the
 gateway/ask escalation. Docker/yolo/off bypasses above it are untouched.
 
@@ -133,14 +133,14 @@ def main() -> int:
         src = f.read()
 
     if APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return 0
 
     count = src.count(ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 anchor in {path}, found {count} "
-            "(upstream drifted — re-verify check_execute_code_guard)"
+            "(upstream drifted - re-verify check_execute_code_guard)"
         )
 
     src = src.replace(ANCHOR, REPLACEMENT)
@@ -149,7 +149,7 @@ def main() -> int:
         f.write(src)
 
     compile(src, path, "exec")
-    print(f"patch: execute_code pattern_silence filter applied and compiled OK — {path}")
+    print(f"patch: execute_code pattern_silence filter applied and compiled OK - {path}")
     return 0
 
 

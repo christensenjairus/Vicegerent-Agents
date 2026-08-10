@@ -7,13 +7,13 @@ find_tool/call_tool), so each server's full tools/list catalog is enumerated
 directly with its input-schema argument names.
 
 Both streamable-http backends and legacy HTTP+SSE backends (e.g. grafana) are
-probed — the transport reported by `thv vmcp init` selects the handshake. Only
+probed - the transport reported by `thv vmcp init` selects the handshake. Only
 backends actually running in the group are discoverable: servers disabled or
 absent on this machine (e.g. grafana/notion when not enabled) won't appear.
 
 Two output formats:
-  csv   flat rows (server,tool,tool_description,argument,type,required) — grep/sheets
-  yaml  nested server -> tool -> argument tree — the per-server reference files under
+  csv   flat rows (server,tool,tool_description,argument,type,required) - grep/sheets
+  yaml  nested server -> tool -> argument tree - the per-server reference files under
         docs/available-mcp-tools/. Useful for spotting a missing tool and for seeing
         which arguments a cerbos policy can key on.
 
@@ -314,7 +314,7 @@ def write_yaml(out, group, results):
     out.write("# Catalog of every tool exposed by the running vicegerent MCP backend(s),\n")
     out.write("# with each tool's arguments (type, required, description, enum). Reference\n")
     out.write("# for spotting missing tools and for writing cerbos argument-level policies.\n")
-    out.write("# GENERATED — do not edit by hand.\n")
+    out.write("# GENERATED - do not edit by hand.\n")
     out.write(f"# Regenerate: scripts/probe-mcp-tools.py {servers} --format yaml -o <this-file>\n")
     out.write(f"group: {group}\n")
     out.write(f"tool_count: {total_tools}\n")

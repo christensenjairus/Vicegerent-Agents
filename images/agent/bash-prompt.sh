@@ -49,7 +49,7 @@ __vicegerent_prompt_set_title() {
   case ${TERM-} in
     xterm*|rxvt*|screen*|tmux*)
       local title=${__vicegerent_prompt_git_context:-${USER:-agent}@${HOSTNAME%%.*}}
-      printf '\033]0;%s — %s\007' "$title" "$PWD"
+      printf '\033]0;%s - %s\007' "$title" "$PWD"
       ;;
   esac
 }

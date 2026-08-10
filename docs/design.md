@@ -162,4 +162,4 @@ The agent Sandbox also sets `dnsConfig.options.ndots:1`. With Kubernetes' defaul
 
 ## Sources
 
-[1] https://github.com/NVIDIA/OpenShell — NVIDIA OpenShell repository
+[1] https://github.com/NVIDIA/OpenShell - NVIDIA OpenShell repository

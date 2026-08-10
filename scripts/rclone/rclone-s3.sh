@@ -33,7 +33,7 @@ mkdir -p "$SERVE_DIR/$BUCKET"
 # Passed as rclone's env-var form of --auth-key rather than the flag: a flag value
 # lands in argv, where any local user can read the SigV4 pair out of `ps`, which
 # would defeat the 0600 on the key file it came from. --auth-key is a stringArray
-# option, and rclone CSV-decodes a stringArray env var — the unquoted ACCESS,SECRET
+# option, and rclone CSV-decodes a stringArray env var - the unquoted ACCESS,SECRET
 # pair would split into two invalid entries, so CSV-quote it to keep it one.
 export RCLONE_AUTH_KEY
 RCLONE_AUTH_KEY="\"$(cat "$AUTH_KEY_FILE")\""

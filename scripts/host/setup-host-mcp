@@ -16,7 +16,7 @@
 #   -h, --help     show this help
 #
 # Prerequisites on the host Mac: Homebrew, a running kind cluster (for the
-# kubernetes MCP server) — see `./vicegerent setup cluster`.
+# kubernetes MCP server) - see `./vicegerent setup cluster`.
 
 set -euo pipefail
 
@@ -50,7 +50,7 @@ confirm() {
 }
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "$1 is required but not found — install Homebrew first"
+  command -v "$1" >/dev/null 2>&1 || die "$1 is required but not found - install Homebrew first"
 }
 
 need_cmd brew
@@ -119,7 +119,7 @@ else
     info "Linked vicegerent → $TARGET (run 'vicegerent' from any directory)"
     case ":$PATH:" in
       *":$LINK_DIR:"*) ;;
-      *) warn "$LINK_DIR is not on your PATH — add it: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+      *) warn "$LINK_DIR is not on your PATH - add it: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
     esac
   else
     warn "Skipped CLI symlink. Invoke it as ./vicegerent from the repo root."

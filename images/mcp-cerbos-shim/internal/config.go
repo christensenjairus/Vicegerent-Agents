@@ -58,7 +58,7 @@ type Tool struct {
 	AttrFrom string `yaml:"attrFrom"`
 	// Force is a set of literal key/value overrides applied to the call's
 	// arguments before forwarding, when Cerbos allows the call. Unlike
-	// id/attr/attrFrom these are NOT CEL expressions — always-the-same
+	// id/attr/attrFrom these are NOT CEL expressions - always-the-same
 	// constants (e.g. forcing draft: true on PR creation), not derived from
 	// the caller's args. Only applied on allow; a denied call is never mutated.
 	Force map[string]any `yaml:"force"`
@@ -67,7 +67,7 @@ type Tool struct {
 	// to be DERIVED from the call's own args rather than being a constant.
 	//
 	// This exists because GitLab has no draft boolean: draft status is
-	// derived from the merge request's TITLE ("Draft: ..."), verified live —
+	// derived from the merge request's TITLE ("Draft: ..."), verified live -
 	// passing draft:true to create/update_merge_request is silently ignored,
 	// while the title prefix sets it. So `force: {draft: true}` was a no-op
 	// on GitLab and every agent-opened MR shipped non-draft, while the
@@ -75,7 +75,7 @@ type Tool struct {
 	// Expressing the GitLab half needs to read the incoming title and prefix
 	// it, which a literal cannot do.
 	//
-	// Evaluated first, then Force's literals override individual keys — same
+	// Evaluated first, then Force's literals override individual keys - same
 	// precedence as AttrFrom/Attr, so the two mechanisms read consistently.
 	// String-valued like AttrFrom: a forced value that needs to be a non-string
 	// JSON type stays a Force literal.

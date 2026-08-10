@@ -34,6 +34,35 @@ trap 'rm -rf "$WORKDIR"' EXIT
 mktemp_f() { mktemp "$WORKDIR/f.XXXXXX"; }
 mktemp_d() { mktemp -d "$WORKDIR/d.XXXXXX"; }
 
+assert_no_em_dashes() {
+  local matches status=0
+  local em_dash unicode_escape unicode_name_escape
+  em_dash="$(printf '\342\200\224')"
+  unicode_escape='\u''2014'
+  unicode_name_escape='\N{''EM DASH}'
+  local named_entity='&''mdash;'
+  local decimal_entity='&#''8212;'
+  local hex_entity='&#x''2014;'
+  matches="$(mktemp_f)"
+  git grep -n -I -i -F \
+    -e "$em_dash" \
+    -e "$unicode_escape" \
+    -e "$unicode_name_escape" \
+    -e "$named_entity" \
+    -e "$decimal_entity" \
+    -e "$hex_entity" \
+    -- . > "$matches" || status=$?
+  if (( status == 0 )); then
+    cat "$matches" >&2
+    echo "ERROR - repository files must not contain em dashes or HTML em dash entities." >&2
+    return 1
+  fi
+  if (( status != 1 )); then
+    echo "ERROR - failed to scan tracked repository files for em dashes." >&2
+    return "$status"
+  fi
+}
+
 retry_cmd() {
   local n=1
   until "$@"; do
@@ -65,7 +94,7 @@ require_tools() {
   local yq_version_output
   yq_version_output="$(yq --version 2>&1)"
   if [[ "$yq_version_output" != *"mikefarah/yq"* ]]; then
-    echo "ERROR - yq on PATH is not mikefarah/yq (got: '$yq_version_output'); a PATH entry ahead of it is shadowing the Go binary from https://github.com/mikefarah/yq — commonly a pip-installed 'yq' (kislyuk/yq) in a venv's bin dir" >&2
+    echo "ERROR - yq on PATH is not mikefarah/yq (got: '$yq_version_output'); a PATH entry ahead of it is shadowing the Go binary from https://github.com/mikefarah/yq - commonly a pip-installed 'yq' (kislyuk/yq) in a venv's bin dir" >&2
     exit 1
   fi
 }
@@ -266,6 +295,9 @@ PY
 
 require_tools
 mkdir -p "$KUBECONFORM_CACHE"
+
+echo "INFO - Asserting tracked repository files contain no em dashes"
+assert_no_em_dashes
 
 echo "INFO - Asserting one locked Python environment covers repository tooling"
 "$PYTHON" scripts/validate-python-dependencies.py

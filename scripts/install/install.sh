@@ -7,7 +7,7 @@
 # health-gates (helm --wait / kubectl wait) before the next, so a `git pull` +
 # re-run delivers upgrades with no gaps.
 #
-# Secrets are NOT created here — the setup scripts own them as Kubernetes Secrets.
+# Secrets are NOT created here - the setup scripts own them as Kubernetes Secrets.
 # The controllers/platform/agents stages pre-flight the Secrets their workloads
 # block on and fail fast with a pointer instead of a 10-minute --wait hang.
 #
@@ -104,7 +104,7 @@ fi
 # lookup uses -r rather than depending on yq's output-format defaults.
 yq_version_output="$(yq --version 2>&1)"
 if [[ "$yq_version_output" != *"mikefarah/yq"* ]]; then
-  die "yq on PATH is not mikefarah/yq (got: '$yq_version_output'); a PATH entry ahead of it is shadowing the Go binary from https://github.com/mikefarah/yq — commonly a pip-installed 'yq' (kislyuk/yq) in a venv's bin dir"
+  die "yq on PATH is not mikefarah/yq (got: '$yq_version_output'); a PATH entry ahead of it is shadowing the Go binary from https://github.com/mikefarah/yq - commonly a pip-installed 'yq' (kislyuk/yq) in a venv's bin dir"
 fi
 yq_major="$(sed -E 's/.*version v([0-9]+).*/\1/' <<<"$yq_version_output")"
 if [[ ! "$yq_major" =~ ^[0-9]+$ ]] || [[ "$yq_major" -lt 4 ]]; then
@@ -115,7 +115,7 @@ require_kind_context
 python3 "$REPO_ROOT/scripts/validate-stages.py" --stages "$STAGES_FILE" --static-only
 [[ -f "$DEFAULTS_FILE" ]] || die "defaults file not found: $DEFAULTS_FILE"
 [[ -f "$VALUES_FILE" ]] \
-  || die "machine values not found: $VALUES_FILE — copy values.example.yaml to values.yaml and edit it"
+  || die "machine values not found: $VALUES_FILE - copy values.example.yaml to values.yaml and edit it"
 kc cluster-info >/dev/null || die "cannot reach cluster on context '$KUBE_CONTEXT'"
 validate_values_schema
 require_agent_names

@@ -329,18 +329,18 @@ FIX_SLASH_COMMANDS_MARKER = "Vicegerent patch 0041 (slash_commands.py)"
 
 ANCHOR_LOCALE = (
     "  yolo:\n"
-    "    disabled:                   \"⚠️ YOLO mode **OFF** for this session — dangerous commands will require approval.\"\n"
-    "    enabled:                    \"⚡ YOLO mode **ON** for this session — all commands auto-approved. Use with caution.\"\n"
+    f"    disabled:                   \"⚠️ YOLO mode **OFF** for this session {chr(8212)} dangerous commands will require approval.\"\n"
+    f"    enabled:                    \"⚡ YOLO mode **ON** for this session {chr(8212)} all commands auto-approved. Use with caution.\"\n"
 )
 
 REPLACEMENT_LOCALE = (
     "  yolo:\n"
-    "    disabled:                   \"⚠️ YOLO mode **OFF** for this session — dangerous commands will require approval.\"\n"
-    "    enabled:                    \"⚡ YOLO mode **ON** for this session — all commands auto-approved. Use with caution.\"\n"
+    "    disabled:                   \"⚠️ YOLO mode **OFF** for this session - dangerous commands will require approval.\"\n"
+    "    enabled:                    \"⚡ YOLO mode **ON** for this session - all commands auto-approved. Use with caution.\"\n"
     "\n"
     "  chatter:\n"
-    "    disabled:                   \"🔕 Interim assistant messages **OFF** for this session — no more mid-turn status updates.\"\n"
-    "    enabled:                    \"💬 Interim assistant messages **ON** for this session — mid-turn status updates enabled.\"\n"
+    "    disabled:                   \"🔕 Interim assistant messages **OFF** for this session - no more mid-turn status updates.\"\n"
+    "    enabled:                    \"💬 Interim assistant messages **ON** for this session - mid-turn status updates enabled.\"\n"
 )
 
 

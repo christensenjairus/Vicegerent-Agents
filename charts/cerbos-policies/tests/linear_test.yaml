@@ -1,5 +1,5 @@
 ---
-# Fixtures use the literal team forms matching test-values.yaml's linearAllowedTeams —
+# Fixtures use the literal team forms matching test-values.yaml's linearAllowedTeams -
 # validate.sh compiles the rendered policy against them, so keep the two in sync.
 name: linear_devops_team_block_test
 description: >-

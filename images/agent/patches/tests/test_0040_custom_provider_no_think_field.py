@@ -10,7 +10,7 @@ during patch development.
     HERMES_CUSTOM_PROVIDER=/path/to/custom/__init__.py python3 \
         test_0040_custom_provider_no_think_field.py
 
-Loads the real module (via importlib, from the live file path — never a
+Loads the real module (via importlib, from the live file path - never a
 hand-copied snippet, so this test fails loudly if the patch's anchor or
 the profile's shape ever drifts) and calls the actual
 ``CustomProfile.build_api_kwargs_extras`` with the exact reasoning_config
@@ -36,7 +36,7 @@ def _load_custom_profile_module(path: str):
         spec.loader.exec_module(module)
     except ImportError as exc:
         raise AssertionError(
-            f"failed to import {path} — is this running with /opt/hermes on "
+            f"failed to import {path} - is this running with /opt/hermes on "
             f"sys.path (providers.register_provider must be importable)? {exc}"
         )
     return module

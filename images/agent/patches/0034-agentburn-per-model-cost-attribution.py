@@ -126,7 +126,7 @@ SNAPSHOT_REPLACEMENT = (
     "    # Vicegerent patch 0034: per-(session, model) cost/token slices for sessions\n"
     "    # that switched models mid-conversation. Empty when the adapter's source\n"
     "    # has no such table (or none of the loaded sessions used more than one\n"
-    "    # model) — analyze() falls back to whole-session attribution in that case.\n"
+    "    # model) - analyze() falls back to whole-session attribution in that case.\n"
     "    model_usage: list[ModelUsageRec] = field(default_factory=list)\n"
 )
 

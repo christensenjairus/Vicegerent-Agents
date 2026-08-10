@@ -4,9 +4,9 @@
 Upstream opens the per-server (here per-backend, see 0009) circuit breaker
 after _CIRCUIT_BREAKER_THRESHOLD (default 3) consecutive real
 transport/auth failures, then short-circuits every tool on that key for
-_CIRCUIT_BREAKER_COOLDOWN_SEC (60s). Combined with 0009 — which already
+_CIRCUIT_BREAKER_COOLDOWN_SEC (60s). Combined with 0009 - which already
 stops business/isError responses from counting and scopes the breaker per
-vMCP backend — three genuine transport blips are too twitchy for this
+vMCP backend - three genuine transport blips are too twitchy for this
 deployment: the sole MCP path is the host vMCP aggregator over ghostunnel
 mTLS, where a backend can emit a burst of real timeouts under load before
 recovering, and tripping at 3 needlessly parks that backend for a full
@@ -42,7 +42,7 @@ def main() -> int:
         src = f.read()
 
     if REPLACEMENT in src:
-        print(f"patch: circuit-breaker threshold already 15 in {path} — no-op")
+        print(f"patch: circuit-breaker threshold already 15 in {path} - no-op")
         return 0
 
     count = src.count(ANCHOR)
@@ -50,7 +50,7 @@ def main() -> int:
         raise SystemExit(
             f"patch: expected exactly 1 '{ANCHOR}' in {path}, found {count} "
             "(upstream changed the circuit-breaker default or refactored the "
-            "constant — re-verify the intended strike threshold)"
+            "constant - re-verify the intended strike threshold)"
         )
     src = src.replace(ANCHOR, REPLACEMENT)
 

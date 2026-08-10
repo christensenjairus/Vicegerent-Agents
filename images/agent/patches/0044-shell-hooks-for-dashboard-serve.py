@@ -43,14 +43,14 @@ def main() -> int:
         src = f.read()
 
     if REPLACEMENT in src:
-        print(f"patch: dashboard/serve already in _AGENT_COMMANDS in {path} — no-op")
+        print(f"patch: dashboard/serve already in _AGENT_COMMANDS in {path} - no-op")
         return 0
 
     count = src.count(ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 '{ANCHOR}' in {path}, found {count} "
-            "(upstream refactored the _prepare_agent_startup() gate — "
+            "(upstream refactored the _prepare_agent_startup() gate - "
             "re-verify which entrypoints register shell hooks)"
         )
     src = src.replace(ANCHOR, REPLACEMENT)

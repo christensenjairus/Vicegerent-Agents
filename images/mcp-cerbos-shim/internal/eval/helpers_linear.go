@@ -22,7 +22,7 @@ func init() {
 // teamId on every ordinary update and trip Cerbos's has()-based deny on all
 // of them. Surface teamId only when it's actually verifiable: always on
 // create (no id arg), and on update only if the call itself sets team (a
-// deliberate reassignment) — otherwise omit the key entirely so the call
+// deliberate reassignment) - otherwise omit the key entirely so the call
 // falls through to allow-all, matching how update_issue was left unmapped
 // before Linear merged the tools.
 //
