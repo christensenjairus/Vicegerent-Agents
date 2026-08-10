@@ -1,66 +1,253 @@
 # Vicegerent Agents
 
-Repository for the **vicegerent** infra agent platform — credential-isolated, egress-locked agent sandboxes on a local Kind cluster (Cilium CNI), installed by a staged Helm script. The platform is **harness-agnostic**: the same sandbox runs whichever coding agent you point it at — Hermes, Claude Code, Codex, or OpenCode — identically, because every containment layer wraps the *process and the pod*, not any one agent's internals. It lets an agent run genuinely unattended (schedules, event triggers, no human approving every action) because containment is enforced by the platform, not by the agent's behavior — see [`docs/design.md`](docs/design.md) for the full rationale and how this compares to a laptop CLI agent or a plain container.
+**A security sandbox for AI agents with real-world access.**
 
-![Architecture of Vicegerent Agents (Excalidraw)](./architecture.png)
+Give a coding agent your repositories, cloud APIs, ticket tracker, and monitoring stack, and it can do real work. Let it do that work unattended — on a schedule, triggered by events, with nobody approving each individual action — and you have a harder problem. The agent's permissions are now enforced by the agent's own judgment.
 
-## Enforcement layers
+Vicegerent moves that boundary out of the agent. Each agent runs in its own Kubernetes sandbox where filesystem access, network egress, available MCP tools, and the arguments those tools are invoked with are all enforced by infrastructure the agent cannot reach or reconfigure.
 
-Four independent layers sit between the agent and anything it can affect. Each is enforced by a different component, so no single compromise (a bad shell command, a malicious tool result, a prompt injection) clears the whole stack — the agent has to get past all of them. Every one of these layers is enforced *around* the sandbox — by Kubernetes, Cilium, and agentgateway — not by the agent inside it.
+> The goal isn't to make the agent trustworthy. It's to make the agent's authority enforceable when the agent is wrong, manipulated, or compromised.
 
-| # | Layer | Enforces | Component | Docs |
-|---|---|---|---|---|
-| 1 | **Filesystem & process boundary** | What the agent process can touch inside its own pod: no root, no privilege escalation, a read-only root filesystem, no Linux capabilities, no service-account token | Kubernetes pod `securityContext` on the `Sandbox` pod (`charts/agent/templates/_sandbox.tpl`) | [`docs/design.md`](docs/design.md) |
-| 2 | **Network egress** | Every outbound connection from the sandbox pod | Cilium (`CiliumNetworkPolicy`, kernel-level FQDN/IP allowlist) + the mitmproxy egress proxy (scrubbing, method/URL/SSRF checks) it fronts | [`charts/egress-proxy/README.md`](charts/egress-proxy/README.md) |
-| 3 | **MCP tool selection** | Which tools exist for the agent to call at all | ToolHive vMCP `aggregation.tools` (`host/mcp/toolhive-servers.json`); agentgateway can also do this centrally | [`host/mcp/README.md`](host/mcp/README.md) |
-| 4 | **MCP argument authorization** | What a selected tool is allowed to do with the arguments it was called with — deny, or mutate specific arguments before forwarding (e.g. keep a GitHub PR a draft, pin a Notion page's parent folder) | `mcp-cerbos-shim` + Cerbos, attached to agentgateway's `vmcp` backend (`FailClosed`) | [`images/mcp-cerbos-shim/README.md`](images/mcp-cerbos-shim/README.md) |
+## The core idea
 
-Layer 1 (filesystem & process boundary) is the pod itself. The `Sandbox` pod runs as an unprivileged user (uid 10000, `runAsNonRoot`), with `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, all Linux capabilities dropped (`capabilities.drop: [ALL]`), a `RuntimeDefault` seccomp profile, and `automountServiceAccountToken: false` so no Kubernetes API token is even mounted. The agent can only write to a handful of explicit volumes (its data PVC at `/opt/data`, `/workspace`, `/tmp`) — everything else is immutable to it. Because this is enforced by the kubelet and the kernel against the whole container, it holds for any process the pod runs.
-
-Layer 2 (network egress) is two things stacked, not one: Cilium enforces *which destinations exist at all* at the packet level (kernel-level — this is the layer a proxy bypass can't get around), and the mitmproxy egress proxy in front of the allowed HTTP(S) destinations enforces *what a request is allowed to look like* — GET/HEAD only, secrets scrubbed, no WebSocket upgrades, no SSRF into private ranges.
-
-Layers 3 and 4 share one path: host vMCP → ghostunnel (mTLS) → agentgateway's `vmcp` backend → the agent. Selecting which tools exist is a config-only change in ToolHive with no cluster round-trip; authorizing a selected tool's arguments happens after that, in `mcp-cerbos-shim` + Cerbos. On allow, a mapped tool can also carry a mutation (a `force` block) — an unconditional argument rewrite applied only after Cerbos allows, e.g. a GitHub PR is rewritten to stay a draft, or a Notion page is rewritten to a fixed parent folder. It never overrides a deny. See the [mcp-cerbos-shim documentation](images/mcp-cerbos-shim/README.md) for the current authorization rules and mutations.
-
-## Choose the execution mode by supervision level
-
-The sandbox is for autonomous or near-autonomous agents: auto mode, cron jobs, automation, and any run where a human will not inspect every command and MCP call. Its vMCP uses `aggregation.tools` to filter the available backend tools and sends calls through agentgateway and Cerbos. The optional operator vMCP is the complementary manual mode for native laptop harnesses. It still aggregates the backends and enables the `find_tool`/`call_tool` optimizer to control token usage, but deliberately omits `aggregation.tools` and bypasses agentgateway/Cerbos. This repo does not scope the operator endpoint. **If you are not willing to supervise every command, put the work in the sandbox.**
-
-## Repo layout
+A typical agent carries its own capabilities. Its filesystem, credentials, network access, and tools all live inside the process you are asking to behave well:
 
 ```text
-charts/               Helm charts: agent, egress-proxy, platform (gateway/models/vmcp/searxng/host-firewall), cerbos-policies, mcp-cerbos-shim
-stages/               staged installer manifest (stages.yaml), per-controller upstream-chart values (values/), and kubectl-applied kustomize overlays (kustomize/) incl. the one vendored tree, csi-driver-host-path (documented exception)
-values.defaults.yaml  committed, fully-annotated default layer for every platform setting; layered UNDER your machine values.yaml by the installer and validate.sh
-values.example.yaml   mostly deltas-only starter; selected safety/operating defaults are restated explicitly; copy to a gitignored values.yaml (policy + agents)
-examples/             two complete real-world delta configs (personal.yaml, work.yaml) to model your values.yaml on
-charts/*/values.yaml  intentionally empty pointer files — the platform defaults live in values.defaults.yaml
-host/mcp/             host-side MCP control plane (ToolHive + vMCP) — see docs/setup.md
-images/               source-built container images (agent, mcp-cerbos-shim, kubernetes-mcp-server, aws-api-mcp-server, aws-profiles-mcp)
-scripts/              install, secrets, validation, and test scripts driven by ./vicegerent
-docs/                 design rationale (docs/design.md), full setup walkthrough (docs/setup.md),
-                      backup/restore runbook (docs/backup-and-restore.md), secret/PII redaction
-                      reference (docs/secrets-and-pii-redaction.md), and generated MCP tool
-                      catalogs (docs/available-mcp-tools/)
+┌─────────────────────────────┐
+│          AI Agent           │
+│                             │
+│  filesystem                 │
+│  credentials                │
+│  network                    │
+│  tools                      │
+└──────────────┬──────────────┘
+               │
+               ▼
+         Your systems
 ```
 
-`AGENTS.md` (symlinked as `CLAUDE.md`/`HERMES.md`) is the authoritative conventions doc for anyone — human or agent — changing this repo; read it before opening an MR.
+The more autonomous that agent becomes, the more uncomfortable the arrangement gets. Vicegerent puts the enforcement boundary around it instead:
 
-## Extending this platform
+```text
+┌─────────────────────────────┐
+│          AI Agent           │
+│                             │
+│   "I want to do X."         │
+└──────────────┬──────────────┘
+               │
+     ┌─────────▼─────────┐
+     │    Vicegerent     │
+     │      Sandbox      │
+     │                   │
+     │    Filesystem     │
+     │      Network      │
+     │     MCP tools     │
+     │   Authorization   │
+     └─────────┬─────────┘
+               │
+               ▼
+        Your systems
+```
 
-Every extension point has a working example already in the repo to copy, not just a description:
+The agent decides what it wants to do. The infrastructure decides what it is actually allowed to do.
 
-- **A new agent** — add an entry to the `agents:` list in your `values.yaml` (copy the example one); each entry becomes one `charts/agent` release. **A new model route** — copy a model template under `charts/platform/templates/models/`, add its values to `values.defaults.yaml`, and enable it in `values.yaml`; the existing provider templates show the required backend, route, and policy resources.
-- **A new machine** — a second machine is a second clone with its own gitignored `values.yaml` and its own `kind-vicegerent` cluster; see [`docs/setup.md`](docs/setup.md).
-- **A new MCP server** — add an entry to `host/mcp/toolhive-servers.json` alongside the 17 already there (kubernetes, github, gitlab, jira, grafana, notion, linear, etc.); see [`host/mcp/README.md`](host/mcp/README.md) for the workload shape, tool-scoping via `aggregation.tools`, and how secrets/OAuth are wired per server.
-- **A new argument-authorization rule** — add a tool mapping to `charts/mcp-cerbos-shim/files/mapping.yaml` (CEL expressions; the ~115 entries already there are the reference, and `images/mcp-cerbos-shim/mapping.example.yaml` is a two-tool schema sketch) and a matching Cerbos policy under `charts/cerbos-policies/policies/`; the existing `resource_github.yaml`, `resource_linear.yaml`, etc. are working deny-by-resource examples; most carry a paired `*_test.yaml` under `charts/cerbos-policies/tests/` you can copy for the new rule. See [`images/mcp-cerbos-shim/README.md`](images/mcp-cerbos-shim/README.md) for the CEL helper mechanism if the new resource needs one (e.g. normalizing a field name across spellings).
-- **A mutation instead of a deny** — same mapping file, a `force` block on the tool entry (see the GitHub PR draft-forcing and Notion parent-folder-pinning entries already there for the pattern).
+## Four independent enforcement layers
 
-## Quickstart
+| Layer | Controls | Enforced by |
+| --- | --- | --- |
+| **Filesystem** | What the agent can touch inside its sandbox | Kubernetes + container runtime |
+| **Network** | Which destinations the sandbox can reach | Cilium + egress proxy |
+| **MCP tools** | Which tools are exposed to the agent at all | ToolHive vMCP |
+| **Tool authorization** | What an exposed tool is allowed to do | Cerbos + `mcp-cerbos-shim` |
 
-Full walkthrough, flags, and troubleshooting: [`docs/setup.md`](docs/setup.md). Before your first install, copy `values.example.yaml` to `values.yaml` and replace its person-specific GitHub, assignee, git-identity, Notion, and Alertmanager placeholders. The Anthropic-only starter is shaped for a DevOps or DevOps-adjacent Moveworks engineer: it includes the shared Moveworks repositories and fork rule, Jira change scope, Linear DevOps team, maintained PagerDuty services, Notion parent folders, a 24-hour Alertmanager cap, data blocklists, Artifactory, and the management-network range from the work profile. The public mirror remains available, while private GitLab policy and Slack credentials remain unconfigured. [`examples/work.yaml`](examples/work.yaml) and [`examples/personal.yaml`](examples/personal.yaml) are the repository author's actual filled machine profiles, kept current with the values schema so users can inspect what someone really configures. Use them as concrete references, not files to copy unchanged: they include personal identities, private IDs, internal destinations, and provider choices. See [`docs/setup.md` § Values to change for your machine](docs/setup.md#values-to-change-for-your-machine). Before provisioning secrets, choose the model providers and optional MCP services you will use: [`docs/setup.md` § External API keys and MCP credentials](docs/setup.md#external-api-keys-and-mcp-credentials) lists every key, what it enables, and the matching `values.yaml` switches. This is the condensed path on macOS with Docker:
+These are four separate enforcement points, not four settings in one config file. A model can request an action without being able to reach the policy that decides whether the action succeeds.
+
+### 1. Filesystem containment
+
+Each agent gets its own pod in the `agent-sandbox` namespace, running as a non-root user with `allowPrivilegeEscalation: false`, a read-only root filesystem, every Linux capability dropped, a `RuntimeDefault` seccomp profile, and no automatically mounted service-account token. Writable space is explicit and small: `/opt/data`, `/workspace`, and `/tmp`. Everything else in the container is immutable.
+
+Because the kubelet and the kernel enforce this against the whole container, it holds for whatever the pod happens to be running. Vicegerent does not isolate processes from each other *inside* a pod — the boundary is the pod, not the process.
+
+### 2. Network egress control
+
+The sandbox does not get general internet access. Two mechanisms stack here, and the distinction matters: Cilium decides which destinations exist at all, at the packet level, while an HTTP egress proxy decides what a request to an allowed destination may look like — method restrictions, secret scrubbing, SSRF protection, no WebSocket upgrades.
+
+Because Cilium sits underneath, getting around the HTTP proxy does not turn the sandbox into an unrestricted network client. It just means reaching the same short list of destinations without the proxy's inspection.
+
+Some traffic genuinely can't use a GET/HEAD HTTP proxy. Git over SSH — and Slack and edge text-to-speech when you enable them — connects directly. Cilium still pins those paths to specific destinations and ports, but they do not get content inspection or secret scrubbing, and they are opt-in for that reason.
+
+### 3. MCP capability selection
+
+MCP is how agents reach external systems here, and ToolHive's vMCP hands the sandbox a specific list of tools rather than a whole integration. An agent working on pull requests might receive exactly:
+
+```text
+github_create_pull_request
+github_pull_request_read
+github_issue_read
+```
+
+That is a working subset of the GitHub MCP server, not all of it. The same approach applies to GitLab, Kubernetes, Jira, Linear, Grafana, Notion, PagerDuty, AWS, and the rest of the configured backends. The agent gets a capability without inheriting every capability behind it.
+
+### 4. Per-call authorization
+
+Allowlisting tools isn't sufficient, because a legitimate tool can be called illegitimately. Every MCP call therefore passes through `mcp-cerbos-shim` and Cerbos, which can deny it, restrict it to particular resources, inspect its arguments, or rewrite those arguments before the call is forwarded.
+
+The reference example: an agent is allowed to open a GitHub pull request, and policy forces that pull request to stay a draft.
+
+```text
+Agent requests:
+
+    github_create_pull_request(...)
+              │
+              ▼
+        Cerbos policy
+              │
+              │ authorized
+              ▼
+      Mapping: draft = true
+              │
+              ▼
+          GitHub API
+```
+
+A rewrite only ever applies after authorization succeeds; it can never turn a denial into an allow. This is a different kind of control from a line in the system prompt reading *"never create a non-draft pull request"* — that one depends on the agent choosing to comply.
+
+## What a denial actually looks like
+
+Policies return their reason to the agent. These are the real outputs from [`charts/cerbos-policies/policies/resource_github.yaml`](charts/cerbos-policies/policies/resource_github.yaml):
+
+```text
+GitHub repo acme/infrastructure is outside the allowed repo list for this agent.
+
+Direct writes to protected branch 'main' are not allowed.
+Use a feature branch and open a pull/merge request.
+
+This agent is not allowed to set reviewers on a pull request.
+Request reviews manually instead.
+```
+
+Explaining the denial is deliberate. A generic "access denied" tells an agent nothing about whether to try a different approach or abandon the goal, so it burns retries rediscovering the boundary by trial and error. Rules carry a specific message; the fallback string in the shim exists only for rules that haven't been given one yet.
+
+## What happens if the agent is compromised
+
+Vicegerent doesn't claim an AI agent can't be compromised. The useful question is what the agent can still do afterward.
+
+Take a prompt injection that tells an agent to hunt for secrets, reach an internal service, and tamper with a repository. Each layer answers independently:
+
+```text
+Search for model or MCP service credentials
+        │
+        └── those credentials normally aren't there
+
+Connect to an arbitrary internal service
+        │
+        └── Cilium blocks unconfigured destinations
+
+Invoke an MCP tool it wasn't given
+        │
+        └── tool isn't exposed
+
+Invoke an allowed tool against a forbidden resource
+        │
+        └── Cerbos denies it
+
+Create an otherwise permitted GitHub PR
+        │
+        └── policy can constrain its arguments
+```
+
+The agent can still make bad decisions. What it can't do is convert those decisions into external effects that infrastructure outside the model hasn't already permitted.
+
+## Credentials stay outside the sandbox
+
+Model-provider credentials live in agentgateway, and for most MCP-backed integrations the authenticated service runs outside the sandbox entirely. The agent asks vMCP to perform an operation; vMCP authenticates to the external service. So the agent can complete an authorized operation without ever reading an API token, discovering an OAuth credential, or building an authenticated request itself.
+
+```text
+             Agent Sandbox
+                  │
+                  │ MCP request
+                  ▼
+             vMCP / Gateway
+                  │
+                  │ authenticated
+                  ▼
+            External Service
+```
+
+The sandbox isn't credential-free, and it would be misleading to imply otherwise. Each agent holds its own dashboard credentials and SSH key, and enabling the optional Slack integration places Slack values inside the sandbox.
+
+Credential isolation complements the sandbox rather than replacing it. An agent that holds no credential at all can still misuse a capability that was deliberately exposed to it, which is why the network, tool-selection, and authorization layers exist alongside this one.
+
+## A concrete example
+
+Say you want an agent that fixes GitHub issues. It should read an issue, read the repository, change code, run tests, and open a pull request — and it should not merge that pull request, change repository settings, touch unrelated repositories, or create arbitrary GitHub resources.
+
+Those boundaries become configuration rather than instructions. Tool selection gives it the five operations it needs. The repo allowlist keeps it inside one repository. The protected-branch rule keeps it off `main`. The draft rewrite means the pull request it opens always lands as a draft, waiting for a human, no matter what the model intended. It can do the engineering work without holding the authority to ship it.
+
+## Not an agent framework
+
+Vicegerent doesn't build prompts, orchestrate reasoning, or decide what an agent should do, and it isn't trying to replace Claude Code or Codex. It's the environment those tools run inside.
+
+Claude Code, Codex, OpenCode, and Hermes all run in the same sandbox today, and that's more than a compatibility list. Because every enforcement point sits outside the harness, a harness doesn't need to know Vicegerent exists or be modified to participate — anything you can install in the sandbox inherits the same filesystem, network, capability, and authorization boundaries automatically. While agent harnesses are changing this fast, being able to swap one out without rebuilding the security model around it is worth a lot.
+
+## From a laptop to a fleet
+
+This repository runs Vicegerent for a single user on a local Kind cluster. It is not a multi-tenant enterprise platform and doesn't pretend to be one.
+
+What it is, though, is a complete working model of the control pattern — Kubernetes for workload boundaries, Cilium and a proxy for egress, an MCP gateway that exposes capabilities without shipping credentials into the sandbox, and Cerbos for per-call authorization. Every piece of that is ordinary infrastructure an organization already knows how to operate. The local deployment is this repository's scope, not the ceiling of the architecture it demonstrates.
+
+## Architecture
+
+![Vicegerent architecture](./architecture.png)
+
+```text
+                         ┌─────────────────────┐
+                         │      AI AGENT       │
+                         │                     │
+                         │ Claude / Codex /    │
+                         │ OpenCode / Hermes   │
+                         └──────────┬──────────┘
+                                    │
+                         ┌──────────▼──────────┐
+                         │    Agent Sandbox    │
+                         │                     │
+                         │ Kubernetes          │
+                         │ filesystem controls │
+                         └──────────┬──────────┘
+                                    │
+                           Cilium egress policy
+                                    │
+                           ┌────────▼────────┐
+                           │  Egress Proxy   │
+                           └────────┬────────┘
+                                    │
+                           ┌────────▼────────┐
+                           │  agentgateway   │
+                           └────────┬────────┘
+                                    ├── model request ──▶ Model provider
+                                    │
+                                    │ MCP request
+                           ┌────────▼────────┐
+                           │ mcp-cerbos-shim │
+                           │    + Cerbos     │
+                           └────────┬────────┘
+                                    │
+                           ┌────────▼────────┐
+                           │ ToolHive / vMCP │
+                           └────────┬────────┘
+                                    │ authenticated
+                                    ▼
+                            External service
+```
+
+[`docs/design.md`](docs/design.md) has the full threat model, request paths, exact runtime and network controls, and the tradeoffs this design accepts — including how it compares to [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell), which occupies adjacent territory with a broader runtime and a different emphasis.
+
+## Quick start
+
+Vicegerent provisions a local Kind cluster and installs the platform through a staged, idempotent Helm workflow. You'll need macOS with Docker plus a handful of CLI tools; [`docs/setup.md`](docs/setup.md) lists every prerequisite and walks through the whole process, including credentials and troubleshooting.
 
 ```bash
-# 1. Clone the public mirror
+# 1. Clone and enter the repository
 git clone git@github.com:christensenjairus/vicegerent-agents.git
 cd vicegerent-agents
 
@@ -73,38 +260,53 @@ export ANTHROPIC_API_KEY=***
 
 # 4. Configure this machine, then provision each agent's secrets
 cp values.example.yaml values.yaml
-$EDITOR values.yaml          # cluster vars + the agents you want (start with the example agent)
+$EDITOR values.yaml
 ./vicegerent setup secrets agent <name>
 
-# 5. Install the platform (Cilium is the first staged Helm release; idempotent, re-run after any git pull)
+# 5. Install the platform
 ./vicegerent install
 
-# 6. Bring up the host-side MCP control plane (ToolHive + vMCP)
-./vicegerent setup mcp       # one-time: reconciles exact host tools and the locked root .venv, then configures MCP servers + links the CLI onto PATH
+# 6. Bring up the host-side MCP control plane
+./vicegerent setup mcp
 ./vicegerent start
 
-# 7. Show the agent's dashboard URL + login
-./vicegerent creds <name>
-
-# 8. Or enter a persistent tmux session and launch any configured coding harness
+# 7. Open a shell in the agent sandbox
 ./vicegerent ssh <name>
-
-# Then choose one:
-hermes
-claude
-codex
-opencode
 ```
 
-The command first opens a full-height fuzzy finder over running tmux sessions, searchable by session name and active-pane directory, so an existing repository or worktree can be resumed immediately. Even when none exist, that first menu offers a new session or a plain shell. Choosing a new session opens fuzzy repository and worktree selectors searchable by name and path. Worktree naming and prune confirmation remain inside full-height fzf screens instead of dropping to shell prompts; tmux session names are always derived from the selected repository and worktree. Special actions stay at the top of each list while the initial selection remains on the first normal item. Normal sessions, repositories, and worktrees are green; non-destructive actions are cyan; and the destructive prune action is yellow. The selectors show keyboard shortcuts for their actions: `Ctrl-N` creates a session or worktree, `Ctrl-S` opens a plain shell, `Ctrl-W` selects `/workspace`, and `Ctrl-P` opens worktree pruning. `Esc` moves back through nested selectors instead of quitting; use `Ctrl-C` to quit the selector flow. Interactive Bash uses a compact two-line prompt with the repository, branch, tracked-change marker, shortened path, and prior command failure; set `NO_COLOR=1` for its plain fallback. Pruning fuzzy-finds a linked worktree, requires confirmation, keeps the Git branch, and refuses the primary worktree or a worktree still used by a tmux pane. Detach with `Ctrl-b d` and reconnect with the same command; the coding harness keeps running if the terminal or `kubectl exec` connection drops. The tmux server still belongs to the container, so sessions do not survive an agent Pod or container restart. The same pod-level containment, credentials, egress policy, shared skills, and MCP access apply to all four harnesses. See [`docs/setup.md`](docs/setup.md) for the full shell-access walkthrough.
+From inside the sandbox, start whichever harness you want — `claude`, `codex`, `opencode`, or `hermes`. All four get the same containment, credentials, egress policy, and MCP access.
 
-Requires `kind`, `kubectl`, `helm` 4+, `yq` v4, `jq`, `git`, and OpenSSL 3 (not macOS's LibreSSL) on `PATH`, plus an SSH key with access to your git host.
+## Security model and limitations
 
-## Development
+Vicegerent does not make an AI agent safe. It offers no guarantee that an agent makes good decisions, writes correct code, avoids introducing vulnerabilities, understands what you meant, resists compromise, or refrains from doing damage well within the capabilities you granted it.
 
-```bash
-scripts/run-python -m pre_commit install
-scripts/run-python -m pre_commit run --all-files
-```
+The goal is narrower:
 
-The repository has one Python environment at `.venv`. `pyproject.toml` declares every host-tool and validation dependency, `uv.lock` locks the full cross-platform graph, and `scripts/run-python`, setup, and validation reconcile it with `uv sync --locked`. The first reconciliation needs Python 3.11+ and bootstraps the pinned `uv` inside the venv without modifying Homebrew's externally managed Python. Host MCP runtime commands use the environment created by `./vicegerent setup mcp` without performing package installation, so teardown remains available during a package-source outage. The local validation hook (`scripts/validate.sh`) also expects `helm`, `yq` v4 (the Go binary from [mikefarah/yq](https://github.com/mikefarah/yq), not the same-named PyPI `yq`), and `kubeconform` on `PATH` (plus `cerbos` for the policy-compile pass, skipped if absent).
+> Constrain what the agent can do to external systems using enforcement points the agent doesn't control.
+
+That comes at a real cost. Running this means running Kubernetes, Cilium, Helm, agentgateway, ToolHive, Cerbos, and an egress proxy. The complexity is the trade: you give up the simplicity of running an agent directly on your workstation and get independently enforced boundaries around unattended work in exchange. If a human is reviewing every command anyway, you probably don't need this.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [`docs/setup.md`](docs/setup.md) | Installation, credentials, operations, troubleshooting |
+| [`docs/design.md`](docs/design.md) | Architecture, threat model, and security rationale |
+| [`docs/development.md`](docs/development.md) | Repository map, extension points, contributor workflow |
+| [`docs/backup-and-restore.md`](docs/backup-and-restore.md) | Backup, restore, and agent-rename runbook |
+| [`docs/secrets-and-pii-redaction.md`](docs/secrets-and-pii-redaction.md) | Secret and PII redaction enforcement points |
+| [`AGENTS.md`](AGENTS.md) | Repository conventions for humans and agents |
+
+## Project status
+
+This is an actively developed infrastructure project aimed at engineers who are comfortable with Kubernetes, networking, MCP infrastructure, and authorization systems. It is not a hosted service or a turnkey application.
+
+It exists to work on one question: how do you let increasingly capable agents do meaningful work against real systems while their authority stays constrained by infrastructure rather than by the model?
+
+The interesting question about an AI agent is no longer whether it *can* do something. It's how much authority you can hand it without having to watch everything it does. Don't rely on a model to hold a network boundary, or on a prompt to protect a credential, or on the agent to judge which version of an otherwise-valid tool call is acceptable. Put those boundaries outside the agent.
+
+**The agent gets capabilities. Vicegerent enforces the limits.**
+
+## License
+
+Apache-2.0. See [`LICENSE`](LICENSE).
