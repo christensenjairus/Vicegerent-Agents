@@ -1,6 +1,31 @@
 # Setup
 
-Full step-by-step for standing up your own instance. See the [README](../README.md) for the condensed quickstart and an overview of what you're setting up.
+This is the authoritative installation and operations guide for standing up a Vicegerent instance. See the [README](../README.md) for the product overview and [architecture and security model](design.md) for the boundaries you are configuring.
+
+## Installation at a glance
+
+Read [Create the local Kind cluster](#create-the-local-kind-cluster) for the complete host prerequisites before starting. From a clone of the repository, the normal installation sequence is:
+
+```bash
+cp values.example.yaml values.yaml
+$EDITOR values.yaml
+
+./vicegerent setup cluster
+
+export ANTHROPIC_API_KEY=***
+./vicegerent setup secrets platform
+./vicegerent setup secrets agent <name>
+
+./vicegerent install
+
+./vicegerent setup mcp
+./vicegerent start
+
+./vicegerent creds <name>
+./vicegerent ssh <name>
+```
+
+The remaining sections explain each step, every required or optional credential, validation behavior, and the available operating modes. Do not put secret values in `values.yaml`.
 
 ## Configuring for your machine
 

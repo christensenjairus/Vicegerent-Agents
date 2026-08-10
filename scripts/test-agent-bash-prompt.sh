@@ -63,7 +63,11 @@ color_output="$(env -u NO_COLOR TERM=xterm-256color bash --noprofile --norc -ic 
   cd "$1"
   source "$2"
   __vicegerent_prompt_command
-  printf "%q\n" "$PS1"
+  # %s, not %q: under a non-UTF-8 locale %q renders the multibyte glyph as
+  # octal escapes and the glyph assertion below fails everywhere LANG is unset.
+  # PS1 stores a literal backslash-e rather than a real escape byte, so the raw
+  # string stays readable without quoting.
+  printf "%s\n" "$PS1"
 ' bash "$tmp_dir/repo" "$prompt_script" 2>/dev/null)"
 assert_contains "uses ANSI colors in capable terminals" "$color_output" '\e[1;36m'
 assert_contains "uses the styled continuation glyph" "$color_output" '❯'
