@@ -93,6 +93,7 @@ for cmd in kubectl helm yq git python3; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed or not on PATH"
 done
 ensure_python_environment "$REPO_ROOT"
+PYTHON="$REPO_ROOT/.venv/bin/python"
 # The installer uses Helm 4 flags (--rollback-on-failure, --force-replace,
 # --hide-notes); a positively-detected Helm 3 fails fast instead of erroring
 # mid-stage on an "unknown flag". A parse hiccup falls through rather than block.
@@ -112,7 +113,7 @@ if [[ ! "$yq_major" =~ ^[0-9]+$ ]] || [[ "$yq_major" -lt 4 ]]; then
 fi
 require_kind_context
 [[ -f "$STAGES_FILE" ]] || die "stages file not found: $STAGES_FILE"
-python3 "$REPO_ROOT/scripts/validate-stages.py" --stages "$STAGES_FILE" --static-only
+"$PYTHON" "$REPO_ROOT/scripts/validate-stages.py" --stages "$STAGES_FILE" --static-only
 [[ -f "$DEFAULTS_FILE" ]] || die "defaults file not found: $DEFAULTS_FILE"
 [[ -f "$VALUES_FILE" ]] \
   || die "machine values not found: $VALUES_FILE - copy values.example.yaml to values.yaml and edit it"

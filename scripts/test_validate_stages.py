@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -23,7 +24,7 @@ def run_validator(stages: str, setup: Callable[[pathlib.Path], None] | None = No
         if setup is not None:
             setup(root)
         return subprocess.run(
-            ["python3", str(VALIDATOR), "--stages", str(stages_file), "--static-only"],
+            [sys.executable, str(VALIDATOR), "--stages", str(stages_file), "--static-only"],
             capture_output=True,
             text=True,
             check=False,
@@ -33,7 +34,7 @@ def run_validator(stages: str, setup: Callable[[pathlib.Path], None] | None = No
 class StageManifestValidationTests(unittest.TestCase):
     def test_accepts_every_current_pinned_stage_without_fetching(self) -> None:
         result = subprocess.run(
-            ["python3", str(VALIDATOR), "--stages", "stages/stages.yaml", "--static-only"],
+            [sys.executable, str(VALIDATOR), "--stages", "stages/stages.yaml", "--static-only"],
             cwd=REPO,
             capture_output=True,
             text=True,
