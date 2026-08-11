@@ -1,5 +1,5 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/agent
-TAG   ?= v2026.8.3-rev43
+TAG   ?= v2026.8.3-rev44
 REF   := $(IMAGE):$(TAG)
 CACHE_REF ?= $(IMAGE):buildcache
 

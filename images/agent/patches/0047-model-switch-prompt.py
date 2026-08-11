@@ -82,8 +82,8 @@ def main() -> int:
     )
     state = replace_once(
         state,
-        '''        Also nulls ``system_prompt`` so the cached snapshot (which embeds a
-        stale ``Model:`` / ``Provider:`` header) is rebuilt - matching the
+        f'''        Also nulls ``system_prompt`` so the cached snapshot (which embeds a
+        stale ``Model:`` / ``Provider:`` header) is rebuilt {chr(8212)} matching the
         behavior of ``update_session_model`` (see #48173, #48248).
 ''',
         '''        ``system_prompt`` is the refreshed snapshot carrying the new runtime
