@@ -28,7 +28,7 @@ if [[ "$actual_from_unrelated_directory" != "$expected" ]]; then
   exit 1
 fi
 
-git -C "$REPO_ROOT" worktree add --detach --quiet "$WORK/linked-cli" HEAD
+env -u GIT_INDEX_FILE git -C "$REPO_ROOT" worktree add --detach --quiet "$WORK/linked-cli" HEAD
 cp "$REPO_ROOT/vicegerent" "$WORK/linked-cli/vicegerent"
 ln -s "$WORK/linked-cli/vicegerent" "$WORK/bin/vicegerent"
 

@@ -59,8 +59,6 @@ policy:
       status: enabled
   alertmanager:
     createdBy: jchristensen
-webhooks:
-  publicUrl: https://byron-soulless-jayleen.ngrok-free.dev
 agents:
   - name: bot-jchristensen
     obsidian:
@@ -69,62 +67,6 @@ agents:
       userName: Jairus Christensen
       userEmail: jchristensen@moveworks.ai
     timezone: America/Denver
-    webhooks:
-      enabled: true
-      routes:
-        # Production PagerDuty subscription.
-        pagerduty-incidents:
-          provider: pagerduty
-          events: [incident.triggered, incident.escalated, incident.resolved]
-          prompt: |-
-            A PagerDuty incident event requires an autonomous investigation.
-            Event: {event.event_type}
-            Incident  #{event.data.number}: {event.data.title}
-            Status: {event.data.status}
-            Urgency: {event.data.urgency}
-            Service: {event.data.service.summary}
-            Link: {event.data.html_url}
-            Use PagerDuty, Kubernetes, monitoring, logs, source control, and
-            deployment history to establish scope, impact, timeline, and the
-            most likely root cause. Do not stop at restating the payload.
-            If the evidence identifies a concrete defect in an authorized
-            repository, create a focused branch, implement the smallest safe
-            fix, validate it, commit it, push it, and open a draft pull or
-            merge request. Do not merely recommend a fix you can safely make.
-            Never merge, deploy, acknowledge or resolve the incident, or
-            otherwise mutate production.
-            Before ending, always run `hermes send --to slack --json` with one
-            concise report as its message argument. Include the incident,
-            current status, impact, root cause and evidence, actions taken,
-            validation, and every pull or merge request URL. If no change was
-            appropriate or a blocker remains, say so explicitly. Check that
-            the send succeeded; diagnose a failure before retrying.
-        # Generic-v2 twin for end-to-end rehearsals of the same workflow.
-        pagerduty-incidents-test:
-          provider: generic-v2
-          prompt: |-
-            A PagerDuty incident event requires an autonomous investigation.
-            Event: {event.event_type}
-            Incident  #{event.data.number}: {event.data.title}
-            Status: {event.data.status}
-            Urgency: {event.data.urgency}
-            Service: {event.data.service.summary}
-            Link: {event.data.html_url}
-            Use PagerDuty, Kubernetes, monitoring, logs, source control, and
-            deployment history to establish scope, impact, timeline, and the
-            most likely root cause. Do not stop at restating the payload.
-            If the evidence identifies a concrete defect in an authorized
-            repository, create a focused branch, implement the smallest safe
-            fix, validate it, commit it, push it, and open a draft pull or
-            merge request. Do not merely recommend a fix you can safely make.
-            Never merge, deploy, acknowledge or resolve the incident, or
-            otherwise mutate production.
-            Before ending, always run `hermes send --to slack --json` with one
-            concise report as its message argument. Include the incident,
-            current status, impact, root cause and evidence, actions taken,
-            validation, and every pull or merge request URL. If no change was
-            appropriate or a blocker remains, say so explicitly. Check that
-            the send succeeded; diagnose a failure before retrying.
     providers:
       openai:
         model: gpt-5.6-terra

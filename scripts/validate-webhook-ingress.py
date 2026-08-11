@@ -548,11 +548,6 @@ def assert_incident_route_contracts() -> None:
             "alertmanager-alerts-test",
             "alertmanager",
         ),
-        "work": (
-            "pagerduty-incidents",
-            "pagerduty-incidents-test",
-            "pagerduty",
-        ),
     }
     for profile, (production_name, test_name, provider) in profiles.items():
         values = yaml.safe_load((ROOT / "examples" / f"{profile}.yaml").read_text(encoding="utf-8"))

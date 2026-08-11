@@ -271,7 +271,7 @@ receivers:
 
 ### Rehearsing a route with dummy data
 
-Provider routes verify a real signature, so they cannot be exercised with an arbitrary curl body. Vicegerent does not generate test routes. If you want a rehearsal endpoint, explicitly add a second route such as `pagerduty-incidents-test` with `provider: generic-v2` and the prompt or other route options you want to exercise. The filled `examples/personal.yaml` and `examples/work.yaml` profiles define their own test twins, but that is machine-specific configuration rather than a platform default. After provisioning the additional route's secret, rehearse it before pointing the real provider at the production route:
+Provider routes verify a real signature, so they cannot be exercised with an arbitrary curl body. Vicegerent does not generate test routes. If you want a rehearsal endpoint, explicitly add a second route such as `pagerduty-incidents-test` with `provider: generic-v2` and the prompt or other route options you want to exercise. The filled `examples/personal.yaml` profile defines test twins, but that is machine-specific configuration rather than a platform default. After provisioning the additional route's secret, rehearse it before pointing the real provider at the production route:
 
 ```bash
 ROUTE_SECRET='<the generic-v2 route secret>'
