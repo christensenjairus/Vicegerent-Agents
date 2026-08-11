@@ -24,6 +24,7 @@ DEFAULTS_VALUES="values.defaults.yaml"
 # --set-file (the Go shim embeds the same file). Every egress-proxy render below
 # must pass it or the chart's `required` guard fails by design.
 SECRET_PATTERNS_FILE="$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-patterns.json"
+PROMPT_INJECTION_PATTERNS_FILE="$REPO_ROOT/images/mcp-cerbos-shim/internal/promptinjection/patterns.json"
 KUBECONFORM_CACHE="${KUBECONFORM_CACHE:-/tmp/.kubeconform-cache}"
 kubeconform_flags=(-strict -ignore-missing-schemas -summary -cache "$KUBECONFORM_CACHE")
 
@@ -341,13 +342,14 @@ done
 # empty, so both lint and template must supply this layered pair. Parallel indexed
 # arrays (CHART_NAMES[i] <-> CHART_ARGS[i]) rather than an associative array, so
 # this runs on macOS's stock bash 3.2, which has no `declare -A`.
-CHART_NAMES=(platform cerbos-policies mcp-cerbos-shim egress-proxy agent)
+CHART_NAMES=(platform cerbos-policies mcp-cerbos-shim egress-proxy webhook-listener agent)
 CHART_ARGS=(
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set-file secretPatterns=$SECRET_PATTERNS_FILE"
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES"
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES"
-  "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set-file secretPatterns=$SECRET_PATTERNS_FILE"
-  "-f $(agent_defaults_slice) -f $(agent0_slice)"
+  "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set-file secretPatterns=$SECRET_PATTERNS_FILE --set-file promptInjectionPatterns=$PROMPT_INJECTION_PATTERNS_FILE"
+  "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set agents[0].webhooks.enabled=true"
+  "-f $(agent_defaults_slice) -f $(agent0_slice) --set webhooks.enabled=true"
 )
 
 echo "INFO - Linting Helm charts"
@@ -398,18 +400,24 @@ fi
 echo "INFO - Rendering egress-proxy scrub.py and validating it is valid Python"
 helm template egress-proxy charts/egress-proxy -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" \
   --set-file "secretPatterns=$SECRET_PATTERNS_FILE" \
+  --set-file "promptInjectionPatterns=$PROMPT_INJECTION_PATTERNS_FILE" \
   --show-only templates/addon-configmap.yaml \
   | yq '.data."scrub.py"' \
   | "$PYTHON" -c 'import ast, sys; ast.parse(sys.stdin.read())' \
   || { echo "ERROR - templated egress-proxy scrub.py is not valid Python" >&2; exit 1; }
 
-echo "INFO - Asserting egress-proxy render FAILS without --set-file secretPatterns"
-# The addon ConfigMap guards .Values.secretPatterns with `required`, so a bare
-# render (no --set-file) must fail. If it ever succeeds, the guard has regressed
-# and scrub.py could ship with an empty pattern set.
+echo "INFO - Asserting egress-proxy render FAILS without each canonical pattern file"
 if helm template egress-proxy charts/egress-proxy -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" \
+     --set-file "promptInjectionPatterns=$PROMPT_INJECTION_PATTERNS_FILE" \
      --show-only templates/addon-configmap.yaml >/dev/null 2>&1; then
   echo "ERROR - egress-proxy addon-configmap rendered WITHOUT --set-file secretPatterns;" \
+       "the required guard is not load-bearing." >&2
+  exit 1
+fi
+if helm template egress-proxy charts/egress-proxy -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" \
+     --set-file "secretPatterns=$SECRET_PATTERNS_FILE" \
+     --show-only templates/addon-configmap.yaml >/dev/null 2>&1; then
+  echo "ERROR - egress-proxy addon-configmap rendered WITHOUT --set-file promptInjectionPatterns;" \
        "the required guard is not load-bearing." >&2
   exit 1
 fi
@@ -440,6 +448,16 @@ echo "INFO - Asserting every image we build is deployed on the tag its Makefile 
 
 echo "INFO - Asserting values.example.yaml remains a scoped Moveworks DevOps starter"
 "$PYTHON" scripts/validate-values-example.py
+
+echo "INFO - Asserting webhook Secret discovery and key reconciliation match install preflight"
+scripts/test-webhook-secrets.sh
+scripts/test-platform-secret-reconciliation.sh
+
+echo "INFO - Asserting optional model-key prompts follow machine values"
+scripts/test-setup-secrets-providers.sh
+
+echo "INFO - Asserting webhook ingress authentication and network boundaries"
+python3 scripts/validate-webhook-ingress.py
 
 echo "INFO - Asserting SSH direct egress fails closed and remains FQDN-scoped"
 "$PYTHON" scripts/validate-agent-ssh-egress.py

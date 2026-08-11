@@ -14,9 +14,26 @@ import yaml
 
 PROVIDERS = ("anthropic", "openai", "deepseek", "zai")
 RELEASE_NAME = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+WEBHOOK_ROUTE_NAME = re.compile(r"[a-z][a-z0-9-]{0,62}$")
+WEBHOOK_PROVIDERS = {"github", "gitlab", "pagerduty", "svix", "generic-v2", "alertmanager"}
+WEBHOOK_ROUTE_FIELDS = {
+    "provider",
+    "enabled",
+    "description",
+    "events",
+    "prompt",
+    "skills",
+    "filters",
+    "script",
+    "deliver",
+    "deliver_extra",
+    "deliver_only",
+}
 ANY_MAPPING_PATHS = {
     ("agentDefaults", "config"),
     ("agents", "config"),
+    ("agentDefaults", "webhooks", "routes"),
+    ("agents", "webhooks", "routes"),
     ("agentDefaults", "directEgress", "ssh", "hosts"),
     ("agents", "directEgress", "ssh", "hosts"),
 }
@@ -131,6 +148,56 @@ def require_capacity(errors: list[str], platform: dict[str, Any], path: str, pro
         errors.append(f"{path} requires models.{provider}.enabled")
 
 
+def validate_webhook_config(value: dict[str, Any], path: tuple[str, ...], errors: list[str]) -> None:
+    toolsets = value.get("toolsets")
+    if not isinstance(toolsets, list) or not all(isinstance(item, str) and item for item in toolsets):
+        errors.append(f"{path_text(path + ('toolsets',))}: expected list of strings")
+    elif len(toolsets) != len(set(toolsets)):
+        errors.append(f"{path_text(path + ('toolsets',))}: duplicate entries are not allowed")
+
+    routes = value.get("routes")
+    if not isinstance(routes, dict):
+        return
+    for route_name, route in routes.items():
+        route_path = path + ("routes", str(route_name))
+        if not isinstance(route_name, str) or not WEBHOOK_ROUTE_NAME.fullmatch(route_name) or "--" in route_name:
+            errors.append(
+                f"{path_text(route_path)}: route name must match ^[a-z][a-z0-9-]{{0,62}}$ without consecutive hyphens"
+            )
+        if not isinstance(route, dict):
+            errors.append(f"{path_text(route_path)}: expected mapping")
+            continue
+        for field in sorted(set(route) - WEBHOOK_ROUTE_FIELDS):
+            errors.append(f"{path_text(route_path + (field,))}: unknown key")
+
+        provider = route.get("provider")
+        if provider not in WEBHOOK_PROVIDERS:
+            errors.append(f"{path_text(route_path + ('provider',))}: unsupported provider")
+        if "enabled" in route and not isinstance(route["enabled"], bool):
+            errors.append(f"{path_text(route_path + ('enabled',))}: expected boolean")
+        for field in ("description", "prompt", "script", "deliver"):
+            if field in route and not isinstance(route[field], str):
+                errors.append(f"{path_text(route_path + (field,))}: expected string")
+        for field in ("events", "skills"):
+            if field in route and (
+                not isinstance(route[field], list)
+                or not all(isinstance(item, str) and item for item in route[field])
+            ):
+                errors.append(f"{path_text(route_path + (field,))}: expected list of strings")
+        if "filters" in route:
+            filters = route["filters"]
+            if not isinstance(filters, (dict, list)) or (
+                isinstance(filters, list) and not all(isinstance(item, dict) for item in filters)
+            ):
+                errors.append(f"{path_text(route_path + ('filters',))}: expected mapping or list of mappings")
+        if "deliver_extra" in route and not isinstance(route["deliver_extra"], dict):
+            errors.append(f"{path_text(route_path + ('deliver_extra',))}: expected mapping")
+        if "deliver_only" in route and not isinstance(route["deliver_only"], bool):
+            errors.append(f"{path_text(route_path + ('deliver_only',))}: expected boolean")
+        if route.get("deliver_only") is True and route.get("deliver", "log") == "log":
+            errors.append(f"{path_text(route_path + ('deliver_only',))}: requires a non-log delivery target")
+
+
 def validate_cross_field_contract(defaults: dict[str, Any], machine: dict[str, Any], errors: list[str]) -> None:
     platform = merge(defaults, machine)
     agent_defaults = merge(defaults.get("agentDefaults", {}), machine.get("agentDefaults", {}))
@@ -157,6 +224,13 @@ def validate_cross_field_contract(defaults: dict[str, Any], machine: dict[str, A
             names[name] = index
 
         agent = merge(agent_defaults, configured)
+        webhooks = agent.get("webhooks")
+        if isinstance(webhooks, dict):
+            # A webhook Secret key is "<agent>__<route>", so consecutive hyphens in
+            # the agent name map to the "__" separator and collide across routes.
+            if isinstance(name, str) and "--" in name:
+                errors.append(f"{path}.name: must not contain consecutive hyphens for a webhook-enabled agent")
+            validate_webhook_config(webhooks, (f"agents[{index}]", "webhooks"), errors)
         providers = agent.get("providers", {})
         for provider in PROVIDERS:
             if providers.get(provider, {}).get("enabled") is True:

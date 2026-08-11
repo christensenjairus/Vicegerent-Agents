@@ -4,16 +4,26 @@
 # it to the calling shell. Python owns bootstrap and locking because fcntl gives
 # macOS and Linux a kernel-released lock with no stale PID state.
 prefer_mikefarah_yq() {
-  local directory candidate version
+  local venv="$1" shim_dir directory candidate version
   local -a path_entries
+  shim_dir="$venv/vicegerent-bin"
+  mkdir -p "$shim_dir"
+  shim_dir="$(cd "$shim_dir" && pwd)"
   IFS=: read -r -a path_entries <<< "$PATH"
   for directory in "${path_entries[@]}"; do
     [[ -n "$directory" ]] || directory=.
+    directory="$(cd "$directory" 2>/dev/null && pwd)" || continue
+    [[ "$directory" != "$shim_dir" ]] || continue
     candidate="$directory/yq"
     [[ -x "$candidate" ]] || continue
     version="$("$candidate" --version 2>&1)" || continue
     [[ "$version" == *"mikefarah/yq"* ]] || continue
-    export PATH="$directory:$PATH"
+    ln -sfn "$candidate" "$shim_dir/yq"
+    case ":$PATH:" in
+      *":$shim_dir:"*) ;;
+      *) export PATH="$shim_dir:$PATH" ;;
+    esac
+    hash -r
     return
   done
 }
@@ -34,5 +44,5 @@ ensure_python_environment() {
     *) export PATH="$venv/bin:$PATH" ;;
   esac
   hash -r
-  prefer_mikefarah_yq
+  prefer_mikefarah_yq "$venv"
 }

@@ -59,7 +59,8 @@ vector:
             (ns == "kube-system" && pod_app_label == "tetragon" && container == "export-stdout") ||
             (ns == "agentgateway-system" && starts_with(pod, "agentgateway-proxy-") && container == "agentgateway") ||
             (ns == "agent-sandbox" && sandbox_agent != "" && container == "agent") ||
-            (ns == "egress-proxy" && container == "mitmproxy")
+            (ns == "egress-proxy" && container == "mitmproxy") ||
+            (ns == "webhooks" && pod_app_label == "webhook-listener" && container == "webhook-listener")
       parser:
         type: remap
         inputs: [scope]

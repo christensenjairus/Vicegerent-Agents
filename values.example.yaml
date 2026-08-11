@@ -81,6 +81,9 @@ policy:
     maxSilenceSeconds: 86400
     # Replace with the normal username Cerbos uses for silence ownership.
     createdBy: your-username
+# Reserve one stable ngrok domain and reuse it for every agent route.
+webhooks:
+  publicUrl: https://your-domain.ngrok.app
 agents:
   - name: my-first-agent  # replace with an operator-chosen release name
     git:
@@ -89,6 +92,19 @@ agents:
       userEmail: you@moveworks.ai
     # IANA timezone used for timestamps and scheduled jobs.
     timezone: America/Los_Angeles
+    # Flip enabled after creating the ngrok and route Secrets described in docs/setup.md.
+    webhooks:
+      enabled: false
+      routes:
+        pagerduty-incidents:
+          provider: pagerduty
+          events: [incident.triggered, incident.escalated, incident.resolved]
+          prompt: |-
+            PagerDuty event: {event.event_type}
+            Incident number {event.data.number}: {event.data.title}
+            Status: {event.data.status}
+            Service: {event.data.service.summary}
+          deliver: slack
     # New users are Anthropic-only. OpenAI-backed models and content-safety
     # checks remain unavailable until an OpenAI key and routes are added.
     providers:

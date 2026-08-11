@@ -13,7 +13,7 @@
 #
 # Usage: install.sh [flags]
 #   -y, --yes            auto-approve every prompt (non-interactive)
-#       --values <file>  machine plane values (default: <repo>/values.yaml)
+#       --values <file>  machine plane values (default: <repo>/values.yaml; choose an example if absent)
 #       --stage <name>   run only this stage
 #       --from <name>    run this stage and every stage after it
 #   -h, --help           show this help
@@ -28,7 +28,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-VALUES_FILE="${VALUES_FILE:-$REPO_ROOT/values.yaml}"
+if [[ -n "${VALUES_FILE+x}" ]]; then
+  VALUES_FILE_EXPLICIT=1
+else
+  VALUES_FILE="$REPO_ROOT/values.yaml"
+  VALUES_FILE_EXPLICIT=0
+fi
 DEFAULTS_FILE="${DEFAULTS_FILE:-$REPO_ROOT/values.defaults.yaml}"
 STAGES_FILE="$REPO_ROOT/stages/stages.yaml"
 HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
@@ -68,7 +73,7 @@ need_arg() { [[ $# -ge 2 && "$2" != -* ]] || die "$1 requires an argument"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -y|--yes)   ASSUME_YES=1 ;;
-    --values)   need_arg "$@"; VALUES_FILE="$2"; shift ;;
+    --values)   need_arg "$@"; VALUES_FILE="$2"; VALUES_FILE_EXPLICIT=1; shift ;;
     --stage)    need_arg "$@"; ONLY_STAGE="$2"; shift ;;
     --from)     need_arg "$@"; FROM_STAGE="$2"; shift ;;
     -h|--help)  sed -n '2,24p' "$0"; exit 0 ;;
@@ -115,8 +120,10 @@ require_kind_context
 [[ -f "$STAGES_FILE" ]] || die "stages file not found: $STAGES_FILE"
 "$PYTHON" "$REPO_ROOT/scripts/validate-stages.py" --stages "$STAGES_FILE" --static-only
 [[ -f "$DEFAULTS_FILE" ]] || die "defaults file not found: $DEFAULTS_FILE"
+select_values_file "$REPO_ROOT" "$ASSUME_YES" "$VALUES_FILE_EXPLICIT" \
+  || die "select a machine values profile interactively or set VALUES_FILE explicitly"
 [[ -f "$VALUES_FILE" ]] \
-  || die "machine values not found: $VALUES_FILE - copy values.example.yaml to values.yaml and edit it"
+  || die "machine values not found: $VALUES_FILE - copy values.example.yaml to values.yaml, or add a profile under examples/"
 kc cluster-info >/dev/null || die "cannot reach cluster on context '$KUBE_CONTEXT'"
 validate_values_schema
 require_agent_names

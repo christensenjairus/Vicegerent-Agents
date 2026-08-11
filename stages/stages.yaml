@@ -132,6 +132,10 @@ stages:
         type: local
         namespace: cerbos
         machineValues: full
+      - name: webhook-listener
+        type: local
+        namespace: webhooks
+        machineValues: full
   - name: platform
     actions:
       - name: platform

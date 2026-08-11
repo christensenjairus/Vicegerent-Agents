@@ -254,14 +254,13 @@ cd vicegerent-agents
 # 2. Create the Kind cluster
 ./vicegerent setup cluster
 
-# 3. Provision platform-wide secrets
-export ANTHROPIC_API_KEY=***
-./vicegerent setup secrets platform
-
-# 4. Configure this machine, then provision each agent's secrets
+# 3. Configure this machine
 cp values.example.yaml values.yaml
-$EDITOR values.yaml
-./vicegerent setup secrets agent <name>
+$EDITOR values.yaml          # cluster vars + the agents you want (start with the example agent)
+
+# 4. Provision platform-wide and per-agent secrets
+export ANTHROPIC_API_KEY=***
+./vicegerent setup secrets
 
 # 5. Install the platform
 ./vicegerent install

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Idempotent secret setup for the vicegerent platform, using Kubernetes Secrets
+# Idempotent secret setup for the vicegerent platform and every configured agent, using Kubernetes Secrets
 # directly (no 1Password). The Kind cluster's etcd is the source of truth for cluster
 # material; the host ghostunnel material lives on the laptop filesystem.
 #
@@ -19,6 +19,8 @@
 #   agentgateway-system  ghostunnel-server            server.crt/key,ca.crt (host recovery copy)
 #   searxng              searxng-secret               secret_key           (generated)
 #   cerbos               mcp-cerbos-shim-self-token   token                (generated)
+#   webhooks             vicegerent-ngrok-authtoken   authtoken            (ngrok tunnel)
+#   webhooks             vicegerent-webhook-secrets    <agent>__<route>     (one key per enabled route)
 #   egress-proxy         egress-proxy-ca              ca.crt, ca.key       (MITM proxy CA)
 #   agent-sandbox        egress-proxy-ca-cert         ca.crt               (MITM proxy CA cert only)
 #   velero               velero-credentials           cloud                (generated S3 creds)
@@ -38,18 +40,31 @@
 #
 # Flags:
 #   -y, --yes     auto-approve every change (non-interactive)
+#   --values FILE select machine values (otherwise values.yaml or an example profile)
 #   --force       rebuild the ghostunnel CA + leaf certs even if they already exist
 #   -h, --help    show this help
 #
 # Env overrides: GHOSTUNNEL_HOST_DIR, RCLONE_S3_HOST_DIR, SERVER_IP,
 #   SERVER_CN, CLIENT_CN, ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY,
-#   ZAI_API_KEY
+#   ZAI_API_KEY, NGROK_AUTHTOKEN, WEBHOOK_SECRET_<SECRETREF>, and VALUES_FILE
+#   (otherwise selects an example profile when values.yaml is absent).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if [[ -n "${VALUES_FILE+x}" ]]; then
+  VALUES_FILE_EXPLICIT=1
+else
+  VALUES_FILE="$REPO_ROOT/values.yaml"
+  VALUES_FILE_EXPLICIT=0
+fi
 # shellcheck source=../lib/kube-context.sh
 source "$SCRIPT_DIR/../lib/kube-context.sh"
+# shellcheck source=lib/webhooks.sh
+source "$SCRIPT_DIR/lib/webhooks.sh"
+# shellcheck source=lib/providers.sh
+source "$SCRIPT_DIR/lib/providers.sh"
 
 GHOSTUNNEL_HOST_DIR="${GHOSTUNNEL_HOST_DIR:-$HOME/.vicegerent/ghostunnel}"
 RCLONE_S3_HOST_DIR="${RCLONE_S3_HOST_DIR:-$HOME/.vicegerent/rclone-s3}"
@@ -66,6 +81,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -y|--yes) ASSUME_YES=1 ;;
     --force) FORCE=1 ;;
+    --values)
+      [[ $# -ge 2 && "$2" != -* ]] || { echo "--values requires an argument" >&2; exit 2; }
+      VALUES_FILE="$2"
+      VALUES_FILE_EXPLICIT=1
+      shift
+      ;;
     -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -109,9 +130,25 @@ apply_secret() {
   kc -n "$ns" create secret generic "$name" "$@" --dry-run=client -o yaml | kc apply -f - >/dev/null
 }
 
+# set_secret_key <name> <ns> <key> <value> - create the Secret if needed, then
+# merge one key without deleting unrelated keys already stored in the Secret.
+# The value is passed through the environment and a mode-0600 patch file, never
+# on a command line, so it can't leak via a world-readable /proc/<pid>/cmdline.
+set_secret_key() {
+  local name="$1" ns="$2" key="$3" value="$4" patch_file
+  if ! kc -n "$ns" get secret "$name" >/dev/null 2>&1; then
+    apply_secret "$name" "$ns"
+  fi
+  patch_file="$(mktemp "${WORK:-${TMPDIR:-/tmp}}/patch.XXXXXX")"
+  chmod 600 "$patch_file"
+  value="$value" jq -nc --arg key "$key" '{stringData: {($key): env.value}}' > "$patch_file"
+  kc -n "$ns" patch secret "$name" --type merge --patch-file "$patch_file" >/dev/null
+  rm -f "$patch_file"
+}
+
 # ensure_literal_secret <name> <ns> <key> <envvar> <prompt> <required(0|1)>
 # Reuses an existing non-empty value; otherwise takes it from $envvar or a prompt,
-# then applies the Secret (empty value allowed so the resource always exists).
+# then merges that key into the Secret (empty value allowed so the resource exists).
 ensure_literal_secret() {
   local name="$1" ns="$2" key="$3" envvar="$4" prompt="$5" required="$6"
   if secret_has "$name" "$ns" "$key" && [[ -z "${!envvar:-}" ]]; then
@@ -128,7 +165,7 @@ ensure_literal_secret() {
       read -r -s -p "  value (empty to skip): " val; echo
     fi
   fi
-  apply_secret "$name" "$ns" --from-literal="$key=$val"
+  set_secret_key "$name" "$ns" "$key" "$val"
   if [[ -n "$val" ]]; then
     info "Set $ns/$name ($key)."
   elif [[ "$required" == "1" ]]; then
@@ -190,13 +227,26 @@ ossl() {
 }
 
 # --- prerequisites ---------------------------------------------------------
-for cmd in kubectl openssl jq; do
+for cmd in kubectl openssl jq yq; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not on PATH"
 done
+# This script uses mikefarah/yq v4 merge syntax (eval-all, `*`); reject the
+# unrelated pip `yq` (kislyuk/yq) that a venv on PATH commonly shadows it with.
+yq_version_output="$(yq --version 2>&1)"
+if [[ "$yq_version_output" != *"mikefarah/yq"* ]]; then
+  die "yq on PATH is not mikefarah/yq (got: '$yq_version_output'); a PATH entry ahead of it is shadowing the Go binary from https://github.com/mikefarah/yq - commonly a pip-installed 'yq' (kislyuk/yq) in a venv's bin dir"
+fi
+yq_major="$(sed -E 's/.*version v([0-9]+).*/\1/' <<<"$yq_version_output")"
+if [[ ! "$yq_major" =~ ^[0-9]+$ ]] || [[ "$yq_major" -lt 4 ]]; then
+  die "yq v4+ required (found $yq_version_output)"
+fi
 # macOS ships LibreSSL as `openssl`, which has no -addext; every CA below needs it.
 openssl req -help 2>&1 | grep -q -- -addext \
   || die "this openssl has no 'req -addext' (LibreSSL?); install OpenSSL 3 (brew install openssl@3) and put it ahead of /usr/bin on PATH"
 require_kind_context
+select_values_file "$REPO_ROOT" "$ASSUME_YES" "$VALUES_FILE_EXPLICIT" \
+  || die "select a machine values profile interactively or set VALUES_FILE explicitly"
+DEFAULTS_FILE="$REPO_ROOT/values.defaults.yaml"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vicegerent-setup.XXXXXX")"
 chmod 700 "$WORK"
@@ -208,7 +258,7 @@ ui_header "Platform secrets" "context: $KUBE_CONTEXT"
 
 # Ensure target namespaces exist so Secrets can be applied before the install stages run.
 step "Namespaces"
-for ns in agentgateway-system searxng egress-proxy agent-sandbox velero cerbos; do
+for ns in agentgateway-system searxng egress-proxy agent-sandbox velero cerbos webhooks; do
   ensure_ns "$ns"
 done
 info "Target namespaces present."
@@ -289,17 +339,44 @@ step "Anthropic API key"
 ensure_literal_secret vicegerent-anthropic-secrets agentgateway-system Authorization \
   ANTHROPIC_API_KEY "Anthropic API key (sk-ant-...)." 1
 
-step "OpenAI API key (optional)"
-ensure_literal_secret vicegerent-openai-secrets agentgateway-system Authorization \
-  OPENAI_API_KEY "OpenAI API key (sk-...) - GPT models stay unavailable until set." 0
+if provider_enabled openai "$DEFAULTS_FILE" "$VALUES_FILE"; then
+  step "OpenAI API key (optional)"
+  ensure_literal_secret vicegerent-openai-secrets agentgateway-system Authorization \
+    OPENAI_API_KEY "OpenAI API key (sk-...) - GPT models stay unavailable until set." 0
+fi
 
-step "DeepSeek API key (optional)"
-ensure_literal_secret vicegerent-deepseek-secrets agentgateway-system Authorization \
-  DEEPSEEK_API_KEY "DeepSeek API key - DeepSeek models stay unavailable until set and models.deepseek.enabled is true." 0
+if provider_enabled deepseek "$DEFAULTS_FILE" "$VALUES_FILE"; then
+  step "DeepSeek API key (optional)"
+  ensure_literal_secret vicegerent-deepseek-secrets agentgateway-system Authorization \
+    DEEPSEEK_API_KEY "DeepSeek API key - DeepSeek models stay unavailable until set and models.deepseek.enabled is true." 0
+fi
 
-step "Z.ai / GLM API key (optional)"
-ensure_literal_secret vicegerent-zai-secrets agentgateway-system Authorization \
-  ZAI_API_KEY "Z.ai/GLM standard (metered) API key - Z.ai models stay unavailable until set and models.zai.enabled is true." 0
+if provider_enabled zai "$DEFAULTS_FILE" "$VALUES_FILE"; then
+  step "Z.ai / GLM API key (optional)"
+  ensure_literal_secret vicegerent-zai-secrets agentgateway-system Authorization \
+    ZAI_API_KEY "Z.ai/GLM standard (metered) API key - Z.ai models stay unavailable until set and models.zai.enabled is true." 0
+fi
+
+# --- webhook listener ------------------------------------------------------
+WEBHOOKS_ENABLED=0
+WEBHOOK_ROUTE_LABELS=()
+WEBHOOK_SECRET_KEYS=()
+if [[ -f "$VALUES_FILE" ]]; then
+  collect_webhook_routes "$VALUES_FILE" "$DEFAULTS_FILE" || die "invalid webhook configuration in $VALUES_FILE"
+fi
+if [[ "$WEBHOOKS_ENABLED" == "1" ]]; then
+  step "Ngrok webhook listener"
+  ensure_literal_secret vicegerent-ngrok-authtoken webhooks authtoken \
+    NGROK_AUTHTOKEN "Authtoken for the platform's shared ngrok domain." 1
+  for i in "${!WEBHOOK_SECRET_KEYS[@]}"; do
+    key="${WEBHOOK_SECRET_KEYS[$i]}"
+    envvar="$(webhook_secret_envvar "$key")"
+    ensure_literal_secret vicegerent-webhook-secrets webhooks "$key" \
+      "$envvar" "Signing secret for webhook route ${WEBHOOK_ROUTE_LABELS[$i]}." 1
+  done
+elif [[ ! -f "$VALUES_FILE" ]]; then
+  info "$VALUES_FILE is absent; no webhook route Secrets requested."
+fi
 
 # --- SearXNG secret key ----------------------------------------------------
 # Signs SearXNG session/limiter tokens. Generated once and reused so the value
@@ -385,9 +462,21 @@ check egress-proxy-ca egress-proxy ca.crt
 check egress-proxy-ca egress-proxy ca.key
 check egress-proxy-ca-cert agent-sandbox ca.crt
 check velero-credentials velero cloud
-check_optional vicegerent-openai-secrets agentgateway-system Authorization
-check_optional vicegerent-deepseek-secrets agentgateway-system Authorization
-check_optional vicegerent-zai-secrets agentgateway-system Authorization
+if provider_enabled openai "$DEFAULTS_FILE" "$VALUES_FILE"; then
+  check_optional vicegerent-openai-secrets agentgateway-system Authorization
+fi
+if provider_enabled deepseek "$DEFAULTS_FILE" "$VALUES_FILE"; then
+  check_optional vicegerent-deepseek-secrets agentgateway-system Authorization
+fi
+if provider_enabled zai "$DEFAULTS_FILE" "$VALUES_FILE"; then
+  check_optional vicegerent-zai-secrets agentgateway-system Authorization
+fi
+if [[ "$WEBHOOKS_ENABLED" == "1" ]]; then
+  check vicegerent-ngrok-authtoken webhooks authtoken
+  for key in "${WEBHOOK_SECRET_KEYS[@]}"; do
+    check vicegerent-webhook-secrets webhooks "$key"
+  done
+fi
 if [[ -s "$HD/server.crt" && -s "$HD/server.key" && -s "$HD/ca.cert" ]]; then
   ui_success "$HD (host ghostunnel server + CA material)"
 else
@@ -406,3 +495,11 @@ else
   warn "Some required material is missing (see above). Re-run to complete it."
   exit 1
 fi
+
+step "Agent secrets"
+while IFS= read -r agent; do
+  [[ -n "$agent" ]] || continue
+  agent_args=("$agent")
+  [[ "$ASSUME_YES" == "1" ]] && agent_args+=(--yes)
+  "$SCRIPT_DIR/setup-secrets-agent.sh" "${agent_args[@]}"
+done < <(yq -r '.agents[].name' "$VALUES_FILE")

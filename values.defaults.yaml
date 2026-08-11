@@ -71,12 +71,15 @@ policy:
     maxLimit: 200
     maxDepth: 3
     maxBreadth: 50
+# One stable ngrok HTTPS origin is shared by every configured agent route.
+webhooks:
+  publicUrl: ''
 # Per-agent defaults. The installer layers this template under each machine agent. A machine supports at most ten agents; their dashboards use NodePorts 30119-30128 in list order.
 agentDefaults:
   image:
     # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/agent
     repository: harbor.hahomelabs.com/vicegerent/agent
-    tag: v2026.8.3-rev44
+    tag: v2026.8.3-rev45
   storage:
     data: 10Gi
     gitRepos: 50Gi
@@ -194,6 +197,19 @@ agentDefaults:
       hardStopAfterSameToolFailure: 50
   # Personality and voice only; the chart appends fixed environment guidance.
   soul: ''
+  # Provider signatures terminate in the shared listener; only route metadata reaches Hermes.
+  webhooks:
+    enabled: false
+    # Hermes toolsets and named MCP servers available to every webhook session.
+    # A per-agent list replaces this default; an empty list disables all tools.
+    toolsets:
+      - terminal
+      - file
+      - todo
+      - vmcp
+    # Routes accept provider, enabled, description, events, prompt, skills,
+    # filters, script, deliver, deliver_extra, and deliver_only.
+    routes: {}
   # Native config map merged over platform defaults and under locked mandatory config.
   config: {}
 # Required machine entries. Each entry is layered over agentDefaults.

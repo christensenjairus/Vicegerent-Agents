@@ -9,6 +9,9 @@ spec:
     metadata:
       labels:
         vicegerent.io/dashboard: {{ include "vicegerent-agent.name" . }}
+{{- if .Values.webhooks.enabled }}
+        vicegerent.io/webhooks: enabled
+{{- end }}
       annotations:
         backup.velero.io/backup-volumes-excludes: gitrepos,models,runtime,tmp,data
     spec:
@@ -572,6 +575,10 @@ spec:
               name: api
             - containerPort: 9119
               name: dashboard
+{{- if .Values.webhooks.enabled }}
+            - containerPort: 8644
+              name: webhook
+{{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

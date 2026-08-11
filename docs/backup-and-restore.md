@@ -392,7 +392,7 @@ RESTORE="full-restore-$(date +%Y%m%d%H%M)"
 # Recreate only the base cluster and restore prerequisites.
 kind delete clusters vicegerent
 ./vicegerent setup cluster
-./vicegerent setup secrets platform
+./vicegerent setup secrets
 ./vicegerent install --stage crds
 ./vicegerent install --stage storage
 ./vicegerent install --stage controllers

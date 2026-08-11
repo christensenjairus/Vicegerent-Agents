@@ -1,6 +1,28 @@
 package promptinjection
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestInjectionPatternRegistryLoadsCanonicalJSON(t *testing.T) {
+	var definitions []struct {
+		Name  string `json:"name"`
+		Regex string `json:"regex"`
+	}
+	if err := json.Unmarshal(patternDefinitionsJSON, &definitions); err != nil {
+		t.Fatalf("canonical prompt-injection patterns are invalid JSON: %v", err)
+	}
+	if len(definitions) != len(InjectionPatternRegistry) {
+		t.Fatalf("canonical definitions=%d compiled registry=%d", len(definitions), len(InjectionPatternRegistry))
+	}
+	for index, definition := range definitions {
+		compiled := InjectionPatternRegistry[index]
+		if definition.Name != compiled.name || definition.Regex != compiled.re.String() {
+			t.Fatalf("pattern %d drifted: canonical=%+v compiled=%q/%q", index, definition, compiled.name, compiled.re.String())
+		}
+	}
+}
 
 func TestDetect_KnownShapes(t *testing.T) {
 	cases := []struct {

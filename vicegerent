@@ -499,8 +499,7 @@ ${B}Usage:${N}
   ${C}vicegerent start${N}                        start the Kind cluster + host ToolHive/vMCP stack
   ${C}vicegerent stop${N}                         stop the host stack + Kind cluster
   ${C}vicegerent setup cluster${N}                create the Kind cluster
-  ${C}vicegerent setup secrets platform${N}       provision platform-wide secrets (idempotent)
-  ${C}vicegerent setup secrets agent <name>${N}   provision a named agent's secrets (idempotent)
+  ${C}vicegerent setup secrets${N}                provision platform and configured-agent secrets (idempotent)
   ${C}vicegerent setup mcp${N}                    set up host-side MCP prerequisites
   ${C}vicegerent install${N}                      (re-)install the platform via the staged Helm reconciler
   ${C}vicegerent logs${N}                         open the VictoriaLogs dashboard
@@ -523,8 +522,8 @@ ${B}vicegerent setup${N} - one-time provisioning steps
                          (overridable env: KIND_CONFIG KIND_DOCKER_NETWORK
                           VICEGERENT_HOST_IP - the host address CoreDNS resolves
                           host.docker.internal to; set it if autodetection fails)
-  ${C}secrets platform${N}       provision platform-wide Kubernetes Secrets + host ghostunnel material
-  ${C}secrets agent <name>${N}   provision a named agent's Kubernetes Secrets
+  ${C}secrets${N}                provision platform and every configured agent's Kubernetes Secrets
+                         + host ghostunnel material (chooses an examples/ profile when values.yaml is absent)
   ${C}mcp${N}                    install host MCP prerequisites (brew pkgs, venv, secrets provider)
                          then configure servers, and link the CLI onto PATH
 EOF
@@ -721,22 +720,15 @@ case "${1:-}" in
       secrets)
         shift
         case "${1:-}" in
-          platform)
-            shift
-            exec "$REPO_ROOT/scripts/install/setup-secrets-platform.sh" "$@"
-            ;;
-          agent)
-            shift
-            [[ $# -ge 1 ]] || { echo "usage: vicegerent setup secrets agent <agent-name> [-y|--yes]" >&2; exit 2; }
-            exec "$REPO_ROOT/scripts/install/setup-secrets-agent.sh" "$@"
-            ;;
-          --help|-h|"")
-            echo "vicegerent setup secrets platform            →  platform-wide Kubernetes Secrets + host ghostunnel material"
-            echo "vicegerent setup secrets agent <agent-name>  →  per-agent Kubernetes Secrets"
-            exit 0
-            ;;
+          --help|-h)
+            echo "vicegerent setup secrets - provision platform and every configured agent's secrets"
+            echo "  Flags: -y/--yes, --force, --values <file>"
+            exit 0 ;;
+          platform) shift; exec "$REPO_ROOT/scripts/install/setup-secrets-platform.sh" "$@" ;;
+          -*) exec "$REPO_ROOT/scripts/install/setup-secrets-platform.sh" "$@" ;;
+          "") exec "$REPO_ROOT/scripts/install/setup-secrets-platform.sh" "$@" ;;
           *)
-            echo "unknown setup secrets target: $1 (expected 'platform' or 'agent')" >&2
+            echo "vicegerent setup secrets takes no target; configured agents are discovered from the selected values profile" >&2
             exit 1
             ;;
         esac
@@ -769,9 +761,9 @@ case "${1:-}" in
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
       echo "vicegerent install - (re-)install the platform via the staged Helm reconciler"
-      echo "  Idempotent: reads stages/stages.yaml (control plane) + values.yaml (machine plane)"
-      echo "  and runs helm upgrade --install --wait per stage. Copy values.example.yaml to"
-      echo "  values.yaml first, and seed secrets with 'vicegerent setup secrets platform'."
+      echo "  Idempotent: reads stages/stages.yaml (control plane) + machine values, then runs"
+      echo "  helm upgrade --install --wait per stage. If values.yaml is absent, choose a profile"
+      echo "  from examples/; seed its secrets with 'vicegerent setup secrets'."
       echo "  Flags: -y/--yes, --values <file>, --stage <name>, --from <name>."
       echo "  Env: RECREATE=1 (helm --force-replace), HELM_TIMEOUT, VALUES_FILE, DEFAULTS_FILE."
       exit 0

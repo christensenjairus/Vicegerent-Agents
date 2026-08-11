@@ -109,7 +109,8 @@ helm_local() {
     full)   LOC=("$chartdir"); VALS=(-f "$DEFAULTS_FILE" -f "$VALUES_FILE")
             # platform's promptGuard partial compiles its regexes from the canonical
             # secret-patterns.json (same file the shim embeds); inject it at render.
-            [[ "$name" == "platform" || "$name" == "egress-proxy" ]] && VALS+=(--set-file "secretPatterns=$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-patterns.json") ;;
+            [[ "$name" == "platform" || "$name" == "egress-proxy" ]] && VALS+=(--set-file "secretPatterns=$REPO_ROOT/images/mcp-cerbos-shim/internal/server/secret-patterns.json")
+            [[ "$name" == "egress-proxy" ]] && VALS+=(--set-file "promptInjectionPatterns=$REPO_ROOT/images/mcp-cerbos-shim/internal/promptinjection/patterns.json") ;;
     *)      die "action '$name': a local chart needs machineValues: full or forEach: agents" ;;
   esac
   _do_helm "$name" "$namespace" false

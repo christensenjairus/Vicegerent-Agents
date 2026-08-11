@@ -1,0 +1,38 @@
+[
+  {
+    "name": "ignore-instructions",
+    "regex": "(?i)\\b(ignore|disregard|forget|override)\\s+(all\\s+|any\\s+)?(previous|prior|above|earlier|preceding|your)\\s+(instructions?|prompts?|rules?|guidelines?)\\b"
+  },
+  {
+    "name": "new-instructions",
+    "regex": "(?i)\\b(new|updated|real)\\s+(instructions?|system\\s+prompt|rules?)\\s*[:.]"
+  },
+  {
+    "name": "jailbreak-mode",
+    "regex": "(?i)\\b(developer|DAN|god|jailbreak|unrestricted|unfiltered)\\s+mode\\b"
+  },
+  {
+    "name": "no-restrictions",
+    "regex": "(?i)\\b(act|pretend|behave)\\s+as\\s+(if\\s+)?(you\\s+)?(have\\s+)?no\\s+(restrictions?|rules?|guidelines?|limits?|filters?)\\b"
+  },
+  {
+    "name": "you-are-now",
+    "regex": "(?i)\\byou\\s+are\\s+now\\s+(a|an|in)\\b"
+  },
+  {
+    "name": "reveal-system-prompt",
+    "regex": "(?i)\\b(reveal|print|show|output|repeat)\\s+(your|the)\\s+(system\\s+prompt|instructions?|initial\\s+prompt)\\b"
+  },
+  {
+    "name": "embedded-system-role",
+    "regex": "(?im)^\\s*(system|assistant)\\s*:\\s*\\S"
+  },
+  {
+    "name": "chat-template-tokens",
+    "regex": "<\\|(im_start|im_end|assistant|system|user)\\|>|\\[INST\\]|\\[/INST\\]|<<SYS>>|<</SYS>>"
+  },
+  {
+    "name": "agent-hijack",
+    "regex": "(?i)\\b(AI|assistant|agent|model)\\s*[,:]?\\s*(please\\s+)?(execute|run|call)\\s+the\\s+following\\b"
+  }
+]

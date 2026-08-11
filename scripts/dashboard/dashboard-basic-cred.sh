@@ -37,7 +37,7 @@ CONTEXT_ARG=(--context "$KUBE_CONTEXT")
 password="$(kubectl "${CONTEXT_ARG[@]}" -n "$NAMESPACE" get secret "${name}-secrets" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)"
 [ -n "$password" ] || {
   ui_error "No password in Secret ${NAMESPACE}/${name}-secrets."
-  ui_command "./vicegerent setup secrets agent ${name}"
+  ui_command "./vicegerent setup secrets"
   exit 1
 }
 

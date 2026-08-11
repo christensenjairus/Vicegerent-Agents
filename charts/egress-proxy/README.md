@@ -1,8 +1,8 @@
 # Egress Proxy - Security Model
 
-The egress proxy is an mitmproxy instance that sits between **every agent sandbox** and all outbound HTTP(S) traffic. It provides scrubbing, method enforcement, and an audit log. It is **not** a complete security boundary on its own - it works alongside Cilium network policy and the Sandbox CRD's inherent isolation.
+The chart runs two mitmproxy roles from one scrubber ConfigMap. `egress-proxy` sits between every agent sandbox and its outbound HTTP(S) traffic. When webhooks are enabled, `webhook-egress-proxy` sits only between the shared listener and agent webhook Services. Both provide secret scrubbing and audit logs; the ordinary proxy also enforces the external-destination controls below. Neither is a complete security boundary on its own, so both work alongside Cilium network policy and the Sandbox CRD's isolation.
 
-> **Scope**: this proxy guards every pod in the `agent-sandbox` namespace, whichever harness the sandbox runs (Hermes, Claude Code, Codex, OpenCode) - the ingress rule selects the namespace, not one agent. Platform services - searxng, agentgateway itself - are not routed through it, and the MCP backends are not in the cluster at all (they run host-side under ToolHive; the sandbox reaches them through agentgateway, which *is* scrubbed as an internal destination). Those services have their own network policies and are not in scope for this scrubbing layer.
+> **Scope**: the ordinary proxy guards every pod in the `agent-sandbox` namespace, whichever harness the sandbox runs. The dedicated webhook proxy accepts only the labeled listener in `webhooks` and can reach only webhook-enabled agent pods on port 8644, plus the Agentgateway judge when prompt-injection detection is enabled. Agents cannot enter the dedicated proxy, and the ordinary proxy cannot reach webhook ports.
 
 ---
 
@@ -10,6 +10,10 @@ The egress proxy is an mitmproxy instance that sits between **every agent sandbo
 
 ### Secrets scrubbing
 Applied to every request - headers and body - before forwarding to any destination, internal (agentgateway, searxng) or external (internet). A single regex registry (`REDACT_PATTERNS`) runs on each scrubbed string, compiled at render time from the canonical `images/mcp-cerbos-shim/internal/server/secret-patterns.json` injected via `helm --set-file secretPatterns=…`. That same JSON is embedded into `mcp-cerbos-shim` via `//go:embed`, so the proxy and the shim derive from one source of truth - no hand-sync.
+
+### Webhook prompt-injection detection
+
+The dedicated webhook proxy reads `policy.contentSafety.promptInjection.status` and `judgeModel`. When enabled, it screens the already-redacted body with the canonical `images/mcp-cerbos-shim/internal/promptinjection/patterns.json` registry, calls the Agentgateway OpenAI judge only for regex matches, rejects confirmed injections, fails open on judge-service errors, and rejects a payload if more than 20 candidates would require verification. The ordinary agent proxy never runs this webhook gate.
 
 Coverage spans SSH private keys; Slack tokens; HTTP `Bearer`/`Basic` auth values; cloud and SaaS provider credentials (AWS, GitHub - classic and fine-grained - GitLab, Google, OpenAI, Anthropic, Stripe, Notion, Twilio, npm, Okta, Atlassian, Databricks, Azure Storage/Entra, Elastic, database/broker connection URIs with an inline password, JFrog, Grafana, Docker Hub, PyPI, Hugging Face, 1Password, Linear, PagerDuty); generic JWTs; and PII (US SSN, Visa/Mastercard/Amex/Discover card numbers, US phone numbers). The canonical `images/mcp-cerbos-shim/internal/server/secret-patterns.json` is the authoritative per-pattern list - read it directly for exact names and regexes rather than relying on this summary.
 

@@ -290,6 +290,48 @@ agent:
     }
 
 
+def test_hermes_replaces_managed_webhook_platform() -> None:
+    result = reconcile(
+        "hermes",
+        "yaml",
+        """
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      routes:
+        alertmanager-alerts:
+          prompt: "Status {event.status}"
+          trusted_proxy: true
+  user-platform:
+    enabled: true
+""",
+        """
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      routes:
+        alertmanager-alerts:
+          prompt: "Status {status}"
+          trusted_proxy: true
+""",
+    )
+
+    assert result["platforms"]["webhook"] == {
+        "enabled": True,
+        "extra": {
+            "routes": {
+                "alertmanager-alerts": {
+                    "prompt": "Status {status}",
+                    "trusted_proxy": True,
+                }
+            }
+        },
+    }
+    assert result["platforms"]["user-platform"] == {"enabled": True}
+
+
 def test_claude_settings_replaces_policy_and_preserves_preferences() -> None:
     result = reconcile(
         "claude-settings",
@@ -695,6 +737,7 @@ def test_chart_invokes_reconciler_for_every_writable_config() -> None:
 def main() -> int:
     test_hermes_replaces_owned_sections_and_preserves_user_settings()
     test_hermes_reconciles_machine_agent_leaves_without_overwriting_preferences()
+    test_hermes_replaces_managed_webhook_platform()
     test_claude_settings_replaces_policy_and_preserves_preferences()
     test_claude_marketplaces_replaces_owned_entries_and_keeps_user_entries()
     test_claude_plugins_seeds_records_without_reclaiming_owned_ones()

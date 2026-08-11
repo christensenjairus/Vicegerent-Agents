@@ -31,7 +31,13 @@
     },
     {
       "matchManagers": ["gomod"],
+      "matchFileNames": ["images/mcp-cerbos-shim/**"],
       "groupName": "mcp-cerbos-shim go modules"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["images/webhook-listener/**"],
+      "groupName": "webhook-listener go modules"
     },
     {
       "matchManagers": ["custom.regex"],
@@ -220,6 +226,7 @@
       "managerFilePatterns": [
         "/^charts/egress-proxy/templates/deployment\\.ya?ml$/",
         "/^charts/mcp-cerbos-shim/templates/deployment\\.ya?ml$/",
+        "/^charts/webhook-listener/templates/deployment\\.ya?ml$/",
         "/^charts/platform/templates/searxng\\.ya?ml$/",
         "/^charts/agent/templates/restart-job\\.ya?ml$/"
       ],
