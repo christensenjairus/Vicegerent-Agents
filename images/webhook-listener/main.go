@@ -21,7 +21,7 @@ const (
 	healthAddress     = "127.0.0.1:8080"
 	// version is reported to ngrok as the agent client version; keep it in step
 	// with the image tag in Makefile and the chart deployment.
-	version = "v0.1.5"
+	version = "v0.1.6"
 )
 
 func main() {

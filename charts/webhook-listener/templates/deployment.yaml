@@ -39,7 +39,7 @@ spec:
       containers:
         - name: webhook-listener
           # renovate: datasource=docker depName=harbor.hahomelabs.com/vicegerent/webhook-listener
-          image: harbor.hahomelabs.com/vicegerent/webhook-listener:v0.1.5
+          image: harbor.hahomelabs.com/vicegerent/webhook-listener:v0.1.6
           env:
             - name: NGROK_AUTHTOKEN
               valueFrom:
