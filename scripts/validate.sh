@@ -211,7 +211,7 @@ assert_promptguard_well_formed() {
   local rendered="$1" rendered_file
   rendered_file="$(mktemp_f)"
   printf '%s\n' "$rendered" > "$rendered_file"
-  python3 - "$SECRET_PATTERNS_FILE" "$rendered_file" <<'PY'
+  "$PYTHON" - "$SECRET_PATTERNS_FILE" "$rendered_file" <<'PY'
 import json
 import sys
 
@@ -269,7 +269,7 @@ assert_promptguard_rejects_empty_response_patterns() {
   local request_only_registry render_log
   request_only_registry="$(mktemp_f)"
   render_log="$(mktemp_f)"
-  python3 - "$SECRET_PATTERNS_FILE" "$request_only_registry" <<'PY'
+  "$PYTHON" - "$SECRET_PATTERNS_FILE" "$request_only_registry" <<'PY'
 import json
 import sys
 
@@ -496,7 +496,7 @@ echo "INFO - Asserting shared operating guidance reaches every harness"
 "$PYTHON" scripts/validate-shared-skill-guidance.py
 
 echo "INFO - Asserting model prompt-guard pattern scope and fixture hygiene"
-python3 scripts/validate-promptguard-pattern-scope.py
+"$PYTHON" scripts/validate-promptguard-pattern-scope.py
 
 platform_rendered="$(helm template platform charts/platform -f "$DEFAULTS_VALUES" -f "$EXAMPLE_VALUES" --set-file "secretPatterns=$SECRET_PATTERNS_FILE")"
 
