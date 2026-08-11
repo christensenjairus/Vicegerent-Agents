@@ -69,7 +69,7 @@ APPLIED_MARKER = "Vicegerent patch 0040"
 ANCHOR = (
     "            if _effort == \"none\" or _enabled is False:\n"
     "                # Ollama's /v1/chat/completions silently ignores\n"
-    "                # extra_body.think (only /api/chat honours it — ollama#14820)\n"
+    f"                # extra_body.think (only /api/chat honours it {chr(8212)} ollama#14820)\n"
     "                # but respects the top-level reasoning_effort field, so both\n"
     "                # are needed to actually stop a thinking-capable model from\n"
     "                # reasoning (#25758). Endpoints that recognize neither simply\n"
@@ -115,14 +115,14 @@ def main() -> int:
         src = f.read()
 
     if APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return 0
 
     count = src.count(ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 occurrence of the extra_body['think'] "
-            f"anchor in {path}, found {count} (upstream drifted — re-verify)"
+            f"anchor in {path}, found {count} (upstream drifted - re-verify)"
         )
 
     src = src.replace(ANCHOR, REPLACEMENT, 1)

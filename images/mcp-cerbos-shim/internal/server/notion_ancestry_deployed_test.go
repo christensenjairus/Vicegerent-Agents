@@ -101,7 +101,7 @@ func (permissiveNotionAuthorUpstream) CallTool(_ context.Context, tool string, _
 }
 
 func TestDeployedNotionMapping_UpdatePageNotUnderScratchpadIsDeniedBeforeCerbos(t *testing.T) {
-	d := &stubDecider{allow: true} // would allow if consulted — proves the gate denies first
+	d := &stubDecider{allow: true} // would allow if consulted - proves the gate denies first
 	up := &fakeUpstream{text: fetchElsewhere}
 	s := newNotionServer(t, d, up)
 	res, err := s.CheckRequest(context.Background(),

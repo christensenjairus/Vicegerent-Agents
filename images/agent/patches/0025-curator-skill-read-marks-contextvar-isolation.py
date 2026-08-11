@@ -236,14 +236,14 @@ def main() -> int:
         src = f.read()
 
     if APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return 0
 
     count = src.count(ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 ANCHOR (background-review read-marks "
-            f"bookkeeping) in {path}, found {count} (upstream drifted — "
+            f"bookkeeping) in {path}, found {count} (upstream drifted - "
             "re-verify the ContextVar/mark/has_read/reset block)"
         )
 

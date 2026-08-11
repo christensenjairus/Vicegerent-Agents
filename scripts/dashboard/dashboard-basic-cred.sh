@@ -3,7 +3,7 @@
 #
 # Each agent's random password lives in its own Kubernetes Secret
 # (<agent>-secrets, key `password`) in the agent-sandbox namespace, mounted only
-# into that agent's pod. No salt, no derivation, no shared secret — one agent
+# into that agent's pod. No salt, no derivation, no shared secret - one agent
 # cannot read or compute another's credentials.
 #
 #   username = <agent name>

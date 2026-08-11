@@ -1,6 +1,6 @@
 # Patch regression tests
 
-Run **inside a built agent image**, not in CI: most tests in this directory import the real patched files out of the installed Hermes package, so they need `/opt/hermes/.venv` and the upstream sources on disk. There is no GitLab CI job for them and there shouldn't be — the CI runners have no Hermes install to test against.
+Run **inside a built agent image**, not in CI: most tests in this directory import the real patched files out of the installed Hermes package, so they need `/opt/hermes/.venv` and the upstream sources on disk. There is no GitLab CI job for them and there shouldn't be - the CI runners have no Hermes install to test against.
 
 Run them after `make -C images/agent image` and before pushing a rebuilt artifact. Set `AGENT_IMAGE` to the image produced by that build:
 

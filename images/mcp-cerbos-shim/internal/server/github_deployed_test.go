@@ -212,7 +212,7 @@ func TestDeployedGithubMapping_PullRequestsOnlyForceDraftOnCreation(t *testing.T
 }
 
 // TestDeployedGithubMapping_PullRequestDraftForceDoesNotBypassRepoAllowlist
-// proves force only fires after Cerbos allows — a disallowed repo still denies,
+// proves force only fires after Cerbos allows - a disallowed repo still denies,
 // draft or not.
 func TestDeployedGithubMapping_PullRequestDraftForceDoesNotBypassRepoAllowlist(t *testing.T) {
 	m := deployedMapping(t)
@@ -242,7 +242,7 @@ func TestDeployedGithubMapping_GetMeIsUnmappedAndPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	// get_me identifies the caller, not a repo — it carries no owner/repo and
+	// get_me identifies the caller, not a repo - it carries no owner/repo and
 	// must not be mapped; confirms the guardrail doesn't over-block.
 	d := &stubDecider{allow: false}
 	s := New(m, e, d, AuditPrincipal())

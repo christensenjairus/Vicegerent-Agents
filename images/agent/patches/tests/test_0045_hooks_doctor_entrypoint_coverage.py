@@ -72,7 +72,7 @@ def main() -> int:
     src = io.open(hooks, encoding="utf-8").read()
     if "_print_entrypoint_coverage" not in src:
         raise SystemExit(
-            f"FAIL: patch 0045 is not applied to {hooks} — `hermes hooks doctor` "
+            f"FAIL: patch 0045 is not applied to {hooks} - `hermes hooks doctor` "
             "will report all-green for hooks that can never fire."
         )
 
@@ -84,7 +84,7 @@ def main() -> int:
     if "SILENT NO-OP" in out:
         raise SystemExit(f"FAIL: false no-op warning when hooks DO register:\n{out}")
 
-    # 2. With them gated OUT, the doctor must say so — this is the whole point.
+    # 2. With them gated OUT, the doctor must say so - this is the whole point.
     out = _run(hooks, "exclude")
     if "SILENT NO-OP" not in out:
         raise SystemExit(

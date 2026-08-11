@@ -38,7 +38,7 @@ spec:
               - matchName: {{ . }}
               {{- end }}
               {{- end }}
-    # All HTTP(S) traffic — to internet, agentgateway, and searxng — routes through
+    # All HTTP(S) traffic - to internet, agentgateway, and searxng - routes through
     # the scrubbing proxy. Secrets are redacted before reaching any destination.
     - toEndpoints:
         - matchLabels:
@@ -48,14 +48,14 @@ spec:
         - ports:
             - port: '8080'
               protocol: TCP
-    # Slack uses Socket Mode (WSS) + POST Web API — bypass the GET-only proxy.
+    # Slack uses Socket Mode (WSS) + POST Web API - bypass the GET-only proxy.
     # Restricted to exactly the FQDNs slack-bolt needs; wildcard *.slack.com removed.
     #
-    # slack.com          — Web API (slack.com/api/*): auth.test, chat.postMessage,
+    # slack.com          - Web API (slack.com/api/*): auth.test, chat.postMessage,
     #                      apps.connections.open, reactions.*, files.*, users.info, etc.
-    # wss-primary.slack.com — Socket Mode WebSocket endpoint (primary)
-    # wss-backup.slack.com  — Socket Mode WebSocket endpoint (failover)
-    # files.slack.com    — File/image downloads when the agent reads attachments
+    # wss-primary.slack.com - Socket Mode WebSocket endpoint (primary)
+    # wss-backup.slack.com  - Socket Mode WebSocket endpoint (failover)
+    # files.slack.com    - File/image downloads when the agent reads attachments
     #
     # NOTE: if Slack rotates the WSS hostname (rare but possible), Socket Mode will
     # fail to reconnect and you'll see apps.connections.open succeed but the WSS
@@ -85,7 +85,7 @@ spec:
             - port: '443'
               protocol: TCP
     {{- end }}
-    # SSH bypasses the HTTP proxy — direct egress for git push/pull. Each hosts map key is a
+    # SSH bypasses the HTTP proxy - direct egress for git push/pull. Each hosts map key is a
     # connection FQDN. Its cnameChain lists only intermediate DNS aliases because Cilium's
     # toFQDNs DNS proxy strips a CNAME answer unless every name in the chain is allowlisted.
     {{- if .Values.directEgress.ssh.hosts }}

@@ -12,7 +12,7 @@ spec:
       annotations:
         backup.velero.io/backup-volumes-excludes: gitrepos,models,runtime,tmp,data
     spec:
-      # ndots:1 so exact-matchName DNS egress (networkpolicy.yaml) works for musl (codex) —
+      # ndots:1 so exact-matchName DNS egress (networkpolicy.yaml) works for musl (codex) -
       # see AGENTS.md DNS gotcha. Every destination here is already an FQDN.
       dnsConfig:
         options:
@@ -73,7 +73,7 @@ spec:
               # read-only ConfigMap mount, so the agent cannot repoint core.hooksPath).
               export HOME=/opt/data
               # fastembed reads HERMES_HOME/cache; the local LLM reads ~/.hermes; faster-whisper
-              # reads the default HF_HUB_CACHE (~/.cache/huggingface/hub) — three different dirs.
+              # reads the default HF_HUB_CACHE (~/.cache/huggingface/hub) - three different dirs.
               fastembed_dest="/opt/data/.hermes/cache/fastembed"
               llm_dest="/opt/data/.hermes/mnemosyne/models"
               whisper_dest="/opt/data/.cache/huggingface/hub"
@@ -415,7 +415,7 @@ spec:
               value: http://egress-proxy.egress-proxy.svc.cluster.local:8080
             - name: HTTPS_PROXY
               value: http://egress-proxy.egress-proxy.svc.cluster.local:8080
-            # Only loopback bypasses the proxy — agentgateway hostname must egress via the proxy.
+            # Only loopback bypasses the proxy - agentgateway hostname must egress via the proxy.
             - name: no_proxy
               value: 127.0.0.1,localhost
             - name: NO_PROXY
@@ -497,7 +497,7 @@ spec:
             # BAZELISK_HOME: read-only image bake, no PVC copy needed.
             - name: BAZELISK_HOME
               value: /opt/hermes/.cache/bazelisk
-            # Slack bypasses the proxy — Socket Mode + Web API require POST + WebSocket.
+            # Slack bypasses the proxy - Socket Mode + Web API require POST + WebSocket.
             # Loopback stays direct. All other destinations (agentgateway, searxng, internet)
             # flow through the scrubbing proxy so secrets are redacted before forwarding.
             - name: no_proxy
@@ -527,8 +527,8 @@ spec:
             - name: GIT_SSH_COMMAND
               value: ssh -i /opt/agent-ssh/agent_ed25519 -o StrictHostKeyChecking=accept-new
                 -o UserKnownHostsFile=/opt/data/.ssh/known_hosts
-            # Must be "none" — Hermes's has_usable_secret() placeholder allowlist, not
-            # "unused" — else canonical anthropic/openai-api falsely register as
+            # Must be "none" - Hermes's has_usable_secret() placeholder allowlist, not
+            # "unused" - else canonical anthropic/openai-api falsely register as
             # user-configured and leak into the desktop model picker. Gated per-provider
             # so a disabled provider gets no env var at all.
 {{- $providerCatalog := include "vicegerent-agent.providerCatalog" . | fromYaml -}}

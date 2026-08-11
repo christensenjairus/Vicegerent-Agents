@@ -14,7 +14,7 @@ one story about this breaker.
    ---------------------------------------------------------------
    The successful-call branch (after result = _call_once()) treated ANY
    top-level "error" key in the parsed JSON as a circuit-breaker-worthy
-   failure — including MCP `result.isError = true` business errors (bad
+   failure - including MCP `result.isError = true` business errors (bad
    arguments, upstream API auth/permission errors, 4xx responses relayed
    by the tool, etc). Those indicate the *tool call* failed, not that the
    *MCP server* is unreachable. In this environment we saw a GitLab MCP
@@ -28,10 +28,10 @@ one story about this breaker.
    released as of 2026-06-30.
 
    Fix: a business error (`"error"` key in a normally-returned JSON
-   payload) now resets the breaker instead of bumping it — the server
+   payload) now resets the breaker instead of bumping it - the server
    clearly responded, so it is reachable; the model should just retry
    with different arguments/reasoning. The transport/auth exception
-   branch (fix 2, below) is untouched by this fix — actual connection
+   branch (fix 2, below) is untouched by this fix - actual connection
    failures, timeouts, and unrecovered auth errors still bump the
    breaker.
 
@@ -72,7 +72,7 @@ one story about this breaker.
    extracted for any reason, this falls back to the original bare
    server_name key.
 
-   This is a Vicegerent-specific fix, not an upstream issue — it's
+   This is a Vicegerent-specific fix, not an upstream issue - it's
    unique to the vMCP optimizer aggregation pattern this repo uses.
 
 Both fixes verified end-to-end against a real copy of the installed
@@ -98,7 +98,7 @@ SUCCESS_ANCHOR = (
     "                if \"error\" in parsed:\n"
     "                    _bump_server_error(server_name)\n"
     "                else:\n"
-    "                    _reset_server_error(server_name)  # success — reset\n"
+    f"                    _reset_server_error(server_name)  # success {chr(8212)} reset\n"
     "            except (json.JSONDecodeError, TypeError):\n"
     "                _reset_server_error(server_name)  # non-JSON = success\n"
     "            return result\n"
@@ -109,16 +109,16 @@ SUCCESS_REPLACEMENT = (
     "            result = _call_once()\n"
     "            # Check if the MCP tool itself returned an error. A business\n"
     "            # error (isError=true relayed as a JSON \"error\" key) means the\n"
-    "            # server responded and is reachable — reset the breaker rather\n"
+    "            # server responded and is reachable - reset the breaker rather\n"
     "            # than bump it. Only transport/auth exceptions (fix 2 below)\n"
     "            # indicate real server unreachability.\n"
     "            # Vicegerent patch for hermes-agent #47851 / #11113.\n"
     "            try:\n"
     "                parsed = json.loads(result)\n"
     "                if \"error\" in parsed:\n"
-    "                    _reset_server_error(server_name)  # business error — server is up\n"
+    "                    _reset_server_error(server_name)  # business error - server is up\n"
     "                else:\n"
-    "                    _reset_server_error(server_name)  # success — reset\n"
+    "                    _reset_server_error(server_name)  # success - reset\n"
     "            except (json.JSONDecodeError, TypeError):\n"
     "                _reset_server_error(server_name)  # non-JSON = success\n"
     "            return result\n"
@@ -213,7 +213,7 @@ def main() -> int:
     already_success = SUCCESS_APPLIED_MARKER in src
     already_exception = EXCEPTION_APPLIED_MARKER in src
     if already_success and already_exception:
-        print(f"patch: already applied (both fixes) to {path} — no-op")
+        print(f"patch: already applied (both fixes) to {path} - no-op")
         return 0
 
     if not already_success:
@@ -221,19 +221,19 @@ def main() -> int:
         if count != 1:
             raise SystemExit(
                 f"patch: expected exactly 1 SUCCESS_ANCHOR in {path}, found {count} "
-                "(upstream drifted — re-verify the MCP circuit breaker success path, "
+                "(upstream drifted - re-verify the MCP circuit breaker success path, "
                 "the real fix for #47851/#11113 may have landed)"
             )
         src = src.replace(SUCCESS_ANCHOR, SUCCESS_REPLACEMENT)
     else:
-        print(f"patch: business-error fix already applied to {path} — skipping")
+        print(f"patch: business-error fix already applied to {path} - skipping")
 
     if not already_exception:
         exc_count = src.count(EXCEPTION_ANCHOR)
         if exc_count != 1:
             raise SystemExit(
                 f"patch: expected exactly 1 EXCEPTION_ANCHOR in {path}, found "
-                f"{exc_count} (upstream drifted — re-verify the MCP transport/auth "
+                f"{exc_count} (upstream drifted - re-verify the MCP transport/auth "
                 "exception handler in _make_tool_handler, the per-backend scoping "
                 "may need to move)"
             )
@@ -246,7 +246,7 @@ def main() -> int:
         src = src.replace(CONST_ANCHOR, BACKEND_NAMES_BLOCK + CONST_ANCHOR)
         src = src.replace(EXCEPTION_ANCHOR, EXCEPTION_REPLACEMENT)
     else:
-        print(f"patch: per-backend scoping fix already applied to {path} — skipping")
+        print(f"patch: per-backend scoping fix already applied to {path} - skipping")
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)

@@ -11,11 +11,11 @@ import (
 // These tests run the SHIPPED mapping (not a fixture) through the request path.
 // linear_save_issue is always mapped (unlike linear_save_comment/
 // linear_save_project below, or the old create_issue/update_issue split),
-// so every call reaches Cerbos — what varies is how the teamId attr is
+// so every call reaches Cerbos - what varies is how the teamId attr is
 // produced. `team` is required on create, so a create call always carries a
 // verifiable teamId straight from the request. An update call (an `id` arg
 // names an existing issue) carries no `team` of its own unless the caller is
-// deliberately reassigning it — an ordinary update omits `team`, so the
+// deliberately reassigning it - an ordinary update omits `team`, so the
 // linearIssueAttr helper (helpers_linear.go) resolves the issue's CURRENT
 // team via a live upstream lookup (WithLinearIssueTeam) before Cerbos is
 // consulted, and fails closed if that gate errors or isn't configured; an
@@ -204,7 +204,7 @@ func TestDeployedLinearMapping_SaveCommentWithoutGateConfiguredFailsClosed(t *te
 	}
 }
 
-// linear_save_project IS mapped (linearProjectAttr helper) — unlike
+// linear_save_project IS mapped (linearProjectAttr helper) - unlike
 // save_comment above, every call reaches Cerbos; what varies is whether a
 // `teams` attr is present. A call that sets neither addTeams nor setTeams has
 // nothing to verify directly from the call args -- a lookup gate now resolves the

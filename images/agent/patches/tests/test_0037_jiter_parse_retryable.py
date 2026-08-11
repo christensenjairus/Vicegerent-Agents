@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Behavioral regression test for patch 0037 (jiter parse error retryable).
 
-Covers BOTH classifiers patch 0037 touches — they are the same root cause
+Covers BOTH classifiers patch 0037 touches - they are the same root cause
 (jiter's bare ValueError on malformed streamed tool-call JSON) at two
 independent call sites, and both must agree on what counts as retryable:
 
-1. ``agent/conversation_loop.py::is_local_validation_error`` — gates the
+1. ``agent/conversation_loop.py::is_local_validation_error`` - gates the
    post-retry-exhaustion fallback decision.
-2. ``run_agent.py::AIAgent._is_provider_stream_parse_error`` — gates the
+2. ``run_agent.py::AIAgent._is_provider_stream_parse_error`` - gates the
    mid-stream silent-retry decision (tool call in-flight when the stream
    dies). Both the "expected ident at line" and "expected value at line"
    jiter shapes must classify as retryable here.
@@ -22,11 +22,11 @@ during patch development.
 
 Test 1 exercises the exact `is_local_validation_error` classifier
 expression by extracting it out of the live module source (never
-hand-copied — always re-reads the shipped file so this test fails loudly
+hand-copied - always re-reads the shipped file so this test fails loudly
 if the patch's anchor ever drifts). Test 2 imports the real
 `_is_provider_stream_parse_error` method directly via importlib and calls
 it, since that classifier is a normal bound method (no snippet extraction
-needed — it doesn't reference enclosing-scope locals the way the inline
+needed - it doesn't reference enclosing-scope locals the way the inline
 conversation_loop.py block does).
 
 Exit code 0 = all assertions passed. Any failure raises AssertionError with
@@ -202,7 +202,7 @@ def _test_stream_parse_error_classifier() -> tuple[int, list[str]]:
         spec.loader.exec_module(module)
     except ImportError as exc:
         raise AssertionError(
-            f"failed to import {path} — is /opt/hermes on sys.path? {exc}"
+            f"failed to import {path} - is /opt/hermes on sys.path? {exc}"
         )
 
     method = module.AIAgent._is_provider_stream_parse_error
@@ -215,7 +215,7 @@ def _test_stream_parse_error_classifier() -> tuple[int, list[str]]:
     cases: list[tuple[str, Exception, bool]] = [
         (
             "jiter 'expected value at line N column N' "
-            "(2026-07-22 incident shape — previously MISSED by this classifier)",
+            "(2026-07-22 incident shape - previously MISSED by this classifier)",
             ValueError("expected value at line 1 column 98"),
             True,
         ),

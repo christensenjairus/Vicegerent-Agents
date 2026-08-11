@@ -32,7 +32,7 @@ type deployedResult struct {
 // loadDeployedMapping renders the chart once for the whole package, shared by
 // every deployed-mapping test.
 // The mapping now lives at charts/mcp-cerbos-shim/files/mapping.yaml as a Helm
-// template ({{ ... }}), so it is only loadable after rendering — we mirror
+// template ({{ ... }}), so it is only loadable after rendering - we mirror
 // scripts/validate.sh's invocation and read the ConfigMap's mapping.yaml key.
 var loadDeployedMapping = sync.OnceValue(renderDeployedMapping)
 
@@ -219,7 +219,7 @@ func TestDeployedGrafanaMapping_CheckDatasourcesHealthPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	// check_datasources_health takes a plural `uids` array — the single-
+	// check_datasources_health takes a plural `uids` array - the single-
 	// resource-per-call model can't check "any of these is OpenSearch", and
 	// it only reveals up/down status rather than a datasource's actual data,
 	// so it's deliberately unmapped rather than mapped-but-wrong.

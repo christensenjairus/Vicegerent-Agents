@@ -2,7 +2,7 @@
 
 **A security sandbox for AI agents with real-world access.**
 
-Give a coding agent your repositories, cloud APIs, ticket tracker, and monitoring stack, and it can do real work. Let it do that work unattended — on a schedule, triggered by events, with nobody approving each individual action — and you have a harder problem. The agent's permissions are now enforced by the agent's own judgment.
+Give a coding agent your repositories, cloud APIs, ticket tracker, and monitoring stack, and it can do real work. Let it do that work unattended - on a schedule, triggered by events, with nobody approving each individual action - and you have a harder problem. The agent's permissions are now enforced by the agent's own judgment.
 
 Vicegerent moves that boundary out of the agent. Each agent runs in its own Kubernetes sandbox where filesystem access, network egress, available MCP tools, and the arguments those tools are invoked with are all enforced by infrastructure outside the agent's control.
 
@@ -66,15 +66,15 @@ These are four separate enforcement points, not four settings in one config file
 
 Each agent gets its own pod in the `agent-sandbox` namespace, running as a non-root user with `allowPrivilegeEscalation: false`, a read-only root filesystem, every Linux capability dropped, a `RuntimeDefault` seccomp profile, and no automatically mounted service-account token. Writable space is explicit and small: `/opt/data`, `/workspace`, and `/tmp`. Everything else in the container is immutable.
 
-Because the kubelet and the kernel enforce this against the whole container, it holds for whatever the pod happens to be running. Vicegerent does not isolate processes from each other *inside* a pod — the boundary is the pod, not the process.
+Because the kubelet and the kernel enforce this against the whole container, it holds for whatever the pod happens to be running. Vicegerent does not isolate processes from each other *inside* a pod - the boundary is the pod, not the process.
 
 ### 2. Network egress control
 
-The sandbox does not get general internet access. Two mechanisms stack here, and the distinction matters: Cilium decides which destinations the sandbox can reach at all, at the packet level, while an HTTP egress proxy decides what a request to an allowed destination may look like — method restrictions, secret scrubbing, SSRF protection, no WebSocket upgrades.
+The sandbox does not get general internet access. Two mechanisms stack here, and the distinction matters: Cilium decides which destinations the sandbox can reach at all, at the packet level, while an HTTP egress proxy decides what a request to an allowed destination may look like - method restrictions, secret scrubbing, SSRF protection, no WebSocket upgrades.
 
 Because Cilium sits underneath, getting around the HTTP proxy does not turn the sandbox into an unrestricted network client. It just means reaching the same short list of destinations without the proxy's inspection.
 
-Some traffic genuinely can't use a GET/HEAD HTTP proxy. Git over SSH — and Slack and edge text-to-speech when you enable them — connects directly. Cilium still pins those paths to specific destinations and ports, but they do not get content inspection or secret scrubbing, and they are opt-in for that reason.
+Some traffic genuinely can't use a GET/HEAD HTTP proxy. Git over SSH - and Slack and edge text-to-speech when you enable them - connects directly. Cilium still pins those paths to specific destinations and ports, but they do not get content inspection or secret scrubbing, and they are opt-in for that reason.
 
 ### 3. MCP capability selection
 
@@ -110,7 +110,7 @@ Agent requests:
           GitHub API
 ```
 
-A rewrite only ever applies after authorization succeeds; it can never turn a denial into an allow. This is a different kind of control from a line in the system prompt reading *"never create a non-draft pull request"* — that one depends on the agent choosing to comply.
+A rewrite only ever applies after authorization succeeds; it can never turn a denial into an allow. This is a different kind of control from a line in the system prompt reading *"never create a non-draft pull request"* - that one depends on the agent choosing to comply.
 
 ## What a denial actually looks like
 
@@ -180,7 +180,7 @@ Credential isolation complements the sandbox rather than replacing it. An agent 
 
 ## A concrete example
 
-Say you want an agent that fixes GitHub issues. It should read an issue, read the repository, change code, run tests, and open a pull request — and it should not merge that pull request, change repository settings, touch unrelated repositories, or create arbitrary GitHub resources.
+Say you want an agent that fixes GitHub issues. It should read an issue, read the repository, change code, run tests, and open a pull request - and it should not merge that pull request, change repository settings, touch unrelated repositories, or create arbitrary GitHub resources.
 
 Those boundaries become configuration rather than instructions. Tool selection gives it the five operations it needs. The repo allowlist keeps it inside one repository. The protected-branch rule keeps it off `main`. The draft rewrite means the pull request it opens always lands as a draft, waiting for a human, no matter what the model intended. It can do the engineering work without holding the authority to ship it.
 
@@ -188,13 +188,13 @@ Those boundaries become configuration rather than instructions. Tool selection g
 
 Vicegerent doesn't build prompts, orchestrate reasoning, or decide what an agent should do, and it isn't trying to replace Claude Code or Codex. It's the environment those tools run inside.
 
-Claude Code, Codex, OpenCode, and Hermes all run in the same sandbox today, and that's more than a compatibility list. Because every enforcement point sits outside the harness, a harness doesn't need to know Vicegerent exists or be modified to participate — anything you can install in the sandbox inherits the same filesystem, network, capability, and authorization boundaries automatically. While agent harnesses are changing this fast, being able to swap one out without rebuilding the security model around it is worth a lot.
+Claude Code, Codex, OpenCode, and Hermes all run in the same sandbox today, and that's more than a compatibility list. Because every enforcement point sits outside the harness, a harness doesn't need to know Vicegerent exists or be modified to participate - anything you can install in the sandbox inherits the same filesystem, network, capability, and authorization boundaries automatically. While agent harnesses are changing this fast, being able to swap one out without rebuilding the security model around it is worth a lot.
 
 ## From a laptop to a fleet
 
 This repository runs Vicegerent for a single user on a local Kind cluster. It is not a multi-tenant enterprise platform and doesn't pretend to be one.
 
-What it is, though, is a complete working model of the control pattern — Kubernetes for workload boundaries, Cilium and a proxy for egress, an MCP gateway that exposes capabilities without shipping credentials into the sandbox, and Cerbos for per-call authorization. Every piece of that is ordinary infrastructure an organization already knows how to operate in larger environments.
+What it is, though, is a complete working model of the control pattern - Kubernetes for workload boundaries, Cilium and a proxy for egress, an MCP gateway that exposes capabilities without shipping credentials into the sandbox, and Cerbos for per-call authorization. Every piece of that is ordinary infrastructure an organization already knows how to operate in larger environments.
 
 ## Architecture
 
@@ -240,7 +240,7 @@ What it is, though, is a complete working model of the control pattern — Kuber
                             External service
 ```
 
-[`docs/design.md`](docs/design.md) has the full threat model, request paths, exact runtime and network controls, and the tradeoffs this design accepts — including how it compares to [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell), which occupies adjacent territory with a broader runtime and a different emphasis.
+[`docs/design.md`](docs/design.md) has the full threat model, request paths, exact runtime and network controls, and the tradeoffs this design accepts - including how it compares to [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell), which occupies adjacent territory with a broader runtime and a different emphasis.
 
 ## Quick start
 
@@ -274,7 +274,7 @@ $EDITOR values.yaml
 ./vicegerent ssh <name>
 ```
 
-From inside the sandbox, start whichever harness you want — `claude`, `codex`, `opencode`, or `hermes`. All four get the same containment, credentials, egress policy, and MCP access.
+From inside the sandbox, start whichever harness you want - `claude`, `codex`, `opencode`, or `hermes`. All four get the same containment, credentials, egress policy, and MCP access.
 
 ## Security model and limitations
 

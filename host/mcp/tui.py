@@ -96,7 +96,7 @@ class HelpScreen(ModalScreen):
     BINDINGS = [Binding("escape", "dismiss", show=False), Binding("question_mark", "dismiss", show=False)]
 
     HELP_TEXT = """\
-# vicegerent host stack — keybindings
+# vicegerent host stack - keybindings
 
 ## Navigation
 | Key | Action |
@@ -343,7 +343,7 @@ class HostMCPApp(App):
             name = server["name"]
             if not is_server_enabled(server, state):
                 self._workload_names.append(None)
-                table.add_row(f"[dim]{name}[/dim]", "[dim]—  disabled[/dim]")
+                table.add_row(f"[dim]{name}[/dim]", "[dim]-  disabled[/dim]")
             else:
                 self._workload_names.append(name)
                 workload_state = workloads.get(name, "")
@@ -371,7 +371,7 @@ class HostMCPApp(App):
             log_file = paths["logs"] / f"{name}.log"
             widget = self.query_one(f"#log-{name}", Log)
             if not log_file.exists():
-                widget.write_line("No log file yet — start the stack first.")
+                widget.write_line("No log file yet - start the stack first.")
                 continue
             t = Thread(target=self._tail, args=(log_file, widget), daemon=True)
             t.start()
@@ -408,7 +408,7 @@ class HostMCPApp(App):
         self.call_from_thread(self.notify, "Starting stack… (workloads + vMCP + ghostunnel)")
         try:
             rc = start_stack(self.runtime_dir, self.servers_config)
-            msg = "Stack started" if rc == 0 else "Stack started with warnings — check logs"
+            msg = "Stack started" if rc == 0 else "Stack started with warnings - check logs"
             self.call_from_thread(self.notify, msg, severity="information" if rc == 0 else "warning")
             self.call_from_thread(self._start_log_tailers)
         except SystemExit as exc:
@@ -433,7 +433,7 @@ class HostMCPApp(App):
         try:
             stop_stack(self.runtime_dir, self.servers_config, stop_workloads=False)
             rc = start_stack(self.runtime_dir, self.servers_config)
-            msg = "Stack restarted" if rc == 0 else "Restarted with warnings — check logs"
+            msg = "Stack restarted" if rc == 0 else "Restarted with warnings - check logs"
             self.call_from_thread(self.notify, msg, severity="information" if rc == 0 else "warning")
         except SystemExit as exc:
             self.call_from_thread(self.notify, str(exc), severity="error")

@@ -99,7 +99,7 @@ REPLACEMENTS = (
     ("as hermes.", "as agent."),
     ("as hermes ", "as agent "),
     ("to hermes BEFORE", "to agent BEFORE"),
-    ("to hermes —", "to agent —"),
+    ("to hermes " + chr(8212), "to agent -"),
     ("to hermes ", "to agent "),
 )
 

@@ -440,9 +440,9 @@ class ConfigureTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         prompt_yn.assert_has_calls([
-            call("   Secondary Grafana URL is already configured — replace it?", default=False),
+            call("   Secondary Grafana URL is already configured - replace it?", default=False),
             call(
-                "   Secondary Grafana service account token is already configured — replace it?",
+                "   Secondary Grafana service account token is already configured - replace it?",
                 default=False,
             ),
         ])

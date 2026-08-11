@@ -3,13 +3,13 @@
 # Validate that the egress-proxy scrubs secrets from outbound requests before
 # they leave the cluster, by driving real HTTP calls FROM a running agent
 # sandbox pod against httpbin.io (a public echo service allowlisted for this
-# purpose — see charts/egress-proxy/templates/networkpolicy.yaml and
+# purpose - see charts/egress-proxy/templates/networkpolicy.yaml and
 # addon-configmap.yaml). httpbin echoes back exactly what it received, so a
 # response missing the raw secret proves the proxy redacted it before
-# forwarding — not just that some client-side masking happened.
+# forwarding - not just that some client-side masking happened.
 #
 # All test secrets are fake/synthetic. Only GET/HEAD is exercised, since the
-# proxy enforces GET/HEAD-only for external destinations — PEM private-key
+# proxy enforces GET/HEAD-only for external destinations - PEM private-key
 # and POST-body scrubbing cannot be exercised this way (see charts/egress-proxy/README.md).
 #
 # Usage:
@@ -59,7 +59,7 @@ section() { ui_section "$*"; }
 # exec-curl helper
 # Runs curl inside the sandbox pod so the request goes through the real
 # http_proxy/https_proxy env vars and trusted egress-proxy CA baked into the
-# container — not a laptop-side shortcut that would bypass the Cilium policy
+# container - not a laptop-side shortcut that would bypass the Cilium policy
 # keyed on the agent-sandbox namespace.
 DELIM="===EGRESS_TEST_STATUS==="
 pod_curl() {
@@ -104,7 +104,7 @@ if [[ "$BODY" == *"$SLACK_BOT_TOKEN"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "Slack bot token (xoxb-...) redacted in custom header"
 else
-  fail "Slack bot token neither present nor visibly redacted — unexpected response"
+  fail "Slack bot token neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -116,7 +116,7 @@ if [[ "$BODY" == *"$SLACK_APP_TOKEN"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "Slack app-level token (xapp-...) redacted in custom header"
 else
-  fail "Slack app-level token neither present nor visibly redacted — unexpected response"
+  fail "Slack app-level token neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -128,11 +128,11 @@ if [[ "$BODY" == *"$BEARER_SECRET"* ]]; then
 elif [[ "$BODY" == *'Bearer <masked>'* ]]; then
   pass "Authorization bearer-scheme token redacted"
 else
-  fail "Bearer-scheme token neither present nor visibly redacted — unexpected response"
+  fail "Bearer-scheme token neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
-BASIC_CREDS="dGVzdHVzZXI6dGVzdHBhc3N3b3Jk" # base64("testuser:testpassword") — fake
+BASIC_CREDS="dGVzdHVzZXI6dGVzdHBhc3N3b3Jk" # base64("testuser:testpassword") - fake
 ui_info "Probing an Authorization basic-scheme header…"
 run "https://httpbin.io/headers" -H "Authorization: Bas""ic ${BASIC_CREDS}"
 if [[ "$BODY" == *"$BASIC_CREDS"* ]]; then
@@ -140,7 +140,7 @@ if [[ "$BODY" == *"$BASIC_CREDS"* ]]; then
 elif [[ "$BODY" == *'Basic <masked>'* ]]; then
   pass "Authorization basic-scheme credentials redacted"
 else
-  fail "Basic-scheme credentials neither present nor visibly redacted — unexpected response"
+  fail "Basic-scheme credentials neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -152,7 +152,7 @@ if [[ "$BODY" == *"$API_KEY_SECRET"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "x-api-key header redacted"
 else
-  fail "x-api-key header neither present nor visibly redacted — unexpected response"
+  fail "x-api-key header neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -168,7 +168,7 @@ if [[ "$BODY" == *"$AWS_KEY"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "AWS access key id (AKIA…) redacted in custom header"
 else
-  fail "AWS access key id neither present nor visibly redacted — unexpected response"
+  fail "AWS access key id neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -180,7 +180,7 @@ if [[ "$BODY" == *"$GITHUB_TOKEN"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "GitHub token (ghp_…) redacted in custom header"
 else
-  fail "GitHub token neither present nor visibly redacted — unexpected response"
+  fail "GitHub token neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -193,7 +193,7 @@ if [[ "$BODY" == *"$SSN_FAKE"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "US SSN (NNN-NN-NNNN) redacted in custom header"
 else
-  fail "SSN neither present nor visibly redacted — unexpected response"
+  fail "SSN neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -205,7 +205,7 @@ if [[ "$BODY" == *"$VISA_FAKE"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "Visa card number (starts 4, 16 digits) redacted in custom header"
 else
-  fail "Visa card number neither present nor visibly redacted — unexpected response"
+  fail "Visa card number neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -217,7 +217,7 @@ if [[ "$BODY" == *"$PHONE_FAKE"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "US phone number ((NNN) NNN-NNNN) redacted in custom header"
 else
-  fail "US phone number neither present nor visibly redacted — unexpected response"
+  fail "US phone number neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
@@ -235,34 +235,34 @@ if [[ "$BODY" == *"$QUERY_TOKEN"* ]]; then
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "Slack token in query string redacted before forwarding"
 else
-  fail "Query-string token neither present nor visibly redacted — unexpected response"
+  fail "Query-string token neither present nor visibly redacted - unexpected response"
   echo "    body: ${BODY:0:300}"
 fi
 
-# Negative controls — enforcement still active on the new host
+# Negative controls - enforcement still active on the new host
 # Guards against a too-broad allowlist entry accidentally opening up more
 # than GET/HEAD, or the FQDN allowlist being effectively a wildcard.
 
 section "4. method + FQDN enforcement unaffected by the httpbin allowlist entry"
 
-ui_info "Probing POST https://httpbin.io/post — expect blocked…"
+ui_info "Probing POST https://httpbin.io/post - expect blocked…"
 run "https://httpbin.io/post" -X POST -d 'x=1'
 if [[ "$STATUS" == "403" ]]; then
   pass "POST https://httpbin.io/post -> 403 (external POST still blocked)"
 else
-  fail "POST https://httpbin.io/post -> ${STATUS} (expected 403 — method enforcement regression?)"
+  fail "POST https://httpbin.io/post -> ${STATUS} (expected 403 - method enforcement regression?)"
   echo "    body: ${BODY:0:200}"
 fi
 
 # A non-allowlisted HTTPS host is blocked at the CONNECT stage, so curl has no
 # tunnel to report an in-band 403 through and shows 000 instead. Only a 200
 # here would indicate an allowlist regression.
-ui_info "Probing GET https://example.com/ — expect blocked…"
+ui_info "Probing GET https://example.com/ - expect blocked…"
 run "https://example.com/"
 if [[ "$STATUS" == "403" || "$STATUS" == "000" ]]; then
   pass "GET https://example.com/ -> ${STATUS} (non-allowlisted FQDN still blocked)"
 else
-  fail "GET https://example.com/ -> ${STATUS} (expected 403 or 000 — is the allowlist a wildcard?)"
+  fail "GET https://example.com/ -> ${STATUS} (expected 403 or 000 - is the allowlist a wildcard?)"
   echo "    body: ${BODY:0:200}"
 fi
 
@@ -271,12 +271,12 @@ fi
 
 section "5. git-upload-pack exception is narrow (other POSTs to github.com still blocked)"
 
-ui_info "Probing POST https://github.com/ with the wrong path/content type — expect blocked…"
+ui_info "Probing POST https://github.com/ with the wrong path/content type - expect blocked…"
 run "https://github.com/" -X POST -d 'x=1'
 if [[ "$STATUS" == "403" ]]; then
   pass "POST https://github.com/ -> 403 (git-upload-pack exception does not widen to all POSTs)"
 else
-  fail "POST https://github.com/ -> ${STATUS} (expected 403 — git-upload-pack exception may be too broad)"
+  fail "POST https://github.com/ -> ${STATUS} (expected 403 - git-upload-pack exception may be too broad)"
   echo "    body: ${BODY:0:200}"
 fi
 
@@ -284,7 +284,7 @@ fi
 # Every other test above proves REQUEST-side scrubbing (the secret is in a header
 # or URL we send, and the request hook redacts it before httpbin echoes it back).
 # To isolate RESPONSE-side scrubbing we need a secret that originates server-side,
-# NOT one we send in the clear — anything we send is request-scrubbed first.
+# NOT one we send in the clear - anything we send is request-scrubbed first.
 #
 # Mechanism: send the secret base64-encoded in the URL path to httpbin.io/base64,
 # which DECODES it server-side and returns the raw secret in the RESPONSE body.
@@ -293,7 +293,7 @@ fi
 # hook must scrub it.
 #
 # Caveat: this depends on httpbin.io/base64 returning a text/* or
-# application/json Content-Type — the response scrubber deliberately skips
+# application/json Content-Type - the response scrubber deliberately skips
 # binary bodies, so a non-text response would fail this test on content-type
 # grounds, not a real redaction regression.
 
@@ -301,17 +301,17 @@ section "6. secrets in the RESPONSE body are redacted (echo-attack guard)"
 
 NOTION_TOKEN="ntn_$(printf 't%.0s' $(seq 24))"  # pragma: allowlist secret (fake Notion token)
 # Keep base64 padding: go-httpbin's /base64 decode() tries URLEncoding then
-# StdEncoding, both PADDED — stripping '=' triggers "illegal base64 data".
+# StdEncoding, both PADDED - stripping '=' triggers "illegal base64 data".
 NOTION_B64="$(printf '%s' "$NOTION_TOKEN" | base64 | tr '+/' '-_')"
 ui_info "Probing a server-originated secret via httpbin.io/base64 decode…"
 run "https://httpbin.io/base64/${NOTION_B64}"
 if [[ "$BODY" == *"$NOTION_TOKEN"* ]]; then
-  fail "Notion token survived in the response body — response-side scrubbing not applied (or /base64 served a non-text Content-Type)"
+  fail "Notion token survived in the response body - response-side scrubbing not applied (or /base64 served a non-text Content-Type)"
   echo "    body: ${BODY:0:300}"
 elif [[ "$BODY" == *'<masked>'* ]]; then
   pass "Notion token in the decoded response body redacted before reaching the sandbox"
 else
-  fail "Response body neither carried the token nor a <masked> marker — unexpected /base64 response"
+  fail "Response body neither carried the token nor a <masked> marker - unexpected /base64 response"
   echo "    status: ${STATUS} body: ${BODY:0:300}"
 fi
 

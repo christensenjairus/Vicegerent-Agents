@@ -2,7 +2,7 @@
 ~/.aws/config, so an agent using the `aws` (aws-api-mcp-server) backend can
 discover which profiles it may pass to call_aws's `--profile`. That backend has
 no way to enumerate profiles (its validator rejects `aws configure`), so this
-companion fills the gap. Read-only, no network, no secrets — just profile names.
+companion fills the gap. Read-only, no network, no secrets - just profile names.
 """
 
 import configparser
@@ -44,7 +44,7 @@ def list_profiles() -> list[str]:
     Read from the operator's mounted ~/.aws/config. Pass one of these to
     call_aws inside the CLI command as `--profile <name>` (e.g.
     call_aws(cli_command="aws sts get-caller-identity --profile <name>")).
-    Returns profile names only — no credentials.
+    Returns profile names only - no credentials.
     """
     return _profiles()
 

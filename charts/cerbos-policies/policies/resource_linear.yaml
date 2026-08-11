@@ -13,7 +13,7 @@
 # three known identifiers, since the caller's `team`/addTeams/setTeams/teamId
 # entries (or the shim's resolved lookup result for save_comment/save_issue
 # updates/save_project updates) may be the real Linear team UUID, its display
-# name ("DevOps"), or its issue-key prefix ("DEVOPS") — an exact match against
+# name ("DevOps"), or its issue-key prefix ("DEVOPS") - an exact match against
 # only one form would wrongly deny legitimate DEVOPS calls that use a
 # different form.
 #
@@ -23,13 +23,13 @@
 # current team(s) into the teamId/teams attr. A
 # save_issue call that supplies an explicit team at all (create, required;
 # update, a deliberate reassignment) has that value take precedence over any
-# live resolution — see mapping.yaml's linearIssueAttr helper. The only calls
+# live resolution - see mapping.yaml's linearIssueAttr helper. The only calls
 # that still fall through to allow-all with NO teamId/teams attr at all are
 # ones with genuinely nothing to verify or resolve: a save_comment call with
 # no issueId (a comment on a project/initiative/document/milestone, or a
-# reply via parentId — server.go's team-resolution gate has no id to look up), and a
+# reply via parentId - server.go's team-resolution gate has no id to look up), and a
 # create_issue_label call with no teamId arg (a workspace-scoped label isn't
-# team-owned at all — mapping.yaml's linearLabelAttr helper). Every OTHER
+# team-owned at all - mapping.yaml's linearLabelAttr helper). Every OTHER
 # Linear write against an existing team-scoped entity gets either an
 # explicit, caller-supplied team signal or a live-resolved current one before
 # reaching this policy.

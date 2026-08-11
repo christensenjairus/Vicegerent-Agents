@@ -130,9 +130,9 @@ REPLACEMENT_VERIFIER = (
 
 ANCHOR_MEM_NOTIF = (
     "        # Memory update notifications in chat.  Config: display.memory_notifications\n"
-    "        #   off     — no chat notification (still logged to stdout)\n"
-    "        #   on      — generic \"💾 Memory updated\" (default)\n"
-    "        #   verbose — content preview: \"💾 Memory ➕ Hermes Repo...\"\n"
+    f"        #   off     {chr(8212)} no chat notification (still logged to stdout)\n"
+    f"        #   on      {chr(8212)} generic \"💾 Memory updated\" (default)\n"
+    f"        #   verbose {chr(8212)} content preview: \"💾 Memory ➕ Hermes Repo...\"\n"
     "        _mem_notif = ctx.user_config.get(\"display\", {}).get(\"memory_notifications\")\n"
     "        if isinstance(_mem_notif, bool):\n"
     "            _mem_notif = \"on\" if _mem_notif else \"off\"\n"
@@ -141,9 +141,9 @@ ANCHOR_MEM_NOTIF = (
 
 REPLACEMENT_MEM_NOTIF = (
     "        # Memory update notifications in chat.  Config: display.memory_notifications\n"
-    "        #   off     — no chat notification (still logged to stdout)\n"
-    "        #   on      — generic \"💾 Memory updated\" (default)\n"
-    "        #   verbose — content preview: \"💾 Memory ➕ Hermes Repo...\"\n"
+    "        #   off     - no chat notification (still logged to stdout)\n"
+    "        #   on      - generic \"💾 Memory updated\" (default)\n"
+    "        #   verbose - content preview: \"💾 Memory ➕ Hermes Repo...\"\n"
     "        # Vicegerent patch 0030: route through resolve_display_setting() so\n"
     "        # display.platforms.<platform>.memory_notifications overrides the\n"
     "        # global display.memory_notifications, mirroring every other\n"
@@ -160,7 +160,7 @@ REPLACEMENT_MEM_NOTIF = (
 # --- gateway/run.py: busy_ack_enabled check ---------------------------------
 
 ANCHOR_BUSY_ACK = (
-    "        # Check if busy ack is disabled — skip sending but still process the input.\n"
+    f"        # Check if busy ack is disabled {chr(8212)} skip sending but still process the input.\n"
     "        # Placed before debounce so we don't stamp a \"last ack\" timestamp that was\n"
     "        # never actually delivered.\n"
     "        busy_ack_enabled = os.environ.get(\"HERMES_GATEWAY_BUSY_ACK_ENABLED\", \"true\").lower() == \"true\"\n"
@@ -189,7 +189,7 @@ REPLACEMENT_BUSY_ACK = (
     "        from gateway.display_config import resolve_display_setting\n"
     "        platform_key = _platform_config_key(event.source.platform)\n"
     "\n"
-    "        # Check if busy ack is disabled — skip sending but still process the input.\n"
+    "        # Check if busy ack is disabled - skip sending but still process the input.\n"
     "        # Placed before debounce so we don't stamp a \"last ack\" timestamp that was\n"
     "        # never actually delivered.\n"
     "        #\n"
@@ -210,7 +210,7 @@ REPLACEMENT_BUSY_ACK = (
     "            # display_config.py's _normalise() bool-coercion set (it's a\n"
     "            # brand-new key upstream doesn't define), so a quoted YAML\n"
     "            # string value (e.g. \"off\") would pass through resolve_\n"
-    "            # display_setting() unmodified — and bool(\"off\") is True,\n"
+    "            # display_setting() unmodified - and bool(\"off\") is True,\n"
     "            # the opposite of intent. Normalize explicitly here instead of\n"
     "            # trusting a bare bool() coercion.\n"
     "            if isinstance(_busy_ack_cfg, str):\n"

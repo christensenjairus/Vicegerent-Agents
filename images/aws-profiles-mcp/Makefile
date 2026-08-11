@@ -1,5 +1,5 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/aws-profiles-mcp
-TAG   ?= v0.2.1
+TAG   ?= v0.2.2
 REF   := $(IMAGE):$(TAG)
 
 DOCKER    ?= docker

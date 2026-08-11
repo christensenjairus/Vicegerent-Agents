@@ -19,7 +19,7 @@ func init() {
 // ("30m", "2h", "1d") per mcp-alertmanager's own schema, not a number Cerbos's
 // CEL can compare directly. Convert it to a second count so the policy can
 // enforce a numeric cap. Alertmanager's own documented default when `duration`
-// is omitted is 2h — mirror that here so an omitted duration is checked
+// is omitted is 2h - mirror that here so an omitted duration is checked
 // against the cap too, rather than silently bypassing it via an absent attr.
 func alertmanagerAttrOption() []cel.EnvOption {
 	return []cel.EnvOption{

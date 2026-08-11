@@ -2,7 +2,7 @@ package eval
 
 import "testing"
 
-// GitLab has no draft boolean — draft status comes from the title prefix
+// GitLab has no draft boolean - draft status comes from the title prefix
 // (verified live: draft:true is silently ignored, "Draft: x" is honoured), so
 // these cases pin the rewrite that replaced the no-op force: {draft: true}.
 func TestGitlabDraftTitle(t *testing.T) {

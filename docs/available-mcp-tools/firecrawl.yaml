@@ -1,7 +1,7 @@
 # Catalog of every tool exposed by the running vicegerent MCP backend(s),
 # with each tool's arguments (type, required, description, enum). Reference
 # for spotting missing tools and for writing cerbos argument-level policies.
-# GENERATED — do not edit by hand.
+# GENERATED - do not edit by hand.
 # Regenerate: scripts/probe-mcp-tools.py firecrawl --format yaml -o <this-file>
 group: vicegerent
 tool_count: 27
@@ -593,7 +593,7 @@ servers:
             type: "string"
             required: true
       firecrawl_developer_search:
-        description: "For a developer question \u2014 code behaviour, a library or framework, an API contract, an error message, or a known bug \u2014 search an index built for coding agents. The index covers GitHub issues, merged pull requests, repository READMEs, and curated documentation sites. Set skills to \"only\" to limit the search to agent-skill files. Returns ranked results with an ID, source type, URL, title, and the matched passages in markdown."
+        description: "For a developer question - code behaviour, a library or framework, an API contract, an error message, or a known bug - search an index built for coding agents. The index covers GitHub issues, merged pull requests, repository READMEs, and curated documentation sites. Set skills to \"only\" to limit the search to agent-skill files. Returns ranked results with an ID, source type, URL, title, and the matched passages in markdown."
         arguments:
           k:
             type: "integer"

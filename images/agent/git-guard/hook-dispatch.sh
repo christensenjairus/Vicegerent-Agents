@@ -49,7 +49,7 @@ if [ "${hook}" = "pre-push" ]; then
     done < "${spool}"
 
     if [ -n "${blocked}" ]; then
-        echo "vicegerent: BLOCKED push to protected branch —${blocked}" >&2
+        echo "vicegerent: BLOCKED push to protected branch -${blocked}" >&2
         echo "vicegerent: push a feature branch and open a merge request instead." >&2
         exit 1
     fi

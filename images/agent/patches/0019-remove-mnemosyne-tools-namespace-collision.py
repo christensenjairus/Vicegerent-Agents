@@ -62,12 +62,12 @@ def main() -> int:
     stray_tools = site_packages / "tools"
 
     if not stray_tools.is_dir():
-        print(f"patch: {stray_tools} not present — already removed or never installed, no-op")
+        print(f"patch: {stray_tools} not present - already removed or never installed, no-op")
         return 0
 
     if (stray_tools / "__init__.py").exists():
         raise SystemExit(
-            f"patch: {stray_tools} has an __init__.py — this is no longer the "
+            f"patch: {stray_tools} has an __init__.py - this is no longer the "
             "bogus mnemosyne-memory namespace-package directory. Re-verify "
             "before deleting (upstream tools/ layout may have changed, or "
             "this could be a real package)."
@@ -80,7 +80,7 @@ def main() -> int:
     if not known_marker.exists():
         raise SystemExit(
             f"patch: {stray_tools} exists but is missing the expected "
-            f"{known_marker.name} marker file — contents don't match the "
+            f"{known_marker.name} marker file - contents don't match the "
             "known mnemosyne-memory==3.11.1 stray tools/ dump. Re-verify "
             "before deleting."
         )

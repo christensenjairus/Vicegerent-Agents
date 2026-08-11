@@ -24,7 +24,7 @@ spec:
           rules:
             dns:
               - matchPattern: '*'
-    # XDS control plane — the agentgateway controller streams this proxy's config
+    # XDS control plane - the agentgateway controller streams this proxy's config
     # over gRPC (grpc-xds-agw). Without it the proxy never leaves startup.
     - toEndpoints:
         - matchLabels:
@@ -36,7 +36,7 @@ spec:
               protocol: TCP
     # Host laptop via ghostunnel → ToolHive vMCP. On Docker Desktop the cluster reaches
     # the host through host.docker.internal, which resolves to the Docker Desktop host
-    # gateway (192.168.65.0/24) — a `world` address, NOT the Kind node (`host`). Scoped
+    # gateway (192.168.65.0/24) - a `world` address, NOT the Kind node (`host`). Scoped
     # to the single ghostunnel port. Velero's node-agent/server also reach
     # host.docker.internal:9899 for S3 backups (stages/values/velero.yaml), but no
     # Cilium policy in this repo enumerates or restricts that path.

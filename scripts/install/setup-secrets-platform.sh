@@ -23,7 +23,7 @@
 #   agent-sandbox        egress-proxy-ca-cert         ca.crt               (MITM proxy CA cert only)
 #   velero               velero-credentials           cloud                (generated S3 creds)
 #
-# MCP server API keys (tavily/firecrawl/gitlab) are NOT Kubernetes Secrets — those
+# MCP server API keys (tavily/firecrawl/gitlab) are NOT Kubernetes Secrets - those
 # servers run host-side under ToolHive and read their keys from `thv` secrets.
 #
 # The host ghostunnel material (ca.cert, ca.key, server.crt, server.key,
@@ -95,7 +95,7 @@ confirm() {
 kc() { kubectl --context "$KUBE_CONTEXT" "$@"; }
 ensure_ns() { kc create namespace "$1" --dry-run=client -o yaml | kc apply -f - >/dev/null; }
 
-# secret_b64 <name> <ns> <key> — base64 value of a secret key (empty if absent).
+# secret_b64 <name> <ns> <key> - base64 value of a secret key (empty if absent).
 secret_b64() {
   local json
   json="$(kc -n "$2" get secret "$1" -o json 2>/dev/null)" || return 0
@@ -103,7 +103,7 @@ secret_b64() {
 }
 secret_has() { [[ -n "$(secret_b64 "$1" "$2" "$3")" ]]; }
 
-# apply_secret <name> <ns> <create-args...> — create/update a Secret idempotently.
+# apply_secret <name> <ns> <create-args...> - create/update a Secret idempotently.
 apply_secret() {
   local name="$1" ns="$2"; shift 2
   kc -n "$ns" create secret generic "$name" "$@" --dry-run=client -o yaml | kc apply -f - >/dev/null
@@ -132,14 +132,14 @@ ensure_literal_secret() {
   if [[ -n "$val" ]]; then
     info "Set $ns/$name ($key)."
   elif [[ "$required" == "1" ]]; then
-    warn "$ns/$name ($key) left empty — set it before this credential will work."
+    warn "$ns/$name ($key) left empty - set it before this credential will work."
   else
     warn "$ns/$name ($key) left empty (optional)."
   fi
   unset val
 }
 
-# ensure_velero_credentials — Kind etcd is authoritative. The host auth-key is a
+# ensure_velero_credentials - Kind etcd is authoritative. The host auth-key is a
 # disposable rclone input recovered or atomically repaired from its Secret copy.
 ensure_velero_credentials() {
   local hostfile="$RCLONE_S3_HOST_DIR/auth-key" access="" secret=""
@@ -277,7 +277,7 @@ info "Applied vicegerent-mcp-client Secret + ghostunnel-ca ConfigMap."
 
 # Mirror the ghostunnel SERVER material (cert + key + CA cert) into the cluster so a
 # host missing ~/.vicegerent/ghostunnel can recover it before ghostunnel starts
-# (vicegerent mcp start -> ensure_ghostunnel_material). The CA *key* is NOT mirrored —
+# (vicegerent mcp start -> ensure_ghostunnel_material). The CA *key* is NOT mirrored -
 # it only signs new certs, so a full rebuild still means re-running this script.
 apply_secret ghostunnel-server agentgateway-system \
   --from-file=server.crt="$HD/server.crt" --from-file=server.key="$HD/server.key" \
@@ -291,15 +291,15 @@ ensure_literal_secret vicegerent-anthropic-secrets agentgateway-system Authoriza
 
 step "OpenAI API key (optional)"
 ensure_literal_secret vicegerent-openai-secrets agentgateway-system Authorization \
-  OPENAI_API_KEY "OpenAI API key (sk-...) — GPT models stay unavailable until set." 0
+  OPENAI_API_KEY "OpenAI API key (sk-...) - GPT models stay unavailable until set." 0
 
 step "DeepSeek API key (optional)"
 ensure_literal_secret vicegerent-deepseek-secrets agentgateway-system Authorization \
-  DEEPSEEK_API_KEY "DeepSeek API key — DeepSeek models stay unavailable until set and models.deepseek.enabled is true." 0
+  DEEPSEEK_API_KEY "DeepSeek API key - DeepSeek models stay unavailable until set and models.deepseek.enabled is true." 0
 
 step "Z.ai / GLM API key (optional)"
 ensure_literal_secret vicegerent-zai-secrets agentgateway-system Authorization \
-  ZAI_API_KEY "Z.ai/GLM standard (metered) API key — Z.ai models stay unavailable until set and models.zai.enabled is true." 0
+  ZAI_API_KEY "Z.ai/GLM standard (metered) API key - Z.ai models stay unavailable until set and models.zai.enabled is true." 0
 
 # --- SearXNG secret key ----------------------------------------------------
 # Signs SearXNG session/limiter tokens. Generated once and reused so the value
@@ -352,7 +352,7 @@ else
     --from-file=ca.crt="$WORK/proxy-ca.crt" --from-file=ca.key="$WORK/proxy-ca.key"
   info "Generated egress proxy CA (egress-proxy/egress-proxy-ca)."
 fi
-# The cert-only copy consumed by agent-sandbox (idempotent — public material).
+# The cert-only copy consumed by agent-sandbox (idempotent - public material).
 apply_secret egress-proxy-ca-cert agent-sandbox --from-file=ca.crt="$WORK/proxy-ca.crt"
 info "Applied agent-sandbox/egress-proxy-ca-cert (cert only)."
 
@@ -372,7 +372,7 @@ check() {
   if secret_has "$1" "$2" "$3"; then ui_success "$2/$1 ($3)"; else ui_error "$2/$1 ($3) is missing"; missing=1; fi
 }
 check_optional() {
-  if secret_has "$1" "$2" "$3"; then ui_success "$2/$1 ($3)"; else ui_info "$2/$1 ($3) — optional, not set"; fi
+  if secret_has "$1" "$2" "$3"; then ui_success "$2/$1 ($3)"; else ui_info "$2/$1 ($3) - optional, not set"; fi
 }
 check vicegerent-mcp-client agentgateway-system tls.crt
 check vicegerent-mcp-client agentgateway-system tls.key

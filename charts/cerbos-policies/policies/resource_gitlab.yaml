@@ -5,7 +5,7 @@
 # reviewer_ids/assignee_ids, and any write to a merge request this agent didn't
 # author; allow everything else.
 #
-# This policy is a deliberate MIRROR of resource_github.yaml — the two forges
+# This policy is a deliberate MIRROR of resource_github.yaml - the two forges
 # are held to the same standard, and a rule added to either one is ported to
 # the other or its absence justified in this header. Same deny-by-resource
 # shape, same single `access` action shared by every mapped tool including
@@ -37,7 +37,7 @@
 # (host/mcp/toolhive-servers.json) instead of as rules here, which is strictly
 # stronger than a policy rule: the git file/branch-write tools plus
 # merge_merge_request (the bot reaches gitlab.hahomelabs.com over SSH and uses
-# git itself), and every note/thread/discussion/draft-note WRITE tool — the
+# git itself), and every note/thread/discussion/draft-note WRITE tool - the
 # operator does not want the bot leaving ANY comment/review text on an MR under
 # their identity, the same call made on the GitHub side. See mapping.yaml's
 # GitLab block for the full list and rationale.
@@ -57,7 +57,7 @@
 # resolves to '' and is denied, mirroring how github_search_pull_requests with
 # no owner/repo resolves to '/' and is denied.
 # The same rule also checks targetProjectId, the SECOND project carried by
-# create_merge_request (an MR's target project) — without it, an allowlisted
+# create_merge_request (an MR's target project) - without it, an allowlisted
 # project_id could carry a write whose effect lands in a project outside the
 # allowlist, the same side-channel class as a Jira epicKey smuggled through
 # additional_fields.
@@ -67,7 +67,7 @@
 # one branch a GitLab tool in this allowlist can still write through. On
 # GitHub the attr is populated by the tools that write file contents INTO a
 # branch; those were removed from GitLab's allowlist, so the GitLab attr
-# carries create/update_merge_request's target_branch instead — retargeting an
+# carries create/update_merge_request's target_branch instead - retargeting an
 # MR at main is a real, reachable write to a protected branch's future
 # contents, and update_merge_request can do it to an ALREADY-APPROVED MR,
 # landing an unreviewed diff. source_branch is deliberately not carried (it
@@ -80,7 +80,7 @@
 # This mirrors github_repo's isPrCreate distinction.
 #
 # deny-reviewers: create_merge_request/update_merge_request's reviewer_ids and
-# assignee_ids both pull a real human into the agent's own MR — the same
+# assignee_ids both pull a real human into the agent's own MR - the same
 # capability resource_github.yaml denies via its reviewers arg, whose comment
 # calls reviewers "the actual PR analog of an assignee". Both are denied for
 # that same reason: rather than build an allowlist for a capability the
@@ -89,15 +89,15 @@
 # assignee_ids are no longer in the allowlist at all.
 #
 # deny-not-own-mr: the GitLab half of deny-not-own-pr, closing the same
-# incident class — an agent hallucinating a wrong MR iid and rewriting someone
+# incident class - an agent hallucinating a wrong MR iid and rewriting someone
 # else's merge request. update_merge_request is the only mapped tool that
 # mutates an EXISTING merge request (title/description/labels/target_branch/
 # state_event), so it's the only one gated: the shim resolves the MR's REAL
 # author via a live get_merge_request lookup BEFORE Cerbos is consulted
-# (server.go's checkGitlabMRAuthor — a network round trip Cerbos itself can't
+# (server.go's checkGitlabMRAuthor - a network round trip Cerbos itself can't
 # make) and injects it as this mrAuthor attr. The note/thread/discussion tools
 # that would otherwise need the same treatment aren't gated because they no
-# longer exist in the allowlist at all (see above) — only reads remain, and a
+# longer exist in the allowlist at all (see above) - only reads remain, and a
 # read carries no ownership risk. has()-guarded, since gitlab_project has only
 # one Cerbos action shared by every mapped tool and nothing but
 # update_merge_request ever gets an mrAuthor attr at all.

@@ -5,14 +5,14 @@ Context
 -------
 tools/registry.py's _check_fn_cached() wraps every check_fn call in a bare
 `try: ... except Exception: value = False; raised = True`, then logs only
-`check_fn %s raised; dependent tools will be unavailable this turn` — the
+`check_fn %s raised; dependent tools will be unavailable this turn` - the
 exception itself (type, message, traceback) is discarded. When a check_fn
 genuinely raises (as opposed to cleanly returning False), the one-line
 summary gives no way to diagnose root cause; you only learn a check_fn
 failed, never why.
 
 Hit live diagnosing a `_check_file_reqs raised` warning in gateway/dashboard
-startup logs — check_file_requirements() -> check_terminal_requirements()
+startup logs - check_file_requirements() -> check_terminal_requirements()
 already has its own internal try/except that can't raise, so a "raised"
 verdict for that check_fn implies the exception happened during the lazy
 import chain leading into it (tools/terminal_tool.py module-level imports,
@@ -23,7 +23,7 @@ Fix
 ---
 Add `logger.exception(...)` inside the except block (log level ERROR, full
 traceback, only valid inside an except handler) right after `raised = True`.
-Purely additive — does not change control flow, caching behavior, or the
+Purely additive - does not change control flow, caching behavior, or the
 existing `raised` bool used by the subsequent flake-vs-real-outage log
 lines. Those callers already receive `raised=True` unchanged; this patch
 only adds a second, more detailed log line alongside the existing summary.
@@ -55,7 +55,7 @@ REPLACEMENT = (
     "        value = False\n"
     "        raised = True\n"
     "        # Vicegerent patch 0018: the summary log lines below only ever say\n"
-    "        # \"raised\" — log the actual exception + traceback so a check_fn\n"
+    "        # \"raised\" - log the actual exception + traceback so a check_fn\n"
     "        # failure is diagnosable without re-running it by hand.\n"
     "        logger.exception(\n"
     "            \"check_fn %s raised an exception\",\n"
@@ -76,14 +76,14 @@ def main() -> int:
         src = f.read()
 
     if APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return 0
 
     count = src.count(ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 _check_fn_cached except-block anchor in "
-            f"{path}, found {count} (upstream drifted — re-verify)"
+            f"{path}, found {count} (upstream drifted - re-verify)"
         )
 
     src = src.replace(ANCHOR, REPLACEMENT, 1)

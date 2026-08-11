@@ -147,7 +147,7 @@ spec:
           rules:
             dns:
               - matchPattern: '*'
-    # SearXNG makes direct outbound requests to search engines — no proxy needed here
+    # SearXNG makes direct outbound requests to search engines - no proxy needed here
     # since it holds no sandbox secrets. The sandbox secrets scrubbing happens upstream
     # in the egress-proxy before requests reach searxng.
     - toEntities: [world]

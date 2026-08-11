@@ -3,13 +3,13 @@
 # `helm upgrade --install --wait` so a re-run reconciles idempotently and Helm's
 # own release-manifest tracking prunes objects dropped from a chart.
 #
-# _do_helm reads two caller-set globals — LOC (chart-location args, e.g. the chart
-# ref plus --repo/--version, or a local/cloned path) and VALS (values -f args) —
+# _do_helm reads two caller-set globals - LOC (chart-location args, e.g. the chart
+# ref plus --repo/--version, or a local/cloned path) and VALS (values -f args) -
 # so apply_crds and the upgrade share one exact location+values definition.
 
 # Helm never upgrades CRDs shipped in a chart's crds/ directory (install-only, by
 # design), so we server-side-apply those CRDs before the release upgrade. `helm
-# show crds` emits ONLY the crds/-dir CRDs — NOT CRDs a chart renders from templates/ (e.g. tetragon), which
+# show crds` emits ONLY the crds/-dir CRDs - NOT CRDs a chart renders from templates/ (e.g. tetragon), which
 # Helm creates and upgrades with the release itself and would refuse to adopt if we
 # pre-applied them ("invalid ownership metadata"). No-op for charts with no crds/ dir.
 apply_crds() {
@@ -67,7 +67,7 @@ helm_oci() {
 
 # helm_git <name> <gitRepo> <ref> <chartPath> <namespace> <values> <crds>
 # Clones the repo at a pinned tag (Renovate tracks the ref in stages.yaml) and
-# installs the chart from the checkout — no vendored chart source in this repo.
+# installs the chart from the checkout - no vendored chart source in this repo.
 helm_git() {
   local name="$1" gitRepo="$2" ref="$3" chartPath="$4" namespace="$5" values="$6" crds="$7"
   local dir; dir="$(mktemp_d)"

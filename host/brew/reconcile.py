@@ -583,10 +583,10 @@ def check(
     for status in statuses:
         marker = "OK" if status.ok else ("DRIFT" if status.package.required else "OPTIONAL")
         observed = status.observed_version or "missing"
-        print(f"{marker:5} {status.package.name}: expected {status.package.version}, observed {observed} — {status.detail}")
+        print(f"{marker:5} {status.package.name}: expected {status.package.version}, observed {observed} - {status.detail}")
     marker = "OK" if native_status.ok else "DRIFT"
     print(
-        f"{marker:5} vicegerent-notifier: expected {manifest.notifier.version} — "
+        f"{marker:5} vicegerent-notifier: expected {manifest.notifier.version} - "
         f"{native_status.detail}"
     )
     packages_ok = all(status.ok or not status.package.required for status in statuses)

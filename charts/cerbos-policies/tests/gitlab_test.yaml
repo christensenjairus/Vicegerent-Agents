@@ -1,6 +1,6 @@
 ---
 # Fixtures use literal projects matching test-values.yaml's
-# gitlabAllowedProjects (and gitlabUsername for the own-MR gate) — validate.sh
+# gitlabAllowedProjects (and gitlabUsername for the own-MR gate) - validate.sh
 # compiles the rendered policy against them, so keep the two in sync. The
 # allowlist deliberately carries both id forms GitLab accepts for a project (a
 # numeric id and a group/project path), since agents send either.
@@ -48,7 +48,7 @@ resources:
   mixed_case_path_project:
     # Path entries are compared case-insensitively (both sides lowercased), so
     # the allowlisted jchristensen/vicegerent-agents matches however it's
-    # capitalized — GitLab's own path lookups ignore case, verified live.
+    # capitalized - GitLab's own path lookups ignore case, verified live.
     id: JChristensen/Vicegerent-Agents
     kind: gitlab_project
     attr: {projectId: JChristensen/Vicegerent-Agents}
@@ -70,19 +70,19 @@ resources:
     attr: {projectId: ''}
   cross_project_link_allowed_target:
     # create_issue_link/create_merge_request carry a SECOND project. Both ends
-    # inside the allowlist — allowed.
+    # inside the allowlist - allowed.
     id: '148'
     kind: gitlab_project
     attr: {projectId: '148', targetProjectId: '7'}
   cross_project_link_disallowed_target:
     # An ALLOWED project_id carrying a write whose effect lands outside the
-    # allowlist — the side-channel this second check closes.
+    # allowlist - the side-channel this second check closes.
     id: '148'
     kind: gitlab_project
     attr: {projectId: '148', targetProjectId: '999'}
   cross_project_link_empty_target:
     # Most mapped tools have no target_project_id arg, so the helper resolves
-    # it to '' — the empty-guard must not deny them.
+    # it to '' - the empty-guard must not deny them.
     id: '148'
     kind: gitlab_project
     attr: {projectId: '148', targetProjectId: ''}
@@ -92,7 +92,7 @@ resources:
     kind: gitlab_project
     attr: {projectId: '148', hasReviewers: 'true'}
   update_mr_with_reviewers:
-    # Same for update_merge_request, and for either arg — reviewer_ids and
+    # Same for update_merge_request, and for either arg - reviewer_ids and
     # assignee_ids collapse into one hasReviewers attr because either pulls a
     # human into the agent's own MR.
     id: '148'
@@ -109,20 +109,20 @@ resources:
     attr: {projectId: '999', hasReviewers: 'true'}
   issue_with_assignees:
     # create_issue/update_issue carry assignee_ids too, and deliberately do NOT
-    # get gitlabMergeRequestAttr — issue assignment stays unrestricted, so no
+    # get gitlabMergeRequestAttr - issue assignment stays unrestricted, so no
     # hasReviewers attr exists for these at all.
     id: '148'
     kind: gitlab_project
     attr: {projectId: '148'}
   update_mr_own_author:
-    # gitlabUsername is jchristensen (matching test-values.yaml) — the account
+    # gitlabUsername is jchristensen (matching test-values.yaml) - the account
     # this machine's GitLab PAT authenticates as. An MR the shim resolved as
     # authored by that same user is allowed.
     id: '148'
     kind: gitlab_project
     attr: {projectId: '148', mrAuthor: jchristensen}
   update_mr_other_author:
-    # The shim resolved a DIFFERENT real author — denied regardless of what the
+    # The shim resolved a DIFFERENT real author - denied regardless of what the
     # call's own args say (update_merge_request has no author-setting arg to
     # begin with; this catches a hallucinated merge_request_iid).
     id: '148'
@@ -134,14 +134,14 @@ resources:
     attr: {projectId: '999', mrAuthor: someoneelse}
   read_tool_no_author_attr:
     # Reads (including the surviving note/discussion READ tools) and
-    # create_merge_request never get an mrAuthor attr at all — server.go only
+    # create_merge_request never get an mrAuthor attr at all - server.go only
     # injects it for update_merge_request, the one tool that mutates an existing
     # MR. The rule is has()-guarded, so its absence must not deny.
     id: jchristensen/vicegerent-agents
     kind: gitlab_project
     attr: {projectId: jchristensen/vicegerent-agents}
   mr_targeting_protected_branch:
-    # update_merge_request RETARGETED at main — denied. Retargeting an
+    # update_merge_request RETARGETED at main - denied. Retargeting an
     # already-approved MR at a protected branch is how an unreviewed diff gets
     # merged there. isMrCreate 'false' marks this as the update path; the
     # create path below is deliberately NOT denied.
@@ -173,7 +173,7 @@ resources:
     attr: {projectId: '148', hasReviewers: 'false', branch: develop, isMrCreate: 'false'}
   mr_no_target_branch:
     # target_branch is optional on both tools, so the helper resolves it to ''
-    # — the empty-guard must not deny an MR that simply doesn't retarget.
+    # - the empty-guard must not deny an MR that simply doesn't retarget.
     id: '148'
     kind: gitlab_project
     attr: {projectId: '148', hasReviewers: 'false', branch: '', isMrCreate: 'false'}

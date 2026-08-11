@@ -5,7 +5,7 @@
 # mirrored into the ghostunnel-server Secret solely so a host missing this
 # directory can recover them via ensure_ghostunnel_material (./vicegerent
 # start). These files are the source of truth for the laptop side and are
-# disposable — re-run setup-secrets-platform.sh to regenerate.
+# disposable - re-run setup-secrets-platform.sh to regenerate.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

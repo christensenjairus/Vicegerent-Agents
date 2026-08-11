@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cross-release pruning of agents. Helm prunes objects *within* a release on
 # upgrade, but a whole agent dropped from values.yaml is a release Helm never sees
-# again — so after the agents stage we diff the desired agent set against the
+# again - so after the agents stage we diff the desired agent set against the
 # releases actually present in agent-sandbox and uninstall the orphans.
 #
 # Safe because agent-sandbox holds only per-agent releases: the controller lives

@@ -26,7 +26,7 @@ SERVERS_CONFIG="${SERVERS_CONFIG:-$SCRIPT_DIR/../host/mcp/toolhive-servers.json}
 # See usage above: empty QUERY enumerates, a keyword searches.
 QUERY="${1:-}"
 
-# MCP endpoints — all backends are aggregated behind the single ToolHive vMCP,
+# MCP endpoints - all backends are aggregated behind the single ToolHive vMCP,
 # fronted by the agentgateway /mcp/vmcp HTTPRoute.
 MCPS=(
   "vmcp:/mcp/vmcp"
@@ -186,11 +186,11 @@ for entry in "${MCPS[@]}"; do
   code=$(http_code "$url" "$INIT")
 
   case "$code" in
-    000) ui_error "Unreachable — nothing at ${url}"; ((FAIL++)); continue ;;
-    404) ui_error "HTTP 404 — HTTPRoute missing or backend not registered"
+    000) ui_error "Unreachable - nothing at ${url}"; ((FAIL++)); continue ;;
+    404) ui_error "HTTP 404 - HTTPRoute missing or backend not registered"
          echo    "    kubectl -n agentgateway-system get httproutes"
          ((FAIL++)); continue ;;
-    421) ui_error "HTTP 421 Misdirected Request — Python MCP SDK host-allowlist lock"
+    421) ui_error "HTTP 421 Misdirected Request - Python MCP SDK host-allowlist lock"
          echo    "    kubectl -n <mcp-ns> logs <pod> | grep -i 'Invalid Host'"
          ((FAIL++)); continue ;;
     [45]*) raw=$(mcp_post "$url" "$INIT" || true)
@@ -198,12 +198,12 @@ for entry in "${MCPS[@]}"; do
            ((FAIL++)); continue ;;
   esac
 
-  # Successful initialize — capture session ID from response headers
+  # Successful initialize - capture session ID from response headers
   mcp_post "$url" "$INIT" > /dev/null
   ui_success "Reachable (HTTP ${code})"
 
   if [[ -z "$SESSION_ID" ]]; then
-    ui_warn "No Mcp-Session-Id in response — cannot send tools/list."
+    ui_warn "No Mcp-Session-Id in response - cannot send tools/list."
     ((WARN++)); continue
   fi
 
@@ -220,7 +220,7 @@ for entry in "${MCPS[@]}"; do
     [[ -f /tmp/mcp-parse-err ]] && head -3 /tmp/mcp-parse-err | sed 's/^/    /'
     ((WARN++))
   elif [[ "$tools" == "(no tools)" ]]; then
-    ui_warn "No tools returned — is the allowlist blocking all tools?"
+    ui_warn "No tools returned - is the allowlist blocking all tools?"
     echo    "    kubectl -n agentgateway-system get agentgatewaypolicies ${name}-policy -o yaml"
     ((WARN++))
   elif echo "$tools" | grep -qx "find_tool"; then
@@ -229,7 +229,7 @@ for entry in "${MCPS[@]}"; do
     if discover_tools "$url" "$SESSION_ID" "$QUERY"; then
       ((PASS++))
     else
-      ui_warn "find_tool surfaced no backend tools — the index is empty or searches failed."
+      ui_warn "find_tool surfaced no backend tools - the index is empty or searches failed."
       ((WARN++))
     fi
   else

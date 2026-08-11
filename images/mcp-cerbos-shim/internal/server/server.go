@@ -2,7 +2,7 @@
 // Fail-closed contract: only tools/call is evaluated for Cerbos authz; bad
 // params/mapping/eval/Cerbos errors deny. Responses are pass or error, except
 // a tool with a mapping `force` set, which allows via a mutated
-// (rewritten-args) result instead of a bare pass — never on a denied call.
+// (rewritten-args) result instead of a bare pass - never on a denied call.
 package server
 
 import (
@@ -245,7 +245,7 @@ func isModeratedWriteTool(toolName string, verbs []string) bool {
 // upstreamLookupTimeout bounds a single live shim->vMCP lookup call (Notion
 // ancestry, Linear issue-team resolution) so one gated tools/call can't hang
 // the whole CheckRequest (the gateway is FailClosed, so a hang would deny
-// anyway — but only after its own longer timeout, holding the connection
+// anyway - but only after its own longer timeout, holding the connection
 // open meanwhile).
 //
 // 15s, not 5s. The old budget was set when CallTool re-handshook on EVERY
@@ -273,7 +273,7 @@ const moderationTimeout = 10 * time.Second
 // meta-tool name. With the optimizer on, vMCP exposes only find_tool/call_tool instead
 // of the real backend tools, so every actual invocation arrives wrapped as
 // call_tool{tool_name, parameters} rather than under its own name. Left unhandled, the
-// mapping lookup below would only ever see "call_tool" — never a mapped tool — and
+// mapping lookup below would only ever see "call_tool" - never a mapped tool - and
 // silently pass every call through on this backend's defaultAction: allow. Field names
 // match github.com/stacklok/toolhive/pkg/vmcp/optimizer.CallToolInput.
 const callToolMeta = "call_tool"
@@ -319,11 +319,11 @@ type Server struct {
 
 	// notionAncestry, when set, gates every existing-page Notion write
 	// (update-page, create-comment) to pages under one of
-	// notionAllowedParentIDs via a live notion-fetch lookup — a network round
+	// notionAllowedParentIDs via a live notion-fetch lookup - a network round
 	// trip the CEL/Cerbos path can't make (it's pure/synchronous, no I/O). It
 	// lives on Server rather than in a CEL helper for that reason.
 	// notionAllowedParentIDs is a caller-scoped allowlist of parent folders
-	// (e.g. Scratchpad plus a set of team folders — HAH's multi-parent
+	// (e.g. Scratchpad plus a set of team folders - HAH's multi-parent
 	// scoping); a page passes the gate if it descends from ANY of them.
 	// notion-create-pages is deliberately excluded (see the
 	// notionAncestryGatedActions comment above).
@@ -475,7 +475,7 @@ type Option func(*Server)
 // client resolves a page's ancestors (production: an upstream.Client to vMCP;
 // tests: a stub); allowedParentIDs is the set of parent folders a page must
 // descend from ANY one of to pass (Scratchpad plus any additional team
-// folders the caller configures — the caller is responsible for including
+// folders the caller configures - the caller is responsible for including
 // Scratchpad in this list if it should remain allowed).
 func WithNotionAncestry(client upstream.ToolCaller, allowedParentIDs []string) Option {
 	return func(s *Server) {
@@ -1128,7 +1128,7 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 
 	// Argument overrides for an allowed call: the tool's literal force values
 	// plus any forceFrom expression evaluated against these args (GitLab's
-	// draft-title rewrite is the latter — GitLab has no draft boolean, so the
+	// draft-title rewrite is the latter - GitLab has no draft boolean, so the
 	// override has to be derived from the incoming title). Evaluated against
 	// the POST-redaction arguments so a forced value can't reintroduce a
 	// scrubbed secret.
@@ -1144,7 +1144,7 @@ func (s *Server) CheckRequest(ctx context.Context, req *pb.McpRequest) (*pb.McpR
 	}
 	mutated, err := buildMutatedParams(cp, wrapped, overrides)
 	if err != nil {
-		// A shim-side malfunction (e.g. the tool's own args aren't marshalable) —
+		// A shim-side malfunction (e.g. the tool's own args aren't marshalable) -
 		// fail closed rather than forward an un-mutated, non-compliant call.
 		return deny(fmt.Sprintf("force-override eval: %v", err)), nil
 	}
@@ -1615,7 +1615,7 @@ func deny(reason string) *pb.McpRequestResult {
 // mutate replaces the JSON-RPC params before the gateway forwards the call
 // upstream. Only reached after Cerbos has already allowed the (unmutated)
 // call, so the resource checked and the resource forwarded always agree on
-// owner/repo/branch — only literal force-override keys (e.g. draft) change.
+// owner/repo/branch - only literal force-override keys (e.g. draft) change.
 func mutate(params []byte) *pb.McpRequestResult {
 	return &pb.McpRequestResult{Result: &pb.McpRequestResult_Mutated{Mutated: params}}
 }

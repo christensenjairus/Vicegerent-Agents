@@ -28,8 +28,8 @@ const gitlabDraftTitlePrefix = "Draft: "
 // title to carry the draft prefix, which is the only way to force draft
 // status on GitLab (see gitlabDraftTitlePrefix).
 //
-// This exists because `force: {draft: true}` — copied from the GitHub mapping,
-// where draft IS a real boolean — was a silent no-op on GitLab, so every
+// This exists because `force: {draft: true}` - copied from the GitHub mapping,
+// where draft IS a real boolean - was a silent no-op on GitLab, so every
 // agent-opened merge request shipped ready-for-review rather than draft.
 //
 // Returns an EMPTY title when the override does not apply, which
@@ -74,14 +74,14 @@ func gitlabDraftTitle(title string) string {
 // target_project_id matters because create_issue_link and create_merge_request
 // both take a SECOND project: an issue link's other end, and an MR's target
 // project. Either would otherwise let an allowlisted project_id carry a write
-// that lands in a project outside the allowlist — the same side-channel class as
+// that lands in a project outside the allowlist - the same side-channel class as
 // a Jira epicKey smuggled through additional_fields. It resolves to "" on the
 // ~50 tools that have no such arg, which the policy's rule guards for.
 //
 // This exists instead of a plain `attr: {projectId: get(args,'project_id',”)}`
 // because project_id is only *declared* a string by the tool schema while a
 // caller naming a project by its numeric id routinely sends a JSON number
-// instead, and lookupCI/get() type-assert v.(string) — a float64 falls through
+// instead, and lookupCI/get() type-assert v.(string) - a float64 falls through
 // to the "" default with no error at all (the same silent-miss class
 // githubReviewersAttr guards against for arrays). "" then matches no allowlist
 // entry, so the call is denied: fail-closed, but a confusing false deny on a
@@ -112,13 +112,13 @@ func gitlabProjectAttrOption() []cel.EnvOption {
 // Both are real JSON arrays on the wire (GitLab user ids), so they need the
 // same array-aware presence check GitHub's reviewers arg does; a plain get()
 // would silently read them as absent. Both collapse into one hasReviewers attr
-// because resource_gitlab.yaml's deny-reviewers rule treats them identically —
+// because resource_gitlab.yaml's deny-reviewers rule treats them identically -
 // either one pulls a human into the agent's MR. Deliberately NOT applied to
 // create_issue/update_issue, which carry assignee_ids too: issue assignment
 // stays unrestricted (see that policy's deny-reviewers comment).
 //
 // branch: target_branch ONLY, feeding resource_gitlab.yaml's
-// deny-protected-branch — the GitLab analog of the branch attr github_repo's
+// deny-protected-branch - the GitLab analog of the branch attr github_repo's
 // own deny-protected-branch reads. source_branch is deliberately excluded: it
 // names the MR's own feature branch (and doubles as the get_merge_request
 // selector the author gate uses), nothing is written to it, and an MR whose

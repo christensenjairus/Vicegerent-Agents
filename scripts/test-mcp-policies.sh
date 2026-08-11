@@ -5,8 +5,8 @@
 # All backends are aggregated behind the single ToolHive vMCP (/mcp/vmcp); tools
 #   surface prefixed by workload (e.g. kubernetes_resources_get) with no allowlist.
 #   With the vMCP tool-discovery optimizer on (thv vmcp serve --optimizer, the
-#   default), tools/list exposes only two meta-tools — find_tool (search) and
-#   call_tool (invoke by name) — so real tools are discovered via find_tool and
+#   default), tools/list exposes only two meta-tools - find_tool (search) and
+#   call_tool (invoke by name) - so real tools are discovered via find_tool and
 #   invoked through call_tool{tool_name, parameters}, which mcp-cerbos-shim unwraps
 #   before its Cerbos lookup. This suite detects the optimizer and probes that same
 #   path so the guardrail is exercised exactly as it is in production.
@@ -149,7 +149,7 @@ tool_is_enabled() {
 
 # Build a tools/call payload for a real backend tool. When OPTIMIZER=1 the tool is
 # invoked through the vMCP optimizer's call_tool meta-tool ({tool_name, parameters}),
-# which mcp-cerbos-shim unwraps before its Cerbos lookup — the same path an agent
+# which mcp-cerbos-shim unwraps before its Cerbos lookup - the same path an agent
 # takes. When off, the tool is called directly by name.
 _tool_call_payload() {
   local tool="$1" args_json="$2"
@@ -177,7 +177,7 @@ call_tool() {
 #
 # Cerbos denials come back as JSON-RPC error code -32001 with the message
 # "Access denied by security policy...". k8s-level errors (tool/config failures)
-# use -32603. We key on the error code — it's stable and unambiguous.
+# use -32603. We key on the error code - it's stable and unambiguous.
 is_cerbos_denied() {
   local resp="$1"
   echo "$resp" | python3 -c "
@@ -233,10 +233,10 @@ deny_probe() {
     availability=$?
   fi
   if [[ "$availability" -eq 2 ]]; then
-    fail "$policy — could not verify whether $tool is enabled"
+    fail "$policy - could not verify whether $tool is enabled"
     return
   elif [[ "$availability" -eq 1 ]]; then
-    skip "$policy — $tool is not enabled"
+    skip "$policy - $tool is not enabled"
     return
   fi
 
@@ -269,7 +269,7 @@ ui_key_value "Secret probe" "$SECRET_NAME"
 
 VMCP_URL="${GATEWAY_URL}/mcp/vmcp"
 
-section "1. vMCP tool surface — aggregated at the gateway"
+section "1. vMCP tool surface - aggregated at the gateway"
 
 open_session "$VMCP_URL"
 TOOLS=$(get_tools "$VMCP_URL")
@@ -281,7 +281,7 @@ TOOL_COUNT=$(echo "$TOOLS" | grep -c . || true)
 if [[ "$TOOL_COUNT" -gt 0 ]]; then
   pass "vMCP exposes ${TOOL_COUNT} tools at the surface"
 else
-  fail "vMCP exposed no tools — backends down or vMCP not aggregating?"
+  fail "vMCP exposed no tools - backends down or vMCP not aggregating?"
 fi
 
 # With the optimizer on, tools/list carries only find_tool + call_tool; the real
@@ -289,7 +289,7 @@ fi
 # call_tool path (set OPTIMIZER=1). Otherwise tools surface raw ({workload}_<tool>).
 if echo "$TOOLS" | grep -qx "call_tool" && echo "$TOOLS" | grep -qx "find_tool"; then
   OPTIMIZER=1
-  pass "vMCP optimizer on — probing tools via find_tool / call_tool"
+  pass "vMCP optimizer on - probing tools via find_tool / call_tool"
 fi
 
 # Section 2's Cerbos Secret block depends on these exact Kubernetes tool names.
@@ -317,20 +317,20 @@ done
 
 # Cerbos Secret block
 # All probes are READ-ONLY. Secret probes use a randomly generated name that
-# almost certainly does not exist — even if policy fails, there is nothing to
+# almost certainly does not exist - even if policy fails, there is nothing to
 # return. The non-secret control probe uses a namespace that certainly exists
 # but we ask for a resource name that won't exist either, so Cerbos is tested
 # without leaking real cluster state if a policy is mis-configured.
 
-section "2. Cerbos guardrail — Secret reads must be denied"
+section "2. Cerbos guardrail - Secret reads must be denied"
 
 open_session "$VMCP_URL"
 
-# 2a: resources_get on a Secret — must be denied before k8s is ever contacted.
+# 2a: resources_get on a Secret - must be denied before k8s is ever contacted.
 # Args: apiVersion + kind (kubernetes-mcp-server format). No context arg needed.
 # The secret name is random and almost certainly absent; Cerbos denies before k8s lookup.
 if [[ "$KUBE_GET_ENABLED" -eq 0 ]]; then
-  skip "Kubernetes get Secret policy — kubernetes_resources_get is not enabled"
+  skip "Kubernetes get Secret policy - kubernetes_resources_get is not enabled"
 else
   ui_info "Probing kubernetes_resources_get(Secret/${SECRET_NAME})…"
   RESP=$(call_tool "$VMCP_URL" "kubernetes_resources_get" \
@@ -339,17 +339,17 @@ else
   if [[ "$VERDICT" == "denied" ]]; then
     pass "kubernetes_resources_get(Secret) → denied by Cerbos"
   elif [[ "$VERDICT" == "allowed" ]]; then
-    fail "kubernetes_resources_get(Secret) → ALLOWED — Cerbos guardrail not enforcing!"
+    fail "kubernetes_resources_get(Secret) → ALLOWED - Cerbos guardrail not enforcing!"
   else
     fail "kubernetes_resources_get(Secret) → unknown response"
     echo "    raw: ${RESP:0:300}"
   fi
 fi
 
-# 2b: resources_list of Secrets — must be denied.
+# 2b: resources_list of Secrets - must be denied.
 # Namespace is intentionally a fake one so even if policy fails, no secrets are returned.
 if [[ "$KUBE_LIST_ENABLED" -eq 0 ]]; then
-  skip "Kubernetes list Secret policy — kubernetes_resources_list is not enabled"
+  skip "Kubernetes list Secret policy - kubernetes_resources_list is not enabled"
 else
   ui_info "Probing kubernetes_resources_list(kind=Secret, ns=policy-test-ns)…"
   RESP=$(call_tool "$VMCP_URL" "kubernetes_resources_list" \
@@ -358,35 +358,35 @@ else
   if [[ "$VERDICT" == "denied" ]]; then
     pass "kubernetes_resources_list(Secret) → denied by Cerbos"
   elif [[ "$VERDICT" == "allowed" ]]; then
-    fail "kubernetes_resources_list(Secret) → ALLOWED — Cerbos guardrail not enforcing!"
+    fail "kubernetes_resources_list(Secret) → ALLOWED - Cerbos guardrail not enforcing!"
   else
     fail "kubernetes_resources_list(Secret) → unknown response"
     echo "    raw: ${RESP:0:300}"
   fi
 fi
 
-# 2c: resources_get on a ConfigMap — must NOT be denied (Cerbos should not over-block).
-# A k8s-level 404 is fine — it means Cerbos passed it through (correct behaviour).
+# 2c: resources_get on a ConfigMap - must NOT be denied (Cerbos should not over-block).
+# A k8s-level 404 is fine - it means Cerbos passed it through (correct behaviour).
 if [[ "$KUBE_GET_ENABLED" -ne 0 ]]; then
-  ui_info "Probing kubernetes_resources_get(ConfigMap/policy-test-nonexistent) — expect allowed…"
+  ui_info "Probing kubernetes_resources_get(ConfigMap/policy-test-nonexistent) - expect allowed…"
   RESP=$(call_tool "$VMCP_URL" "kubernetes_resources_get" \
     "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"name\":\"policy-test-nonexistent\",\"namespace\":\"default\"}")
   VERDICT=$(is_cerbos_denied "$RESP")
   if [[ "$VERDICT" == "denied" ]]; then
-    fail "kubernetes_resources_get(ConfigMap) → DENIED — Cerbos is over-blocking non-secrets!"
+    fail "kubernetes_resources_get(ConfigMap) → DENIED - Cerbos is over-blocking non-secrets!"
   else
     pass "kubernetes_resources_get(ConfigMap) → passed Cerbos (k8s-level result is irrelevant)"
   fi
 fi
 
-# 2d: resources_list for Pods — must NOT be denied (non-secret, non-empty kind).
+# 2d: resources_list for Pods - must NOT be denied (non-secret, non-empty kind).
 if [[ "$KUBE_LIST_ENABLED" -ne 0 ]]; then
-  ui_info "Probing kubernetes_resources_list(kind=Pod) — expect allowed…"
+  ui_info "Probing kubernetes_resources_list(kind=Pod) - expect allowed…"
   RESP=$(call_tool "$VMCP_URL" "kubernetes_resources_list" \
     "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"namespace\":\"default\"}")
   VERDICT=$(is_cerbos_denied "$RESP")
   if [[ "$VERDICT" == "denied" ]]; then
-    fail "kubernetes_resources_list(Pod) → DENIED — Cerbos is over-blocking non-secrets!"
+    fail "kubernetes_resources_list(Pod) → DENIED - Cerbos is over-blocking non-secrets!"
   else
     pass "kubernetes_resources_list(Pod) → passed Cerbos (correct)"
   fi
@@ -398,7 +398,7 @@ fi
 # cap. A regression therefore cannot create, update, delete, acknowledge, or
 # otherwise mutate a backend resource.
 
-section "3. Cerbos + shim policies — safe denial probes"
+section "3. Cerbos + shim policies - safe denial probes"
 
 policy_probe "k8s_resource" "Kubernetes missing kind" "kubernetes_resources_get" \
   '{"apiVersion":"v1","name":"policy-test-never-exists","namespace":"default"}' \
@@ -418,13 +418,13 @@ policy_probe "aws_command" "AWS secret value reads" "aws_call_aws" \
   '{"cli_command":"aws secretsmanager get-secret-value --secret-id policy-test-never-exists"}' \
   "not allowed to read secret values"
 policy_probe "jira_project" "Jira project scope" "jira_jira_create_issue" \
-  '{"project_key":"POLICYTESTNEVERALLOWED","summary":"policy test — must be denied","issue_type":"PolicyTest","assignee":"policy-test@example.invalid"}' \
+  '{"project_key":"POLICYTESTNEVERALLOWED","summary":"policy test - must be denied","issue_type":"PolicyTest","assignee":"policy-test@example.invalid"}' \
   "only create/update Jira issues in its allowed projects"
 policy_probe "linear_team" "Linear team scope" "linear_save_issue" \
-  '{"team":"policy-test-never-allowed","title":"policy test — must be denied","assignee":"policy-test@example.invalid"}' \
+  '{"team":"policy-test-never-allowed","title":"policy test - must be denied","assignee":"policy-test@example.invalid"}' \
   "only create/update Linear issues for the DEVOPS team"
 policy_probe "alertmanager_silence" "Alertmanager silence duration" "alertmanager_createSilence" \
-  '{"alertName":"PolicyTestNeverFires","duration":"1000000h","comment":"policy test — must be denied","matchers":[]}' \
+  '{"alertName":"PolicyTestNeverFires","duration":"1000000h","comment":"policy test - must be denied","matchers":[]}' \
   "Silence creation is disabled or its duration exceeds"
 policy_probe "alertmanager_alert_query" "Alertmanager query filter" "alertmanager_getAlerts" '{}' \
   "getAlerts requires filterLabel"
@@ -470,17 +470,17 @@ if [[ -n "$GRAFANA_DENIED" ]]; then
     "{\"uid\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$GRAFANA_DENIED")}" \
     "not allowed to query this Grafana datasource"
 else
-  skip "Grafana datasource denylist — no denied datasource is configured in ${POLICY_VALUES##*/}"
+  skip "Grafana datasource denylist - no denied datasource is configured in ${POLICY_VALUES##*/}"
 fi
 if [[ -n "$ELASTIC_DENIED" ]]; then
   policy_probe "elastic" "Elastic index denylist" "elastic_platform_core_search" \
     "{\"index\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$ELASTIC_DENIED")}" \
     "not allowed to access that Elasticsearch data"
 else
-  skip "Elastic index denylist — no denied index pattern is configured in ${POLICY_VALUES##*/}"
+  skip "Elastic index denylist - no denied index pattern is configured in ${POLICY_VALUES##*/}"
 fi
 
-# 4: Guardrail attachment check — verify the policy carries the shim attachment.
+# 4: Guardrail attachment check - verify the policy carries the shim attachment.
 # A missing guardrail silently fails open (FailClosed only covers shim failures, not absence).
 ui_info "Verifying guardrail attachment to the vmcp-mcp-tools policy…"
 if command -v kubectl &>/dev/null; then
@@ -489,12 +489,12 @@ if command -v kubectl &>/dev/null; then
   if [[ "$GUARDRAIL" == "mcp-cerbos-shim" ]]; then
     pass "guardrail attached: mcp-cerbos-shim (FailClosed)"
   elif [[ -z "$GUARDRAIL" ]]; then
-    fail "guardrail NOT attached to vmcp-mcp-tools — Secret block silently fails open!"
+    fail "guardrail NOT attached to vmcp-mcp-tools - Secret block silently fails open!"
   else
     fail "guardrail attached to unexpected backend: ${GUARDRAIL}"
   fi
 else
-  ui_warn "kubectl is not available — skipping the live guardrail attachment check."
+  ui_warn "kubectl is not available - skipping the live guardrail attachment check."
 fi
 
 ui_section "Summary"

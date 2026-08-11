@@ -6,7 +6,7 @@ scrub.py is embedded as a ConfigMap block-scalar inside a Helm template
 Python module, so this test renders the ConfigMap with `helm template` (same path
 scripts/validate.sh uses, including --set-file secretPatterns=…), stubs the
 `mitmproxy` import, exec()s the rendered source, and asserts against the REAL
-compiled REDACT_PATTERNS — not a hand-copied duplicate that could silently drift
+compiled REDACT_PATTERNS - not a hand-copied duplicate that could silently drift
 from what ships. Those patterns are injected from the single canonical source
 images/mcp-cerbos-shim/internal/server/secret-patterns.json (the same file the Go
 shim embeds via //go:embed), so this exercises exactly the shapes both runtimes match.
@@ -106,7 +106,7 @@ def fixtures():
         ("twilio", "SK" + "f" * 32),                                                      # pragma: allowlist secret
         ("npm", "npm" + "_" + "m" * 36),                                                  # pragma: allowlist secret
         ("jwt", "eyJ" + "h" * 10 + "." + "eyJ" + "p" * 10 + "." + "s" * 10),              # pragma: allowlist secret
-        # PII (fake) — SSN, two card issuer shapes, and a US phone number.
+        # PII (fake) - SSN, two card issuer shapes, and a US phone number.
         ("ssn", "123" + "-" + "45" + "-" + "6789"),
         ("cc_visa", "4" + "1" * 15),                       # 16-digit Visa (starts 4)
         ("cc_mastercard", "5" + "1" + "0" * 14),           # 16-digit Mastercard (starts 51)
@@ -195,7 +195,7 @@ def main():
             failures += 1
     print("  ok   clean text untouched" if failures == 0 else "")
 
-    # 2b. PII prefix/range scoping must NARROW matches — these must NOT be caught,
+    # 2b. PII prefix/range scoping must NARROW matches - these must NOT be caught,
     #     proving the card patterns are issuer-prefix-scoped (not a naive 13-19
     #     digit catch-all) and the SSN pattern excludes the invalid ranges.
     pii_negatives = [

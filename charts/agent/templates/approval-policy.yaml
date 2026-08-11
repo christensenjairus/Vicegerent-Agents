@@ -6,7 +6,7 @@ metadata:
   namespace: agent-sandbox
 data:
   approval-policy.yaml: |-
-    # Approval silence list — patterns dropped before the approval auxiliary
+    # Approval silence list - patterns dropped before the approval auxiliary
     # model (auxiliary.approval) screens them.
     # Tirith findings and uncancellable patterns are always kept.
     # Edit in git and redeploy to change.
@@ -16,7 +16,7 @@ data:
       - shell command via -c/-lc flag
       - script execution via heredoc
       - shell execution via heredoc
-      # --- Arbitrary script execution — this sandbox's isolation boundary is
+      # --- Arbitrary script execution - this sandbox's isolation boundary is
       # the pod/network layer, not the approval gate. Silences the separate
       # execute_code whole-script approval gate (0012 patch). ---
       - execute_code script execution

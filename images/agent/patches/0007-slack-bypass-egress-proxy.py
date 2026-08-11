@@ -2,17 +2,17 @@
 Patch: make all Slack traffic bypass the egress MITM proxy.
 
 In the vicegerent sandbox ALL outbound traffic is pointed at the GET-only
-scrubbing egress proxy via HTTPS_PROXY. Slack must NOT go through it — the proxy scrubs ``xox*`` tokens, blocks POST, and
+scrubbing egress proxy via HTTPS_PROXY. Slack must NOT go through it - the proxy scrubs ``xox*`` tokens, blocks POST, and
 blocks the Socket Mode WebSocket, so any Slack call routed through it fails (and
 previously surfaced as a TLS error because the proxy presents a MITM cert). The
 network policy already allows slack.com directly.
 
 slack_sdk's ``AsyncBaseClient.__init__`` auto-loads ``HTTPS_PROXY`` whenever its
-``proxy`` arg is ``None`` or empty, via ``load_http_proxy_from_env()`` — which
+``proxy`` arg is ``None`` or empty, via ``load_http_proxy_from_env()`` - which
 never consults ``NO_PROXY``. So even though the Hermes Slack adapter resolves the
 bypass and clears ``app.client.proxy = None``, slack_bolt rebuilds a fresh
 per-request context client as ``AsyncWebClient(token=..., proxy=app.client.proxy)``
-= ``AsyncWebClient(proxy=None)`` — and that ``None`` re-triggers the env lookup, so
+= ``AsyncWebClient(proxy=None)`` - and that ``None`` re-triggers the env lookup, so
 the auth middleware's ``auth.test()`` goes back through the proxy and hangs.
 
 Fix both proxy paths: make ``load_http_proxy_from_env`` return ``None`` so an
@@ -171,7 +171,7 @@ assert mod.load_http_proxy_from_env() is None, "loader should return None after 
 os.environ.pop("HTTPS_PROXY", None)
 print("  ok  load_http_proxy_from_env() -> None with HTTPS_PROXY set")
 
-# 2. Real client behavior, in a FRESH interpreter — only a new process re-imports
+# 2. Real client behavior, in a FRESH interpreter - only a new process re-imports
 #    the patched file (binding the patched loader by name), which matches how the
 #    container runs the bot. Verifying in-process here would give a false result.
 import subprocess

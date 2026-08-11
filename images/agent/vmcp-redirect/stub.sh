@@ -12,5 +12,5 @@ if [ "$name" = docker ]; then
     exit 127
 fi
 
-echo "'${name}': not available in this sandbox — use the vMCP server instead (find_tool / call_tool)." >&2
+echo "'${name}': not available in this sandbox - use the vMCP server instead (find_tool / call_tool)." >&2
 exit 127

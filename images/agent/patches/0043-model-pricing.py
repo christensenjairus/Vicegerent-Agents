@@ -181,7 +181,7 @@ _RETIRED_DEEPSEEK_MODELS = (
 # _OFFICIAL_DOCS_PRICING already ships DeepSeek entries, but
 # resolve_billing_route() had NO deepseek branch, so every deepseek session
 # fell through to billing_mode="unknown" and those entries were
-# unreachable — priced on paper, unbillable in practice. Same latent shape as
+# unreachable - priced on paper, unbillable in practice. Same latent shape as
 # the zai gap 0038 fixed. (google/ and bedrock/ entries are likewise
 # unreachable, but this repo routes to neither, so they are left alone and
 # recorded in the MR's follow-ups instead of speculatively patched.)

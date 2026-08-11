@@ -18,7 +18,7 @@ func init() {
 // token, so that token must be skipped when scanning for the service/operation
 // positionals. (--opt=value is a single token, skipped by the leading-dash
 // rule; boolean globals like --debug/--no-verify-ssl/--cli-auto-prompt take no
-// value — listing one here would make the parser eat the service positional as
+// value - listing one here would make the parser eat the service positional as
 // its "value" and mis-pair service/operation.)
 var awsValueGlobalOpts = map[string]bool{
 	"--region": true, "--profile": true, "--output": true, "--endpoint-url": true,
@@ -35,8 +35,8 @@ const awsUnparsedOp = "<unparsed>"
 // awsSecretReadAttrOption surfaces, for the aws-api-mcp-server `call_aws` tool,
 // each parsed command's "<service>/<operation>" as a lowercased `awsOps` list,
 // so resource_aws.yaml can deny Secrets Manager value-reads (get-secret-value /
-// batch-get-secret-value). READ_OPERATIONS_ONLY does NOT cover these — a secret
-// read is classified read-only — which is exactly why this resource guardrail
+// batch-get-secret-value). READ_OPERATIONS_ONLY does NOT cover these - a secret
+// read is classified read-only - which is exactly why this resource guardrail
 // exists on top.
 //
 // call_aws's `cli_command` is a str OR a list[str] (batch, up to 20). Both are
@@ -127,8 +127,8 @@ func awsServiceOp(command string) string {
 
 // tokenizeShellLike splits on unquoted whitespace, honoring '...' and "..." so
 // a quoted option value (e.g. --profile "my profile") isn't mis-split into two
-// tokens. It is NOT a full shell parser — the aws-api-mcp-server itself forbids
-// pipes, redirection, and command substitution — just enough to isolate the
+// tokens. It is NOT a full shell parser - the aws-api-mcp-server itself forbids
+// pipes, redirection, and command substitution - just enough to isolate the
 // service/operation positionals robustly.
 func tokenizeShellLike(s string) []string {
 	var toks []string

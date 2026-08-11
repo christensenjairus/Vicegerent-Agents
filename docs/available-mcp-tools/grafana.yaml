@@ -1,7 +1,7 @@
 # Catalog of every tool exposed by the running vicegerent MCP backend(s),
 # with each tool's arguments (type, required, description, enum). Reference
 # for spotting missing tools and for writing cerbos argument-level policies.
-# GENERATED — do not edit by hand.
+# GENERATED - do not edit by hand.
 # Regenerate: scripts/probe-mcp-tools.py grafana --format yaml -o <this-file>
 group: vicegerent
 tool_count: 52
@@ -980,7 +980,7 @@ servers:
             required: false
             description: "The query to search for"
       search_plugin_information:
-        description: "Search the Grafana plugin catalog by keyword to discover available plugins before installing or getting plugin details on a specific instance. Returns results sorted by trust: official Grafana Labs plugins first, then commercial partner plugins, then community plugins. Use this tool when a user describes a plugin by purpose or partial name (e.g. 'azure monitoring', 'loki', 'database') \u2014 it returns the exact pluginId to pass to get_plugin or install_plugin. Results include warnings for enterprise-only or Angular-based plugins."
+        description: "Search the Grafana plugin catalog by keyword to discover available plugins before installing or getting plugin details on a specific instance. Returns results sorted by trust: official Grafana Labs plugins first, then commercial partner plugins, then community plugins. Use this tool when a user describes a plugin by purpose or partial name (e.g. 'azure monitoring', 'loki', 'database') - it returns the exact pluginId to pass to get_plugin or install_plugin. Results include warnings for enterprise-only or Angular-based plugins."
         arguments:
           query:
             type: "string"
@@ -1007,7 +1007,7 @@ servers:
             required: false
             description: "Labels that get an 'unknown' placeholder when missing."
       validate_provisioning_file:
-        description: "Validate a file in a provisioning repository at a given branch or commit by dry-run applying it. Returns whether the file would be accepted (valid)\\, what resource action would result (create/update)\\, the target resource type\\, and any structured validation errors. Use to confirm a draft dashboard or other resource will be accepted before merging or applying a PR \u2014 this is the same validation surface that Grafana's PR commenter reports."
+        description: "Validate a file in a provisioning repository at a given branch or commit by dry-run applying it. Returns whether the file would be accepted (valid)\\, what resource action would result (create/update)\\, the target resource type\\, and any structured validation errors. Use to confirm a draft dashboard or other resource will be accepted before merging or applying a PR - this is the same validation surface that Grafana's PR commenter reports."
         arguments:
           namespace:
             type: "string"

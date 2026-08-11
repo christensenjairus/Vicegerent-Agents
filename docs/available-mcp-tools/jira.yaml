@@ -1,7 +1,7 @@
 # Catalog of every tool exposed by the running vicegerent MCP backend(s),
 # with each tool's arguments (type, required, description, enum). Reference
 # for spotting missing tools and for writing cerbos argument-level policies.
-# GENERATED — do not edit by hand.
+# GENERATED - do not edit by hand.
 # Regenerate: scripts/probe-mcp-tools.py jira --format yaml -o <this-file>
 group: vicegerent
 tool_count: 63
@@ -17,7 +17,7 @@ servers:
             required: true
             description: "Identifier for the user (e.g., email address 'user@example.com', username 'johndoe', account ID 'accountid:...', or key for Server/DC)."
       jira_search_assignable_users:
-        description: "Search Jira users assignable in a given project or issue. Use this when you have a display name / partial name / email fragment and need a concrete identifier (``name`` / ``key`` for Server/DC, ``accountId`` for Cloud) to feed into assignee, reporter, watcher, etc. Returns the full result set so the caller can disambiguate when several users match \u2014 ``get_user_profile`` only resolves one identifier and is not designed for human-name search. Exactly one of ``project_key`` or ``issue_key`` must be provided \u2014 the underlying API (``/user/assignable/search``) requires a project or issue context and works without the global \"Browse Users\" permission that bot accounts in locked-down DC instances often lack."
+        description: "Search Jira users assignable in a given project or issue. Use this when you have a display name / partial name / email fragment and need a concrete identifier (``name`` / ``key`` for Server/DC, ``accountId`` for Cloud) to feed into assignee, reporter, watcher, etc. Returns the full result set so the caller can disambiguate when several users match - ``get_user_profile`` only resolves one identifier and is not designed for human-name search. Exactly one of ``project_key`` or ``issue_key`` must be provided - the underlying API (``/user/assignable/search``) requires a project or issue context and works without the global \"Browse Users\" permission that bot accounts in locked-down DC instances often lack."
         arguments:
           issue_key:
             type: "string"
@@ -125,7 +125,7 @@ servers:
           page_token:
             type: "string"
             required: false
-            description: "(Optional) Pagination token from a previous search result. Cloud only \u2014 Server/DC uses start_at for pagination."
+            description: "(Optional) Pagination token from a previous search result. Cloud only - Server/DC uses start_at for pagination."
           projects_filter:
             type: "string"
             required: false
@@ -449,7 +449,7 @@ servers:
           public:
             type: "boolean"
             required: false
-            description: "(Optional) For JSM/Service Desk issues only. Set to true for customer-visible comment, false for internal agent-only comment. Posted via the ServiceDesk API as a raw string; Jira Cloud renders it server-side and stores ADF (markdown observed to render on Cloud, without the client-side markdown-to-ADF guarantees of the regular comment path). Cannot be combined with visibility. If the issue's project is listed in JIRA_INTERNAL_ONLY_PROJECTS, only public=false is accepted \u2014 public=true or omitting this field is rejected."
+            description: "(Optional) For JSM/Service Desk issues only. Set to true for customer-visible comment, false for internal agent-only comment. Posted via the ServiceDesk API as a raw string; Jira Cloud renders it server-side and stores ADF (markdown observed to render on Cloud, without the client-side markdown-to-ADF guarantees of the regular comment path). Cannot be combined with visibility. If the issue's project is listed in JIRA_INTERNAL_ONLY_PROJECTS, only public=false is accepted - public=true or omitting this field is rejected."
           visibility:
             type: "string"
             required: false
@@ -710,7 +710,7 @@ servers:
             required: true
             description: "Name or key prefix to search for"
       jira_get_project_fields:
-        description: "Get the fields available on issues of a project (the create schema), deduplicated across the project's issue types \u2014 i.e. which fields tickets in this project have, regardless of whether they are filled."
+        description: "Get the fields available on issues of a project (the create schema), deduplicated across the project's issue types - i.e. which fields tickets in this project have, regardless of whether they are filled."
         arguments:
           project_key:
             type: "string"

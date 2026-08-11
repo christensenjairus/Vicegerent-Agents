@@ -6,7 +6,7 @@ this error family.
 Context
 -------
 ``agent/conversation_loop.py``'s error classifier already special-cases
-``json.JSONDecodeError`` — the comment right above ``is_local_validation_error``
+``json.JSONDecodeError`` - the comment right above ``is_local_validation_error``
 says explicitly: "it indicates a transient provider/network failure
 (malformed response body, truncated stream, routing layer corruption), not
 a local programming bug, and should be retried (#14782)".
@@ -25,8 +25,8 @@ arguments incrementally via a SEPARATE JSON parser:
 reassembled buffer is malformed for any reason upstream of Hermes
 (a mid-stream promptGuard rewrite, dropped/reordered SSE frames, any
 proxy-layer corruption between agentgateway and Hermes), ``jiter.from_json()``
-raises a PLAIN ``ValueError`` — e.g. "expected value at line 1 column 87"
-or "expected ident at line 1 column 2" — that does NOT inherit from
+raises a PLAIN ``ValueError`` - e.g. "expected value at line 1 column 87"
+or "expected ident at line 1 column 2" - that does NOT inherit from
 ``json.JSONDecodeError``. Confirmed locally:
 
     >>> import jiter; jiter.from_json(b'garbage')
@@ -48,7 +48,7 @@ There's a partial, disconnected acknowledgment of jiter's error shape
 already in the codebase: ``run_agent.py``'s ``_summarize_api_error`` special-
 cases the substring "expected ident at line" to produce a nicer log message
 ("Malformed provider streaming response: ..."). That has ZERO effect on
-either retry/fallback decision — it only prettifies what gets logged after
+either retry/fallback decision - it only prettifies what gets logged after
 the (wrong) decision was already made. This patch fixes both actual
 decisions.
 
@@ -58,9 +58,9 @@ Two independent, idempotent sub-patches applied by the same script (kept
 together because they're the same root cause and the same fix pattern --
 message-substring jiter-parse-error detection -- just at two call sites):
 
-1. ``agent/conversation_loop.py::is_local_validation_error`` — add the
+1. ``agent/conversation_loop.py::is_local_validation_error`` - add the
    jiter-parse-error exclusion (unchanged from the original 0037).
-2. ``run_agent.py::_is_provider_stream_parse_error`` — widen its single
+2. ``run_agent.py::_is_provider_stream_parse_error`` - widen its single
    hardcoded substring check ("expected ident at line") to the same 4-marker
    list used above, so a jiter parse error hit mid-stream (tool call
    in-flight) gets one same-provider silent retry instead of immediately
@@ -183,14 +183,14 @@ def _apply_subpatch(
         src = f.read()
 
     if applied_marker in src:
-        print(f"patch: {label} already applied to {path} — no-op")
+        print(f"patch: {label} already applied to {path} - no-op")
         return False
 
     count = src.count(anchor)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 occurrence of the {label} anchor "
-            f"in {path}, found {count} (upstream drifted — re-verify)"
+            f"in {path}, found {count} (upstream drifted - re-verify)"
         )
 
     src = src.replace(anchor, replacement, 1)

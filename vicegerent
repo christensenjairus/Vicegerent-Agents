@@ -493,7 +493,7 @@ agent_ssh_entry() {
 
 usage() {
   cat <<EOF
-${B}vicegerent${N} — operational CLI for the vicegerent infra-agent platform
+${B}vicegerent${N} - operational CLI for the vicegerent infra-agent platform
 
 ${B}Usage:${N}
   ${C}vicegerent start${N}                        start the Kind cluster + host ToolHive/vMCP stack
@@ -517,11 +517,11 @@ EOF
 
 setup_usage() {
   cat <<EOF
-${B}vicegerent setup${N} — one-time provisioning steps
+${B}vicegerent setup${N} - one-time provisioning steps
 
   ${C}cluster${N}                create the Kind cluster; install Cilium with vicegerent install
                          (overridable env: KIND_CONFIG KIND_DOCKER_NETWORK
-                          VICEGERENT_HOST_IP — the host address CoreDNS resolves
+                          VICEGERENT_HOST_IP - the host address CoreDNS resolves
                           host.docker.internal to; set it if autodetection fails)
   ${C}secrets platform${N}       provision platform-wide Kubernetes Secrets + host ghostunnel material
   ${C}secrets agent <name>${N}   provision a named agent's Kubernetes Secrets
@@ -533,7 +533,7 @@ EOF
 # Patch in-cluster CoreDNS to resolve host.docker.internal: Kind's CoreDNS forwards
 # to the pod's own loopback, not Docker's embedded resolver, so pods otherwise can't
 # resolve it (that's how agentgateway reaches the host ghostunnel). Pin it to the
-# detected host gateway IP. Idempotent — skipped if already present.
+# detected host gateway IP. Idempotent - skipped if already present.
 patch_coredns() {
   local cluster_name="$1" docker_network="$2"
   local ctx="kind-${cluster_name}"
@@ -642,7 +642,7 @@ run_with_portforward() {
   PF_PID=$!
   trap 'kill "${PF_PID:-}" 2>/dev/null || true' EXIT INT TERM
 
-  # Wait for port to open (max 15s). Use an assignment, not ((i++)) — under `set -e`
+  # Wait for port to open (max 15s). Use an assignment, not ((i++)) - under `set -e`
   # ((i++)) returns non-zero when i is 0 and would abort on the first iteration.
   local i=0
   while ! python3 -c "import socket; s=socket.create_connection(('127.0.0.1',8080),0.25); s.close()" 2>/dev/null; do
@@ -667,7 +667,7 @@ case "${1:-}" in
   start)
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-      echo "vicegerent start — start the Kind cluster, then bring up the host ToolHive stack"
+      echo "vicegerent start - start the Kind cluster, then bring up the host ToolHive stack"
       echo "  1. docker start <selected-kind-cluster>-control-plane   (start the Kind node container)"
       echo "  2. ./vicegerent mcp start                   (host-package preflight + ToolHive workloads + supervised services)"
       echo "  Extra args pass through to 'vicegerent mcp start' (e.g. --operator-vmcp or --caffeinate)."
@@ -695,8 +695,8 @@ case "${1:-}" in
   stop)
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-      echo "vicegerent stop — stop the host ToolHive stack, then stop the Kind cluster"
-      echo "  1. ./vicegerent mcp stop                    (tears down every supervised process — vMCP, ghostunnel, rclone-s3, health-watch, caffeinate — and stops the ToolHive workloads)"
+      echo "vicegerent stop - stop the host ToolHive stack, then stop the Kind cluster"
+      echo "  1. ./vicegerent mcp stop                    (tears down every supervised process - vMCP, ghostunnel, rclone-s3, health-watch, caffeinate - and stops the ToolHive workloads)"
       echo "  2. docker stop <selected-kind-cluster>-control-plane     (stop the Kind node container to free CPU)"
       exit 0
     fi
@@ -744,7 +744,7 @@ case "${1:-}" in
       mcp)
         shift
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-          echo "vicegerent setup mcp — set up all host-side MCP prerequisites, then configure servers"
+          echo "vicegerent setup mcp - set up all host-side MCP prerequisites, then configure servers"
           echo "  Reconciles exact Homebrew package versions and the native Vicegerent notification helper,"
           echo "  the locked repository Python environment and thv secrets provider, then walks you through enabling/skipping each"
           echo "  MCP server and setting its secrets."
@@ -768,7 +768,7 @@ case "${1:-}" in
   install)
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-      echo "vicegerent install — (re-)install the platform via the staged Helm reconciler"
+      echo "vicegerent install - (re-)install the platform via the staged Helm reconciler"
       echo "  Idempotent: reads stages/stages.yaml (control plane) + values.yaml (machine plane)"
       echo "  and runs helm upgrade --install --wait per stage. Copy values.example.yaml to"
       echo "  values.yaml first, and seed secrets with 'vicegerent setup secrets platform'."
@@ -783,7 +783,7 @@ case "${1:-}" in
   logs)
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-      echo "vicegerent logs — port-forward VictoriaLogs and open its dashboard"
+      echo "vicegerent logs - port-forward VictoriaLogs and open its dashboard"
       exit 0
     fi
     [[ $# -eq 0 ]] || { echo "vicegerent logs takes no arguments" >&2; exit 2; }
@@ -819,7 +819,7 @@ case "${1:-}" in
   creds)
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-      echo "vicegerent creds <agent-name> — print credentials and dashboard URL"
+      echo "vicegerent creds <agent-name> - print credentials and dashboard URL"
       exit 0
     fi
     [[ $# -ge 1 ]] || { echo "usage: vicegerent creds <agent-name>" >&2; exit 2; }
@@ -893,7 +893,7 @@ EOF
       gateway)
         shift
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-          echo "vicegerent test gateway [keyword] — probe MCP endpoints (auto port-forwards agentgateway, requires the host MCP stack running)"
+          echo "vicegerent test gateway [keyword] - probe MCP endpoints (auto port-forwards agentgateway, requires the host MCP stack running)"
           echo "  no keyword: sample ranked tool-discovery results per backend"
           echo "  keyword:    search find_tool for matching tools (e.g. 'kubernetes', 'context', 'notion')"
           exit 0
@@ -903,7 +903,7 @@ EOF
       policies)
         shift
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-          echo "vicegerent test policies — run MCP policy enforcement tests (auto port-forwards agentgateway, requires the host MCP stack running)"
+          echo "vicegerent test policies - run MCP policy enforcement tests (auto port-forwards agentgateway, requires the host MCP stack running)"
           exit 0
         fi
         run_with_portforward "$REPO_ROOT/scripts/test-mcp-policies.sh" "$@"
@@ -911,7 +911,7 @@ EOF
       egress)
         shift
         if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-          echo "vicegerent test egress <agent-name> — run the egress-proxy redaction/enforcement tests against a running agent sandbox"
+          echo "vicegerent test egress <agent-name> - run the egress-proxy redaction/enforcement tests against a running agent sandbox"
           exit 0
         fi
         [[ $# -ge 1 ]] || { echo "usage: vicegerent test egress <agent-name>" >&2; exit 2; }
@@ -952,7 +952,7 @@ EOF
     case "${1:-}" in
       --help|-h|"")
         cat <<EOF
-${B}vicegerent mcp${N} — host-side ToolHive/vMCP stack controller
+${B}vicegerent mcp${N} - host-side ToolHive/vMCP stack controller
 
   ${C}configure${N}             interactively enable/skip each server + set its secrets
   ${C}enable${N} KEY            enable a server (persists; started on next start)
@@ -978,7 +978,7 @@ EOF
   tui)
     shift
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-      echo "vicegerent tui — open the interactive host stack dashboard (textual)"
+      echo "vicegerent tui - open the interactive host stack dashboard (textual)"
       exit 0
     fi
     mcp_py tui "$@"

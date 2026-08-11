@@ -8,7 +8,7 @@
 # sets are fixed AWS facts, hardcoded here (no cluster-var).
 #
 # WHY THIS IS REQUIRED: READ_OPERATIONS_ONLY only blocks operations AWS
-# classifies IsWrite=true. It does NOT stop credential/secret reads — and
+# classifies IsWrite=true. It does NOT stop credential/secret reads - and
 # the aws-api-mcp-server's own custom-readonly list even FORCE-ALLOWS several
 # credential minters (eks get-token, ecr get-login-password,
 # rds generate-db-auth-token, s3 presign, codeartifact/codecommit creds, ...).
@@ -21,12 +21,12 @@
 # reclassification or gate regression can't reopen the hole).
 #
 # Residual gaps (documented, not closed here): the AIRTIGHT complement is the
-# AWS profile/permission-set's own IAM — deny secretsmanager:GetSecretValue,
+# AWS profile/permission-set's own IAM - deny secretsmanager:GetSecretValue,
 # ssm:GetParameter* on SecureString, ecr:GetAuthorizationToken, eks:* token
 # paths, sts:AssumeRole*, kms:Decrypt, etc. The IsWrite=false universe is huge
 # and enumerated at runtime from a live AWS document, so a token denylist can't
 # cover the long tail (any future get-*-token / get-*-credentials, or a
-# describe-* that returns embedded env vars / user-data / connection strings —
+# describe-* that returns embedded env vars / user-data / connection strings -
 # e.g. lambda get-function, cloudformation get-template, ecs
 # describe-task-definition, ec2 describe-instance-attribute --attribute userData).
 # A wildcard/bulk enumeration (e.g. ssm get-parameters-by-path --recursive) also

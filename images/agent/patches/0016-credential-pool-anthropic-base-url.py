@@ -94,7 +94,7 @@ import sys
 APPLIED_MARKER = "Vicegerent patch 0016"
 
 # ===========================================================================
-# Part 1 — agent/credential_pool.py: don't seed a stale hardcoded host when
+# Part 1 - agent/credential_pool.py: don't seed a stale hardcoded host when
 # a gateway override is configured
 # ===========================================================================
 
@@ -124,7 +124,7 @@ CP_REPLACEMENT = (
 )
 
 # ===========================================================================
-# Part 2 — run_agent.py: self-heal already-persisted stale entries at lease
+# Part 2 - run_agent.py: self-heal already-persisted stale entries at lease
 # time instead of trusting the raw pool entry field unconditionally
 # ===========================================================================
 
@@ -166,14 +166,14 @@ def _patch_credential_pool() -> None:
         src = f.read()
 
     if APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return
 
     count = src.count(CP_ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 seed-time base_url anchor in {path}, "
-            f"found {count} (upstream drifted — re-verify)"
+            f"found {count} (upstream drifted - re-verify)"
         )
 
     src = src.replace(CP_ANCHOR, CP_REPLACEMENT, 1)
@@ -198,14 +198,14 @@ def _patch_run_agent() -> None:
         src = f.read()
 
     if APPLIED_MARKER in src:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return
 
     count = src.count(RA_ANCHOR)
     if count != 1:
         raise SystemExit(
             f"patch: expected exactly 1 _swap_credential anchor in {path}, "
-            f"found {count} (upstream drifted — re-verify)"
+            f"found {count} (upstream drifted - re-verify)"
         )
 
     src = src.replace(RA_ANCHOR, RA_REPLACEMENT, 1)

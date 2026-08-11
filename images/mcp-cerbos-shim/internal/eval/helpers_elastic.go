@@ -18,7 +18,7 @@ func init() {
 // Elastic (Kibana Agent Builder) tool call would touch as a single lowercased
 // `targets` list, so resource_elastic.yaml can deny any call whose target
 // matches a denied index token (${elasticDeniedIndexPatterns}) with one
-// .exists() check — the same list-attr shape linearProjectAttr introduced.
+// .exists() check - the same list-attr shape linearProjectAttr introduced.
 //
 // The tools name their target in several arg shapes, so one generic helper
 // covers all of them (mapping.yaml maps only the data-access tools to it):
@@ -37,7 +37,7 @@ func init() {
 // Every value is lowercased (Elasticsearch index names are lowercase, and a NL
 // query saying "Snowflake" still matches) and only non-empty values are
 // appended. A call with no target arg at all yields no `targets` key, so the
-// has()-guarded deny rule simply falls through to allow — never denies on a
+// has()-guarded deny rule simply falls through to allow - never denies on a
 // missing signal, matching linearIssueAttr/linearProjectAttr's
 // fail-open-when-unverifiable posture (not every helper in this shim: e.g.
 // awsSecretReadAttr and urlIsInternalTarget fail closed on unverifiable

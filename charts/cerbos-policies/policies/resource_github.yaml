@@ -9,26 +9,26 @@
 # create/update_pull_request call that sets reviewers (see below); allow
 # everything else. The shim maps every repo-bearing GitHub tool to this
 # resource, carrying owner+repo (always populated) and branch (populated only
-# for push_files/create_or_update_file/create_branch — the tools that write or
+# for push_files/create_or_update_file/create_branch - the tools that write or
 # name a branch directly; everything else, including create_pull_request's
-# base/head, resolves to ''). Opening a PR against main is not blocked here —
+# base/head, resolves to ''). Opening a PR against main is not blocked here -
 # that's normal and doesn't write to the branch. Do NOT add tools here to
 # permit them; that belongs in the vMCP tools allowlist.
 #
 # pull_request_review_write (review submissions/approvals, inline pending-
 # review comments via add_comment_to_pending_review, and the resolve_thread/
 # unresolve_thread methods that structurally bypassed the owner/repo
-# allowlist below) is no longer in the tool surface at all — the operator
+# allowlist below) is no longer in the tool surface at all - the operator
 # does not want the bot leaving ANY comment/review text on a PR, so the whole
 # capability was removed at the source (toolhive-servers.json / mapping.yaml)
 # rather than partially enforced here. The deny-approve and
 # deny-resolve-thread rules that used to key off that tool's event/method
-# attrs are gone with it — they can never fire against a tool that doesn't
+# attrs are gone with it - they can never fire against a tool that doesn't
 # exist, so keeping them as "defense in depth" would just be dead code.
 #
 # create_pull_request/update_pull_request's reviewers arg (GitHub
 # usernames or ORG/team-slug reviewers to request) is the actual PR analog
-# of an "assignee" — a PR has no separate assignees concept at all
+# of an "assignee" - a PR has no separate assignees concept at all
 # (assignees only exists on issue_write, which isn't in this tool allowlist
 # to begin with, since this operator uses GitHub for PRs only). Rather than
 # build an allowlist for a capability the operator explicitly isn't sure

@@ -1,7 +1,7 @@
 ---
 # grafana_datasource policy: deny reads targeting any denied datasource
 # (${grafanaDeniedDatasourceUids}/${grafanaDeniedDatasourceNames}, from
-# policy.dataAccess.grafana — matched by uid or name, CEL-list-ready
+# policy.dataAccess.grafana - matched by uid or name, CEL-list-ready
 # same as githubAllowedRepos/linearAllowedTeams); allow everything else. A `*`
 # in either denylist denies every datasource so a starter can fail closed. The
 # shim maps every datasource-bearing Grafana tool to this resource, carrying

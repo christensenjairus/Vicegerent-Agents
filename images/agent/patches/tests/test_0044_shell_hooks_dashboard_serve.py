@@ -42,7 +42,7 @@ def _gate_sets(path: str) -> dict:
     missing = {"_AGENT_COMMANDS", "_AGENT_SUBCOMMANDS"} - set(found)
     if missing:
         raise AssertionError(
-            f"could not find {sorted(missing)} in {path} — upstream refactored "
+            f"could not find {sorted(missing)} in {path} - upstream refactored "
             "the _prepare_agent_startup() gate; re-verify patch 0044"
         )
     return found
@@ -55,14 +55,14 @@ def check_gate(path: str) -> None:
 
     for cmd in MUST_PASS:
         assert cmd in agent_commands, (
-            f"{cmd!r} does not pass the _prepare_agent_startup() gate — shell "
+            f"{cmd!r} does not pass the _prepare_agent_startup() gate - shell "
             f"hooks will silently never register for it. _AGENT_COMMANDS="
             f"{sorted(str(c) for c in agent_commands)}"
         )
 
     for cmd in MUST_NOT_PASS:
         assert cmd not in agent_commands, (
-            f"{cmd!r} unexpectedly passes the bare-command gate — patch 0044 "
+            f"{cmd!r} unexpectedly passes the bare-command gate - patch 0044 "
             "must not widen it beyond dashboard/serve (management commands "
             "would pay plugin discovery and trigger hook-consent prompts)"
         )
@@ -89,7 +89,7 @@ def check_hook_dispatch() -> None:
         from hermes_cli.plugins import has_hook, invoke_hook
     except ImportError as exc:  # pragma: no cover - env guard
         raise AssertionError(
-            f"failed to import Hermes hook machinery — run this inside the "
+            f"failed to import Hermes hook machinery - run this inside the "
             f"agent image with /opt/hermes importable: {exc}"
         )
 
@@ -123,7 +123,7 @@ def check_hook_dispatch() -> None:
         specs = register_from_config(config, accept_hooks=False)
         assert specs, (
             "register_from_config() registered nothing with hooks_auto_accept "
-            "set and accept_hooks=False — headless consent path is broken"
+            "set and accept_hooks=False - headless consent path is broken"
         )
         assert has_hook("post_tool_call"), (
             "post_tool_call has no registered listener after registration"
@@ -141,7 +141,7 @@ def check_hook_dispatch() -> None:
             asyncio.run(result)
 
         assert sentinel.exists(), (
-            "the matched post_tool_call hook did not execute — invoke_hook "
+            "the matched post_tool_call hook did not execute - invoke_hook "
             "dispatched nothing to the registered shell script"
         )
 
@@ -159,7 +159,7 @@ def check_hook_dispatch() -> None:
             asyncio.run(result)
         assert not sentinel.exists(), (
             "the hook fired for tool_name='terminal' despite a "
-            "matcher of 'skill_manage' — matcher is not being honored"
+            "matcher of 'skill_manage' - matcher is not being honored"
         )
 
     print("  ok  dispatch: hook registers headless, fires on match, ignores non-match")
@@ -182,7 +182,7 @@ def check_sync_script_contract() -> None:
         json.loads(proc.stdout.strip() or "null")
     except json.JSONDecodeError as exc:
         raise AssertionError(
-            f"{path} stdout is not valid JSON ({exc}) — the post_tool_call "
+            f"{path} stdout is not valid JSON ({exc}) - the post_tool_call "
             f"wire protocol will log a warning on every skill_manage call. "
             f"stdout was: {proc.stdout!r}"
         )

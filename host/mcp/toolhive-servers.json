@@ -4,10 +4,10 @@
   "servers": [
     {
       "name": "kubernetes",
-      "description": "Read-only Kubernetes access \u2014 inspect resources, pods, logs, and Helm releases across the local kind cluster and, via an exec-plugin kubeconfig, a real EKS cluster.",
+      "description": "Read-only Kubernetes access - inspect resources, pods, logs, and Helm releases across the local kind cluster and, via an exec-plugin kubeconfig, a real EKS cluster.",
       "enabled": false,
       "type": "registry",
-      "registry": "harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server:v0.2.3",
+      "registry": "harbor.hahomelabs.com/vicegerent/kubernetes-mcp-server:v0.2.4",
       "transport": "stdio",
       "server_args": ["--read-only","--toolsets=config,core,helm"],
       "kind_cluster": "${KIND_CLUSTER}",
@@ -36,7 +36,7 @@
     },
     {
       "name": "gitlab",
-      "description": "GitLab issues and merge-request lifecycle (create/update/review/labels, pipeline status/logs, retry a failed job) \u2014 the MR-object actions that plain git over SSH can't do, short of leaving comments.",
+      "description": "GitLab issues and merge-request lifecycle (create/update/review/labels, pipeline status/logs, retry a failed job) - the MR-object actions that plain git over SSH can't do, short of leaving comments.",
       "enabled": false,
       "type": "npx",
       "package": "@zereight/mcp-gitlab@2.1.46",
@@ -76,7 +76,7 @@
     },
     {
       "name": "github",
-      "description": "GitHub pull-request lifecycle \u2014 inspect and manage PRs (routine git goes over SSH, not MCP).",
+      "description": "GitHub pull-request lifecycle - inspect and manage PRs (routine git goes over SSH, not MCP).",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/github/github-mcp-server:v1.8.0",
@@ -133,7 +133,7 @@
     },
     {
       "name": "notion",
-      "description": "Notion workspace \u2014 search and read pages, comments, teams, and users, and create/update pages and comments.",
+      "description": "Notion workspace - search and read pages, comments, teams, and users, and create/update pages and comments.",
       "enabled": false,
       "type": "remote",
       "registry": "notion-remote",
@@ -149,7 +149,7 @@
     },
     {
       "name": "linear",
-      "description": "Linear issue and project tracking \u2014 issues, comments, projects, labels, statuses, teams, users, and docs (read+write, no deletes).",
+      "description": "Linear issue and project tracking - issues, comments, projects, labels, statuses, teams, users, and docs (read+write, no deletes).",
       "enabled": false,
       "type": "remote",
       "registry": "linear",
@@ -167,7 +167,7 @@
     },
     {
       "name": "jira",
-      "description": "Jira issue tracking \u2014 direct issue reads plus scoped workflow writes (read+write, no deletes).",
+      "description": "Jira issue tracking - direct issue reads plus scoped workflow writes (read+write, no deletes).",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/sooperset/mcp-atlassian:0.23.0",
@@ -193,7 +193,7 @@
     },
     {
       "name": "grafana",
-      "description": "Grafana observability, read-only \u2014 search dashboards and datasources and query Prometheus, Loki, VictoriaLogs, asserts, and annotations.",
+      "description": "Grafana observability, read-only - search dashboards and datasources and query Prometheus, Loki, VictoriaLogs, asserts, and annotations.",
       "enabled": false,
       "type": "registry",
       "registry": "docker.io/grafana/mcp-grafana:1.0.0",
@@ -218,7 +218,7 @@
     },
     {
       "name": "grafana_secondary",
-      "description": "Secondary Grafana observability instance — same as 'grafana', pointed at its own instance via separate secrets.",
+      "description": "Secondary Grafana observability instance - same as 'grafana', pointed at its own instance via separate secrets.",
       "enabled": false,
       "type": "registry",
       "registry": "docker.io/grafana/mcp-grafana:1.0.0",
@@ -243,7 +243,7 @@
     },
     {
       "name": "alertmanager",
-      "description": "Prometheus Alertmanager \u2014 alerts, silences, alert groups, and status (read+write, including create/delete silence).",
+      "description": "Prometheus Alertmanager - alerts, silences, alert groups, and status (read+write, including create/delete silence).",
       "enabled": false,
       "type": "npx",
       "package": "mcp-alertmanager@2.1.1",
@@ -269,7 +269,7 @@
     },
     {
       "name": "alertmanager_secondary",
-      "description": "Secondary Prometheus Alertmanager instance — same as 'alertmanager', pointed at its own instance via a separate secret.",
+      "description": "Secondary Prometheus Alertmanager instance - same as 'alertmanager', pointed at its own instance via a separate secret.",
       "enabled": false,
       "type": "npx",
       "package": "mcp-alertmanager@2.1.1",
@@ -295,7 +295,7 @@
     },
     {
       "name": "pagerduty",
-      "description": "PagerDuty incident triage \u2014 read incidents, schedules, on-call, services, teams, users, and analytics, plus acknowledge/resolve/note on existing incidents (no incident creation).",
+      "description": "PagerDuty incident triage - read incidents, schedules, on-call, services, teams, users, and analytics, plus acknowledge/resolve/note on existing incidents (no incident creation).",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/stacklok/dockyard/uvx/pagerduty-mcp:1.1.0",
@@ -320,7 +320,7 @@
     },
     {
       "name": "pagerduty_secondary",
-      "description": "Secondary PagerDuty instance — same as 'pagerduty', authenticated against its own account via a separate secret.",
+      "description": "Secondary PagerDuty instance - same as 'pagerduty', authenticated against its own account via a separate secret.",
       "enabled": false,
       "type": "registry",
       "registry": "ghcr.io/stacklok/dockyard/uvx/pagerduty-mcp:1.1.0",
@@ -345,7 +345,7 @@
     },
     {
       "name": "elastic",
-      "description": "Elastic Agent Builder (Kibana) \u2014 read-only search and analysis over Elastic data.",
+      "description": "Elastic Agent Builder (Kibana) - read-only search and analysis over Elastic data.",
       "enabled": false,
       "type": "remote",
       "registry_from_param": "kibana_url",
@@ -388,10 +388,10 @@
     },
     {
       "name": "aws",
-      "description": "AWS access via aws-api-mcp-server \u2014 read-only, multi-profile AWS CLI execution (call_aws) and natural-language command suggestions across the operator's configured profiles.",
+      "description": "AWS access via aws-api-mcp-server - read-only, multi-profile AWS CLI execution (call_aws) and natural-language command suggestions across the operator's configured profiles.",
       "enabled": false,
       "type": "registry",
-      "registry": "harbor.hahomelabs.com/vicegerent/aws-api-mcp-server:v0.1.4",
+      "registry": "harbor.hahomelabs.com/vicegerent/aws-api-mcp-server:v0.1.5",
       "transport": "stdio",
       "env": {
         "READ_OPERATIONS_ONLY": "true",
@@ -419,11 +419,11 @@
     },
     {
       "name": "aws_profiles",
-      "description": "Hidden companion to the `aws` backend \u2014 lists the available AWS profile names so the agent knows which --profile values call_aws accepts (enabled/disabled together with aws, never configured on its own).",
+      "description": "Hidden companion to the `aws` backend - lists the available AWS profile names so the agent knows which --profile values call_aws accepts (enabled/disabled together with aws, never configured on its own).",
       "enabled": false,
       "companion_of": "aws",
       "type": "registry",
-      "registry": "harbor.hahomelabs.com/vicegerent/aws-profiles-mcp:v0.2.1",
+      "registry": "harbor.hahomelabs.com/vicegerent/aws-profiles-mcp:v0.2.2",
       "transport": "stdio",
       "network": {
         "none": true

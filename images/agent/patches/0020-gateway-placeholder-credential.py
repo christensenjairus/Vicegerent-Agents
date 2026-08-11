@@ -244,7 +244,7 @@ def _patch_runtime_provider() -> None:
     apply_anthropic = APPLIED_MARKER not in src
     apply_openai = OPENAI_MARKER not in src
     if not apply_anthropic and not apply_openai:
-        print(f"patch: already applied to {path} — no-op")
+        print(f"patch: already applied to {path} - no-op")
         return
 
     edits = []
@@ -265,7 +265,7 @@ def _patch_runtime_provider() -> None:
         if count != 1:
             raise SystemExit(
                 f"patch: expected exactly 1 {name} anchor in {path}, "
-                f"found {count} (upstream drifted — re-verify)"
+                f"found {count} (upstream drifted - re-verify)"
             )
         src = src.replace(anchor, replacement, 1)
 

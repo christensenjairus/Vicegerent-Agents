@@ -50,7 +50,7 @@ def _run(script: Path, canonical: Path, agents: Path, farm: Path):
         json.loads(proc.stdout.strip() or "null")
     except json.JSONDecodeError as exc:
         raise AssertionError(
-            f"stdout is not valid JSON ({exc}) — the post_tool_call wire "
+            f"stdout is not valid JSON ({exc}) - the post_tool_call wire "
             f"protocol warns on anything else. stdout={proc.stdout!r}"
         )
     return proc
@@ -96,7 +96,7 @@ def main() -> int:
 
         adopted = canonical / "harness-authored" / "claude-authored"
         assert adopted.is_symlink(), (
-            "a Claude-authored skill was not adopted into the canonical tree — "
+            "a Claude-authored skill was not adopted into the canonical tree - "
             "Codex/OpenCode would never see it"
         )
         assert (adopted / "SKILL.md").exists(), "adopted link does not resolve"
