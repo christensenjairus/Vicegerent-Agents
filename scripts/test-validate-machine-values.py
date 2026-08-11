@@ -142,6 +142,73 @@ def test_reports_structural_shape_errors_without_cross_field_tracebacks() -> Non
         assert "Traceback" not in result.stderr
 
 
+def test_validates_webhook_toolsets_and_route_options() -> None:
+    valid = validate(
+        {
+            "agents": [
+                {
+                    "name": "valid-agent",
+                    "webhooks": {
+                        "enabled": True,
+                        "toolsets": ["terminal", "file", "vmcp"],
+                        "routes": {
+                            "incidents": {
+                                "provider": "pagerduty",
+                                "events": ["incident.triggered"],
+                                "skills": ["production-alert-auditing"],
+                                "filters": {"field": "payload.event.data.urgency", "equals": "high"},
+                                "script": "normalize-pagerduty.py",
+                                "deliver": "slack",
+                                "deliver_extra": {"chat_id": "D0123456789"},
+                                "deliver_only": False,
+                            }
+                        },
+                    },
+                }
+            ]
+        }
+    )
+    assert valid.returncode == 0, valid.stderr
+
+    invalid = validate(
+        {
+            "agents": [
+                {
+                    "name": "valid-agent",
+                    "webhooks": {
+                        "enabled": True,
+                        "toolsets": ["terminal", 1],
+                        "routes": {
+                            "incidents": {
+                                "provider": "pagerduty",
+                                "skills": "production-alert-auditing",
+                                "unexpected": True,
+                            }
+                        },
+                    },
+                }
+            ]
+        }
+    )
+    assert invalid.returncode == 1
+    assert "agents[0].webhooks.toolsets: expected list of strings" in invalid.stderr
+    assert "agents[0].webhooks.routes.incidents.skills: expected list of strings" in invalid.stderr
+    assert "agents[0].webhooks.routes.incidents.unexpected: unknown key" in invalid.stderr
+
+    obsolete = validate(
+        {
+            "agents": [
+                {
+                    "name": "valid-agent",
+                    "webhooks": {"unrestricted": True},
+                }
+            ]
+        }
+    )
+    assert obsolete.returncode == 1
+    assert "agents[0].webhooks.unrestricted: unknown key" in obsolete.stderr
+
+
 def test_accepts_the_starter_contract() -> None:
     result = subprocess.run(
         [
@@ -168,6 +235,7 @@ def main() -> int:
     test_rejects_invalid_default_ssh_host_contracts()
     test_rejects_invalid_content_safety_statuses()
     test_reports_structural_shape_errors_without_cross_field_tracebacks()
+    test_validates_webhook_toolsets_and_route_options()
     test_accepts_the_starter_contract()
     print("OK - merged machine-values configuration contract")
     return 0

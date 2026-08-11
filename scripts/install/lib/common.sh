@@ -7,6 +7,8 @@
 
 # shellcheck source=../../lib/cli-ui.sh
 source "$REPO_ROOT/scripts/lib/cli-ui.sh"
+# shellcheck source=webhooks.sh
+source "$REPO_ROOT/scripts/install/lib/webhooks.sh"
 
 info() { ui_info "$@"; }
 step() { ui_section "$@"; }
@@ -70,9 +72,25 @@ require_secret() {
     || die "missing Secret ${ns}/${name} - run: ${hint}"
 }
 
+require_secret_key() {
+  local ns="$1" name="$2" key="$3" hint="$4" value
+  value="$(kc -n "$ns" get secret "$name" -o "jsonpath={.data.${key}}" 2>/dev/null || true)"
+  [[ -n "$value" ]] \
+    || die "missing non-empty Secret key ${ns}/${name}:${key} - run: ${hint}"
+}
+
 preflight_controller_secrets() {
   local hint="./vicegerent setup secrets platform"
   require_secret cerbos mcp-cerbos-shim-self-token "$hint"
+  collect_webhook_routes "$VALUES_FILE" "$DEFAULTS_FILE" \
+    || die "invalid webhook configuration in $VALUES_FILE"
+  if [[ "$WEBHOOKS_ENABLED" == "1" ]]; then
+    require_secret_key webhooks vicegerent-ngrok-authtoken authtoken "$hint"
+    local key
+    for key in "${WEBHOOK_SECRET_KEYS[@]}"; do
+      require_secret_key webhooks vicegerent-webhook-secrets "$key" "$hint"
+    done
+  fi
   info "Controller secrets present."
 }
 
@@ -133,7 +151,7 @@ validate_values_schema() {
 preflight_agent_secrets() {
   local n
   while IFS= read -r n; do
-    require_secret agent-sandbox "${n}-secrets" "./vicegerent setup secrets agent ${n}"
+    require_secret agent-sandbox "${n}-secrets" "./vicegerent setup secrets"
   done < <(yq -r '.agents[].name' "$VALUES_FILE")
   info "Agent secrets present."
 }

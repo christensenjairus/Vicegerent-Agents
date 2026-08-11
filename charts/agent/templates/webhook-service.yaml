@@ -1,0 +1,16 @@
+{{- if .Values.webhooks.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vicegerent-agent.name" . }}-webhook
+  namespace: agent-sandbox
+spec:
+  type: ClusterIP
+  selector:
+    vicegerent.io/dashboard: {{ include "vicegerent-agent.name" . }}
+  ports:
+    - name: webhook
+      port: 8644
+      targetPort: webhook
+{{- end }}

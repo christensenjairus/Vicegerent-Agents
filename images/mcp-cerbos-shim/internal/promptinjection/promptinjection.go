@@ -23,7 +23,12 @@
 // checkPromptInjection/CheckResponse wiring, not in this package.
 package promptinjection
 
-import "regexp"
+import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"regexp"
+)
 
 // injectionPattern is one named, independently-testable entry in the
 // stage-1 detection registry -- mirrors secretPatternRegistry's shape
@@ -34,7 +39,8 @@ type injectionPattern struct {
 	re   *regexp.Regexp
 }
 
-// InjectionPatternRegistry is the list every stage-1 Detect call walks.
+// InjectionPatternRegistry is compiled from the embedded canonical patterns.json
+// list that every stage-1 Detect call walks.
 // Exported (unlike secretPatternRegistry) so a future admin tool or test
 // fixture outside this package can enumerate known pattern names without
 // reaching into an unexported var.
@@ -46,62 +52,40 @@ type injectionPattern struct {
 // source file's own comments). That tradeoff is safe specifically because a
 // stage-1 match alone never blocks anything -- it only gates whether the
 // (comparatively expensive) stage-2 LLM judge runs at all. This list is NOT
-// exhaustive and isn't meant to be; add an entry whenever a new shape shows
-// up in practice (real traffic, red-team exercises, or a public writeup),
-// same "don't hold out for complete" posture as secretPatternRegistry.
-var InjectionPatternRegistry = []injectionPattern{
-	{
-		name: "ignore-instructions",
-		re: regexp.MustCompile(
-			`(?i)\b(ignore|disregard|forget|override)\s+(all\s+|any\s+)?(previous|prior|above|earlier|preceding|your)\s+(instructions?|prompts?|rules?|guidelines?)\b`,
-		),
-	},
-	{
-		name: "new-instructions",
-		re: regexp.MustCompile(
-			`(?i)\b(new|updated|real)\s+(instructions?|system\s+prompt|rules?)\s*[:.]`,
-		),
-	},
-	{
-		name: "jailbreak-mode",
-		re: regexp.MustCompile(
-			`(?i)\b(developer|DAN|god|jailbreak|unrestricted|unfiltered)\s+mode\b`,
-		),
-	},
-	{
-		name: "no-restrictions",
-		re: regexp.MustCompile(
-			`(?i)\b(act|pretend|behave)\s+as\s+(if\s+)?(you\s+)?(have\s+)?no\s+(restrictions?|rules?|guidelines?|limits?|filters?)\b`,
-		),
-	},
-	{
-		name: "you-are-now",
-		re:   regexp.MustCompile(`(?i)\byou\s+are\s+now\s+(a|an|in)\b`),
-	},
-	{
-		name: "reveal-system-prompt",
-		re: regexp.MustCompile(
-			`(?i)\b(reveal|print|show|output|repeat)\s+(your|the)\s+(system\s+prompt|instructions?|initial\s+prompt)\b`,
-		),
-	},
-	{
-		// A "system:"/"assistant:" line embedded inside externally-fetched
-		// tool content is inherently suspicious -- legitimate tool results
-		// don't normally contain chat-role-prefixed lines.
-		name: "embedded-system-role",
-		re:   regexp.MustCompile(`(?im)^\s*(system|assistant)\s*:\s*\S`),
-	},
-	{
-		name: "chat-template-tokens",
-		re:   regexp.MustCompile(`<\|(im_start|im_end|assistant|system|user)\|>|\[INST\]|\[/INST\]|<<SYS>>|<</SYS>>`),
-	},
-	{
-		name: "agent-hijack",
-		re: regexp.MustCompile(
-			`(?i)\b(AI|assistant|agent|model)\s*[,:]?\s*(please\s+)?(execute|run|call)\s+the\s+following\b`,
-		),
-	},
+// exhaustive and isn't meant to be; add a canonical JSON entry whenever a new
+// shape shows up in practice (real traffic, red-team exercises, or a public
+// writeup), same "don't hold out for complete" posture as secretPatternRegistry.
+//
+//go:embed patterns.json
+var patternDefinitionsJSON []byte
+
+type patternDefinition struct {
+	Name  string `json:"name"`
+	Regex string `json:"regex"`
 }
+
+func mustLoadPatternRegistry() []injectionPattern {
+	var definitions []patternDefinition
+	if err := json.Unmarshal(patternDefinitionsJSON, &definitions); err != nil {
+		panic(fmt.Sprintf("parse embedded prompt-injection patterns: %v", err))
+	}
+	if len(definitions) == 0 {
+		panic("embedded prompt-injection pattern registry is empty")
+	}
+	registry := make([]injectionPattern, 0, len(definitions))
+	for _, definition := range definitions {
+		if definition.Name == "" || definition.Regex == "" {
+			panic("embedded prompt-injection pattern has an empty name or regex")
+		}
+		registry = append(registry, injectionPattern{
+			name: definition.Name,
+			re:   regexp.MustCompile(definition.Regex),
+		})
+	}
+	return registry
+}
+
+var InjectionPatternRegistry = mustLoadPatternRegistry()
 
 // Detector reports whether s contains a known injection shape. Production
 // uses *RegexDetector; tests substitute a stub. This is the stage-1

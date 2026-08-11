@@ -840,6 +840,7 @@ RUN chmod +x /usr/local/bin/migrate-hermes-home \
 # order.txt, so a new patch cannot be silently skipped.
 RUN --mount=type=bind,source=patches,target=/tmp/patches \
     /opt/hermes/.venv/bin/python /tmp/patches/tests/test_0052_agent_runtime_identity.py \
+    && /opt/hermes/.venv/bin/python /tmp/patches/tests/test_0053_trusted_webhook_proxy.py \
     && sh /tmp/patches/apply-patches.sh /tmp/patches /opt/hermes/.venv/bin/python \
     && cp -a /opt/hermes/docker/s6-rc.d/. /etc/s6-overlay/s6-rc.d/ \
     && cp -a /opt/hermes/docker/cont-init.d/015-supervise-perms /etc/cont-init.d/015-supervise-perms \

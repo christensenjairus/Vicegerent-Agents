@@ -1,0 +1,65 @@
+{{- if eq (include "vicegerent-webhook-listener.enabled" .) "true" }}
+{{- if not (regexMatch `^https://[A-Za-z0-9.-]+$` .Values.webhooks.publicUrl) }}
+{{- fail "webhook-listener: webhooks.publicUrl must be an HTTPS origin with no path, query, fragment, credentials, or trailing slash" }}
+{{- end }}
+{{- $routes := list }}
+{{- $seen := dict }}
+{{- range $rawAgent := .Values.agents }}
+{{- $agent := mergeOverwrite (deepCopy $.Values.agentDefaults) (deepCopy $rawAgent) }}
+{{- if $agent.webhooks.enabled }}
+{{- if or (not (regexMatch `^[a-z][a-z0-9-]{0,62}$` $agent.name)) (contains "--" $agent.name) }}
+{{- fail (printf "webhook-listener: agent name %q must match ^[a-z][a-z0-9-]{0,62}$ without consecutive hyphens" $agent.name) }}
+{{- end }}
+{{- $activeRoutes := 0 }}
+{{- range $routeName, $rawRoute := $agent.webhooks.routes }}
+{{- if not (kindIs "map" $rawRoute) }}
+{{- fail (printf "webhook-listener: %s route %q must be a YAML map" $agent.name $routeName) }}
+{{- end }}
+{{- $routeEnabled := true }}
+{{- if hasKey $rawRoute "enabled" }}
+{{- if not (kindIs "bool" (get $rawRoute "enabled")) }}
+{{- fail (printf "webhook-listener: %s/%s enabled must be a boolean" $agent.name $routeName) }}
+{{- end }}
+{{- $routeEnabled = get $rawRoute "enabled" }}
+{{- end }}
+{{- if $routeEnabled }}
+{{- $activeRoutes = add1 $activeRoutes }}
+{{- if or (not (regexMatch `^[a-z][a-z0-9-]{0,62}$` $routeName)) (contains "--" $routeName) }}
+{{- fail (printf "webhook-listener: route name %q must match ^[a-z][a-z0-9-]{0,62}$ without consecutive hyphens" $routeName) }}
+{{- end }}
+{{- $provider := get $rawRoute "provider" }}
+{{- if not (has $provider (list "github" "gitlab" "pagerduty" "svix" "generic-v2" "alertmanager")) }}
+{{- fail (printf "webhook-listener: %s/%s provider %q is unsupported" $agent.name $routeName $provider) }}
+{{- end }}
+{{- range $forbidden := list "secretRef" "secret" "secret_env" "secretFile" "targetURL" "trusted_proxy" "signature_provider" }}
+{{- if hasKey $rawRoute $forbidden }}
+{{- fail (printf "webhook-listener: %s/%s must not set internal field %s" $agent.name $routeName $forbidden) }}
+{{- end }}
+{{- end }}
+{{- $path := printf "/webhooks/%s/%s" $agent.name $routeName }}
+{{- if hasKey $seen $path }}
+{{- fail (printf "webhook-listener: duplicate route path %s" $path) }}
+{{- end }}
+{{- $_ := set $seen $path true }}
+{{- $target := printf "http://%s-webhook.agent-sandbox.svc.cluster.local:8644/webhooks/%s" $agent.name $routeName }}
+{{- $secretFile := printf "%s__%s" $agent.name $routeName }}
+{{- $routes = append $routes (dict "agent" $agent.name "route" $routeName "provider" $provider "secretFile" $secretFile "targetURL" $target) }}
+{{- end }}
+{{- end }}
+{{- if eq (int $activeRoutes) 0 }}
+{{- fail (printf "webhook-listener: agent %s enables webhooks but has no enabled routes" $agent.name) }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webhook-listener
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: webhook-listener
+data:
+  routes.json: |
+    {{ dict "routes" $routes | toPrettyJson | nindent 4 }}
+{{- end }}

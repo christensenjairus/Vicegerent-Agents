@@ -13,8 +13,7 @@ $EDITOR values.yaml
 ./vicegerent setup cluster
 
 export ANTHROPIC_API_KEY=***
-./vicegerent setup secrets platform
-./vicegerent setup secrets agent <name>
+./vicegerent setup secrets
 
 ./vicegerent install
 
@@ -39,6 +38,8 @@ Each person runs their own clone against their own laptop and their own local Ki
 cp values.example.yaml values.yaml
 $EDITOR values.yaml
 ```
+
+When the default `values.yaml` is absent, interactive setup and install commands show a yellow warning before offering the committed `examples/*.yaml` profiles. Passing an explicit missing `--values` path still fails instead of falling back to an example.
 
 Every setting carries an inline comment in `values.defaults.yaml`; review these starter fields before installing:
 
@@ -105,13 +106,13 @@ MCP-server API keys are the exception: they are `thv` (ToolHive) secrets on the 
 
 ### External API keys and MCP credentials
 
-Configure model-provider keys with `./vicegerent setup secrets platform`; set an environment variable before running it to avoid its prompt. Configure an MCP backend with `./vicegerent setup mcp`; it interactively enables only the backends you choose and writes their credentials as host-side `thv` secrets. Do not put either kind of secret in `values.yaml`.
+Configure model-provider keys with `./vicegerent setup secrets`; it prompts only for providers enabled by the selected values profile, and an environment variable avoids each prompt. Configure an MCP backend with `./vicegerent setup mcp`; it interactively enables only the backends you choose and writes their credentials as host-side `thv` secrets. Do not put either kind of secret in `values.yaml`.
 
 #### Model providers
 
 | Provider | Environment variable | Required? | What it enables | Configuration when omitted |
 |---|---|---|---|---|
-| Anthropic | `ANTHROPIC_API_KEY` | **Required by the current platform-secret setup script.** The default agent and platform configuration also select Anthropic. | Claude models, Claude Code, and Anthropic-backed Hermes/Mnemosyne/MoA routes. | To use a different primary provider, update the relevant `agents[].providers`, `mnemosyne`, `failover`, `moa`, harness, and `models` values so no configured route selects Anthropic. `setup secrets platform` still currently prompts for this key even then. |
+| Anthropic | `ANTHROPIC_API_KEY` | **Required by the current secrets setup script.** The default agent and platform configuration also select Anthropic. | Claude models, Claude Code, and Anthropic-backed Hermes/Mnemosyne/MoA routes. | To use a different primary provider, update the relevant `agents[].providers`, `mnemosyne`, `failover`, `moa`, harness, and `models` values so no configured route selects Anthropic. `setup secrets` still currently prompts for this key even then. |
 | OpenAI | `OPENAI_API_KEY` | Optional unless an enabled agent/provider route or content-safety feature uses it. | GPT/Codex/OpenCode routes and the platform's content moderation and prompt-injection detection. | Set `agents[].providers.openai.enabled: false`, disable or retarget failover/MoA/harness configuration, and set `models.openai.enabled: false` if no agent uses OpenAI. Both content-safety features are OpenAI-only today, so leave `policy.contentSafety.moderation.status` and `promptInjection.status` disabled without this key. |
 | DeepSeek | `DEEPSEEK_API_KEY` | Optional. | DeepSeek's OpenAI-compatible model routes. | Both `models.deepseek.enabled` and `agents[].providers.deepseek.enabled` default to `false`; enable both when using it. |
 | Z.ai / GLM | `ZAI_API_KEY` | Optional. | Z.ai/GLM standard-metered, OpenAI-compatible model routes. | Both `models.zai.enabled` and `agents[].providers.zai.enabled` default to `false`; enable both when using it. |
@@ -142,16 +143,17 @@ See [`host/mcp/README.md`](../host/mcp/README.md#prerequisites) for the exact se
 
 ### Platform-wide
 
-Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, generates the SearXNG signing key, the mcp-cerbos-shim self-token, and the Velero S3 credentials, and applies the model API keys you supply. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start. The Velero `velero/velero-credentials` Secret is authoritative; the host rclone auth key is reconciled from it.
+Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, generates the SearXNG signing key, the mcp-cerbos-shim self-token, and the Velero S3 credentials, and applies the model API keys you supply. When `values.yaml` enables webhook routes, it also discovers their Secret references and applies the ngrok authtoken and signing secrets you supply. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start. The Velero `velero/velero-credentials` Secret is authoritative; the host rclone auth key is reconciled from it.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # set any key to apply it non-interactively
-./vicegerent setup secrets platform
+./vicegerent setup secrets
 ```
 
 ```text
--y, --yes     auto-approve every change (non-interactive)
---force       rebuild the ghostunnel CA and all certificates from scratch
+-y, --yes       auto-approve every change (non-interactive)
+--force         rebuild the ghostunnel CA and all certificates from scratch
+--values <file> select the machine profile and its agents
 ```
 
 This applies these Kubernetes Secrets (and one ConfigMap):
@@ -166,6 +168,8 @@ agentgateway-system  ghostunnel-ca (ConfigMap)     ca.crt                 (ghost
 agentgateway-system  ghostunnel-server             server.crt/key, ca.crt (host recovery copy)
 searxng              searxng-secret                secret_key             (session/limiter signing key)
 cerbos               mcp-cerbos-shim-self-token    token                  (shim's own re-entrant lookups)
+webhooks             vicegerent-ngrok-authtoken    authtoken              (shared ngrok tunnel, when configured)
+webhooks             vicegerent-webhook-secrets    <agent>__<route>       (one key per enabled route)
 egress-proxy         egress-proxy-ca               ca.crt, ca.key         (MITM CA private material)
 agent-sandbox        egress-proxy-ca-cert          ca.crt                 (MITM CA cert, trust only)
 velero               velero-credentials            cloud                  (rclone S3 SigV4 credentials)
@@ -177,10 +181,10 @@ The ghostunnel files under `~/.vicegerent/ghostunnel`: `ca.cert`, `ca.key`, `ser
 
 ### Per-agent
 
-Run once per named agent, using the name you gave it in `values.yaml`'s `agents:` list. Each agent gets its own independently generated dashboard credentials and SSH key - no material is shared between agents. Run this before `./vicegerent install`, or the install's agents-stage pre-flight will stop and point you here.
+`./vicegerent setup secrets` discovers every `agents[].name` in the selected values profile and provisions each agent's independently generated dashboard credentials and SSH key. Run it before `./vicegerent install`, or the install's agents-stage pre-flight will stop and point you here.
 
 ```bash
-./vicegerent setup secrets agent <name>   # accepts -y/--yes
+./vicegerent setup secrets --values examples/personal.yaml   # accepts -y/--yes
 ```
 
 This applies these Kubernetes Secrets in namespace `agent-sandbox` (agent `<name>`):
@@ -193,6 +197,137 @@ This applies these Kubernetes Secrets in namespace `agent-sandbox` (agent `<name
 ```
 
 Slack remains optional. If any Slack value is configured, all four Slack values are required: `SLACK_ALLOWED_USERS` must be exactly one Slack user ID (`U…` or `W…`), and `SLACK_HOME_CHANNEL` must be a direct-message channel ID (`D…`). The rendered Sandbox repeats this check at startup and rejects `SLACK_ALLOW_ALL_USERS`, `GATEWAY_ALLOWED_USERS`, and `GATEWAY_ALLOW_ALL_USERS` overrides that could broaden access.
+
+## Public webhook ingress
+
+Webhook ingress runs inside the cluster and shares one stable ngrok HTTPS origin across every agent and route. Reserve a static ngrok domain, set it once at `webhooks.publicUrl`, and configure provider metadata under each receiving agent. The public URL for a route is `<webhooks.publicUrl>/webhooks/<agent-name>/<route-name>`.
+
+```yaml
+webhooks:
+  publicUrl: https://your-domain.ngrok.app
+agents:
+  - name: my-first-agent
+    webhooks:
+      enabled: true
+      # Omit this list to inherit terminal, file, todo, and vmcp from
+      # agentDefaults.webhooks.toolsets in values.defaults.yaml. A per-agent
+      # list replaces that default for every webhook route on this agent.
+      toolsets: [terminal, file, todo, vmcp]
+      routes:
+        pagerduty-incidents:
+          provider: pagerduty
+          description: Investigate high-urgency PagerDuty incidents
+          events: [incident.triggered, incident.escalated, incident.resolved]
+          skills: [production-alert-auditing]
+          filters:
+            field: payload.event.data.urgency
+            equals: high
+          prompt: |-
+            PagerDuty event: {event.event_type}
+            Incident number {event.data.number}: {event.data.title}
+          deliver: slack
+          deliver_extra:
+            chat_id: D0123456789
+```
+
+Supported `provider` values are `pagerduty`, `github`, `gitlab`, `svix`, `alertmanager`, and `generic-v2`. Provider aliases and legacy body-only generic signatures are rejected. Route and agent names must be lowercase DNS-style names beginning with a letter. Normal agent routes are asynchronous and `respond` is unsupported. Do not add `secretRef`, `secret`, `secret_env`, `secretFile`, `targetURL`, `trusted_proxy`, or `signature_provider`; those are internal or forbidden fields. <!-- pragma: allowlist secret -->
+
+Each route also accepts `enabled`, `description`, `events`, `prompt`, `skills`, `filters`, `script`, `deliver`, `deliver_extra`, and `deliver_only`. `events` filters on the provider event type before an agent starts. `skills` names installed skills, and Hermes loads the first matching skill into the run. `filters` accepts one condition, a list whose conditions must all match, or an `all` / `any` / `not` expression. Filter fields can address `payload.<path>`, the normalized `event` or `event_type`, and `headers.<name>`; supported operators are `equals`, `not_equals`, `contains`, `exists`, `missing`, `in`, `in_file`, and `regex`. A non-match is acknowledged and ignored without starting an agent.
+
+`script` names a file beneath `$HERMES_HOME/scripts`. Hermes sends the payload as JSON on stdin before prompt rendering; JSON object output replaces the payload, text output becomes `script_output`, and empty output, `[SILENT]`, or a nonzero exit ignores the event. Shell suffixes run with Bash and other files run with Python. `deliver` selects the response destination and `deliver_extra` supplies destination-specific values such as `chat_id`, `repo`, or `pr_number`; string values in `deliver_extra` may use payload templates. `deliver_only: true` skips the agent and synchronously delivers the rendered prompt, so it requires a real non-`log` delivery target.
+
+Webhook permissions are set per agent rather than per route. The default allowlist in `agentDefaults.webhooks.toolsets` permits terminal, file, todo, and the configured `vmcp` MCP server, which supports incident investigation and `hermes send` while omitting browser, delegation, memory, and other unrelated capabilities. Set `agents[].webhooks.toolsets` in machine values to replace that list for all webhook sessions on one agent. Entries may be Hermes toolset names or configured MCP server names. An empty list disables all tools, including MCP access.
+
+Run platform-secret setup after saving these routes. It discovers every enabled route, prompts for its signing secret, and stores them as keys in the shared listener Secret. For a non-interactive run, use `WEBHOOK_SECRET_<AGENT>__<ROUTE>`; hyphens become underscores in the uppercase variable name. <!-- pragma: allowlist secret -->
+
+```bash
+export NGROK_AUTHTOKEN='<ngrok authtoken>'
+export WEBHOOK_SECRET_MY_FIRST_AGENT__PAGERDUTY_INCIDENTS='<PagerDuty signing secret>'
+./vicegerent setup secrets platform
+```
+
+The equivalent manual commands produce the same Secret shapes:
+
+```bash
+kubectl --context kind-vicegerent create namespace webhooks --dry-run=client -o yaml | kubectl --context kind-vicegerent apply -f -
+kubectl --context kind-vicegerent -n webhooks create secret generic vicegerent-ngrok-authtoken --from-literal=authtoken='<ngrok authtoken>'
+kubectl --context kind-vicegerent -n webhooks create secret generic vicegerent-webhook-secrets --from-literal=my-first-agent__pagerduty-incidents='<PagerDuty signing secret>'
+```
+
+Configure PagerDuty's webhook subscription URL as `https://your-domain.ngrok.app/webhooks/my-first-agent/pagerduty-incidents`. GitHub uses `X-Hub-Signature-256`, GitLab uses `X-Gitlab-Token`, Svix uses its `svix-*` headers, PagerDuty uses its rotation-aware `X-PagerDuty-Signature`, and generic V2 uses `X-Webhook-Signature-V2` plus `X-Webhook-Timestamp`. The listener rejects an invalid or replay-expired signature before forwarding and rereads the mounted signing Secret on every request, so rotating an existing route key does not copy material into or restart the agent.
+
+Alertmanager publishes no payload signature, so an `alertmanager` route is authenticated by a route-scoped credential that Alertmanager sends in the `Authorization` header. Store it as that route's key in the listener Secret and reference the same value from Alertmanager's receiver. The listener compares it in constant time and strips the header before the request reaches the agent.
+
+```yaml
+receivers:
+  - name: vicegerent
+    webhook_configs:
+      - url: https://your-domain.ngrok.app/webhooks/my-first-agent/alertmanager-alerts
+        http_config:
+          authorization:
+***            type: Bearer
+            credentials_file: /etc/alertmanager/vicegerent-token
+```
+
+### Rehearsing a route with dummy data
+
+Provider routes verify a real signature, so they cannot be exercised with an arbitrary curl body. Vicegerent does not generate test routes. If you want a rehearsal endpoint, explicitly add a second route such as `pagerduty-incidents-test` with `provider: generic-v2` and the prompt or other route options you want to exercise. The filled `examples/personal.yaml` and `examples/work.yaml` profiles define their own test twins, but that is machine-specific configuration rather than a platform default. After provisioning the additional route's secret, rehearse it before pointing the real provider at the production route:
+
+```bash
+ROUTE_SECRET='<the generic-v2 route secret>'
+BODY='{"event":{"event_type":"incident.triggered","data":{"number":42,"title":"Dummy incident","status":"triggered","urgency":"high","service":{"summary":"checkout-api"},"html_url":"https://example.pagerduty.com/incidents/DUMMY"}}}'
+TIMESTAMP="$(date +%s)"
+SIGNATURE="$(printf '%s.%s' "$TIMESTAMP" "$BODY" | openssl dgst -sha256 -hmac "$ROUTE_SECRET" -hex | awk '{print $2}')"
+
+curl -sS -X POST https://your-domain.ngrok.app/webhooks/my-first-agent/pagerduty-incidents-test \
+  -H 'Content-Type: application/json' \
+  -H "X-Webhook-Timestamp: $TIMESTAMP" \
+  -H "X-Webhook-Signature-V2: $SIGNATURE" \
+  --data-binary "$BODY"
+```
+
+The listener replies `202 Accepted` immediately and the agent delivers its findings to the route's configured channel. The signature covers `<timestamp>.<body>`, and the timestamp must be within five minutes, so sign the exact bytes you send and do not reuse an old signature. An explicitly configured `alertmanager-alerts-test` route works the same way with an Alertmanager-shaped body.
+
+The listener is a single replica because two processes cannot own the same ngrok endpoint concurrently. Its ngrok credential and signing material stay in the `webhooks` namespace. After authentication, every delivery passes through the dedicated `webhook-egress-proxy`, which redacts secret-shaped content before forwarding. Set `policy.contentSafety.promptInjection.status: enabled` to run the same two-stage prompt-injection detector used for MCP results over the redacted webhook body; confirmed injections and payloads that exhaust the 20-call verification budget are rejected, while judge-service failures fail open. The agent's port 8644 is a ClusterIP whose Cilium HTTP policy accepts only its configured `POST /webhooks/<route>` paths from that dedicated proxy. Agents have no egress to the listener or dedicated proxy, and the shared agent egress proxy cannot reach agent webhook ports. See [`images/webhook-listener/README.md`](../images/webhook-listener/README.md) for protocol and operational details.
+
+### Verify cross-agent isolation
+
+This negative test requires two different webhook-enabled agents in the same cluster. Do not use the source agent's own `<agent>-webhook` Service as the target: Kubernetes hairpins that Service back into the same pod, so it does not cross a Cilium endpoint boundary and does not test whether one agent can enter another agent's route. Set the three target variables to real configured names; if isolation regresses, the dummy request can enqueue a webhook session.
+
+```bash
+KUBE_CONTEXT="${VICEGERENT_KUBE_CONTEXT:-kind-vicegerent}"
+SOURCE_AGENT='source-agent'
+TARGET_AGENT='different-target-agent'
+TARGET_ROUTE='pagerduty-incidents'
+
+if [ "$SOURCE_AGENT" = "$TARGET_AGENT" ]; then
+  echo 'FAIL - SOURCE_AGENT and TARGET_AGENT must be different' >&2
+  exit 1
+fi
+
+SOURCE_POD="$(kubectl --context "$KUBE_CONTEXT" -n agent-sandbox get pods -l "vicegerent.io/dashboard=$SOURCE_AGENT" -o jsonpath='{.items[0].metadata.name}')"
+if [ -z "$SOURCE_POD" ]; then
+  echo "FAIL - no pod found for $SOURCE_AGENT" >&2
+  exit 1
+fi
+kubectl --context "$KUBE_CONTEXT" -n agent-sandbox get service "$TARGET_AGENT-webhook" >/dev/null
+
+HTTP_CODE="$(
+  kubectl --context "$KUBE_CONTEXT" -n agent-sandbox exec "$SOURCE_POD" -- \
+    curl --noproxy '*' -sS --connect-timeout 3 --max-time 5 \
+      -o /dev/null -w '%{http_code}' -X POST \
+      -H 'Content-Type: application/json' \
+      --data '{"test":"cross-agent-network-isolation"}' \
+      "http://$TARGET_AGENT-webhook.agent-sandbox.svc.cluster.local:8644/webhooks/$TARGET_ROUTE" \
+    2>/dev/null || true
+)"
+
+if [ "$HTTP_CODE" = 202 ]; then
+  echo "FAIL - $SOURCE_AGENT entered $TARGET_AGENT/$TARGET_ROUTE" >&2
+  exit 1
+fi
+echo "PASS - cross-agent route was not accepted (HTTP ${HTTP_CODE:-no response})"
+```
 
 ## Install the platform
 
@@ -263,8 +398,7 @@ cd vicegerent-agents
 cp values.example.yaml values.yaml
 $EDITOR values.yaml                    # this machine's cluster vars + agents
 ./vicegerent setup cluster
-./vicegerent setup secrets platform
-./vicegerent setup secrets agent <name>
+./vicegerent setup secrets
 ./vicegerent install
 ```
 

@@ -1,0 +1,17 @@
+{{- if eq (include "vicegerent-egress-proxy.webhooksEnabled" .) "true" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-egress-proxy
+  namespace: egress-proxy
+  labels:
+    app.kubernetes.io/name: webhook-egress-proxy
+spec:
+  selector:
+    app.kubernetes.io/name: webhook-egress-proxy
+  ports:
+    - name: proxy
+      port: 8080
+      targetPort: proxy
+{{- end }}

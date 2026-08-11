@@ -570,5 +570,128 @@ plugins:
 {{- $_ := set $route "key_env" $provider.key_env -}}
 {{- $_ := set $route "api_mode" $provider.transport -}}
 {{- end -}}
+{{- if not (kindIs "bool" .Values.webhooks.enabled) -}}
+{{- fail "vicegerent-agent: webhooks.enabled must be a boolean" -}}
+{{- end -}}
+{{- if not (kindIs "slice" .Values.webhooks.toolsets) -}}
+{{- fail "vicegerent-agent: webhooks.toolsets must be a list of strings" -}}
+{{- end -}}
+{{- $webhookToolsets := list -}}
+{{- range $toolset := .Values.webhooks.toolsets -}}
+{{- if or (not (kindIs "string" $toolset)) (eq (trim $toolset) "") -}}
+{{- fail "vicegerent-agent: webhooks.toolsets must contain non-empty strings" -}}
+{{- end -}}
+{{- if has $toolset $webhookToolsets -}}
+{{- fail (printf "vicegerent-agent: webhooks.toolsets contains duplicate %q" $toolset) -}}
+{{- end -}}
+{{- $webhookToolsets = append $webhookToolsets $toolset -}}
+{{- end -}}
+{{- if .Values.webhooks.enabled -}}
+{{- if eq (len .Values.webhooks.routes) 0 -}}
+{{- fail "vicegerent-agent: webhooks.enabled requires at least one route" -}}
+{{- end -}}
+{{- $webhookRoutes := dict -}}
+{{- $activeWebhookRoutes := 0 -}}
+{{- range $routeName, $rawRoute := .Values.webhooks.routes -}}
+{{- if not (regexMatch `^[a-z][a-z0-9-]{0,62}$` $routeName) -}}
+{{- fail (printf "vicegerent-agent: webhook route name %q must match ^[a-z][a-z0-9-]{0,62}$" $routeName) -}}
+{{- end -}}
+{{- if not (kindIs "map" $rawRoute) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s must be a YAML map" $routeName) -}}
+{{- end -}}
+{{- $route := $rawRoute | deepCopy -}}
+{{- range $forbidden := list "secretRef" "secret" "secret_env" "secretFile" "targetURL" "trusted_proxy" "signature_provider" -}}
+{{- if hasKey $route $forbidden -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s must not set internal field %s" $routeName $forbidden) -}}
+{{- end -}}
+{{- end -}}
+{{- $provider := get $route "provider" -}}
+{{- if not (has $provider (list "github" "gitlab" "pagerduty" "svix" "generic-v2" "alertmanager")) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.provider %q is unsupported" $routeName $provider) -}}
+{{- end -}}
+{{- if hasKey $route "respond" -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.respond is unsupported; webhook routes are asynchronous" $routeName) -}}
+{{- end -}}
+{{- range $field, $_ := $route -}}
+{{- if not (has $field (list "provider" "enabled" "description" "events" "prompt" "skills" "filters" "script" "deliver" "deliver_extra" "deliver_only")) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.%s is unsupported" $routeName $field) -}}
+{{- end -}}
+{{- end -}}
+{{- range $field := list "description" "prompt" "script" "deliver" -}}
+{{- if and (hasKey $route $field) (not (kindIs "string" (get $route $field))) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.%s must be a string" $routeName $field) -}}
+{{- end -}}
+{{- end -}}
+{{- if and (hasKey $route "script") (eq (trim (get $route "script")) "") -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.script must not be empty" $routeName) -}}
+{{- end -}}
+{{- if and (hasKey $route "deliver") (eq (trim (get $route "deliver")) "") -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.deliver must not be empty" $routeName) -}}
+{{- end -}}
+{{- range $field := list "events" "skills" -}}
+{{- if hasKey $route $field -}}
+{{- if not (kindIs "slice" (get $route $field)) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.%s must be a list of strings" $routeName $field) -}}
+{{- end -}}
+{{- range $item := get $route $field -}}
+{{- if or (not (kindIs "string" $item)) (eq (trim $item) "") -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.%s must contain non-empty strings" $routeName $field) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if hasKey $route "filters" -}}
+{{- $filters := get $route "filters" -}}
+{{- if and (not (kindIs "map" $filters)) (not (kindIs "slice" $filters)) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.filters must be a map or list of maps" $routeName) -}}
+{{- end -}}
+{{- if kindIs "slice" $filters -}}
+{{- range $filter := $filters -}}
+{{- if not (kindIs "map" $filter) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.filters must be a map or list of maps" $routeName) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and (hasKey $route "deliver_extra") (not (kindIs "map" (get $route "deliver_extra"))) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.deliver_extra must be a map" $routeName) -}}
+{{- end -}}
+{{- if and (hasKey $route "deliver_only") (not (kindIs "bool" (get $route "deliver_only"))) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.deliver_only must be a boolean" $routeName) -}}
+{{- end -}}
+{{- if and (get $route "deliver_only") (or (not (hasKey $route "deliver")) (eq (get $route "deliver") "log")) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.deliver_only requires a non-log delivery target" $routeName) -}}
+{{- end -}}
+{{- $routeEnabled := true -}}
+{{- if hasKey $route "enabled" -}}
+{{- if not (kindIs "bool" (get $route "enabled")) -}}
+{{- fail (printf "vicegerent-agent: webhooks.routes.%s.enabled must be a boolean" $routeName) -}}
+{{- end -}}
+{{- $routeEnabled = get $route "enabled" -}}
+{{- end -}}
+{{- if $routeEnabled -}}
+{{- $activeWebhookRoutes = add1 $activeWebhookRoutes -}}
+{{- end -}}
+{{- $_ := unset $route "provider" -}}
+{{- $_ := set $route "trusted_proxy" true -}}
+{{- $_ := set $webhookRoutes $routeName $route -}}
+{{- end -}}
+{{- if eq (int $activeWebhookRoutes) 0 -}}
+{{- fail "vicegerent-agent: webhooks.enabled requires at least one enabled route" -}}
+{{- end -}}
+{{- $platforms := default (dict) $merged.platforms -}}
+{{- $_ := set $platforms "webhook" (dict "enabled" true "extra" (dict "host" "0.0.0.0" "port" 8644 "routes" $webhookRoutes)) -}}
+{{- $_ := set $merged "platforms" $platforms -}}
+{{- $hasWebhookMCP := false -}}
+{{- range $serverName, $_ := default (dict) $merged.mcp_servers -}}
+{{- if has $serverName $webhookToolsets -}}
+{{- $hasWebhookMCP = true -}}
+{{- end -}}
+{{- end -}}
+{{- if and (not $hasWebhookMCP) (not (has "no_mcp" $webhookToolsets)) -}}
+{{- $webhookToolsets = append $webhookToolsets "no_mcp" -}}
+{{- end -}}
+{{- $_ := set $merged "platform_toolsets" (mergeOverwrite (default (dict) $merged.platform_toolsets) (dict "webhook" $webhookToolsets)) -}}
+{{- end -}}
 {{- $merged | toYaml -}}
 {{- end -}}

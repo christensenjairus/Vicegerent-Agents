@@ -1,0 +1,41 @@
+{{- if eq (include "vicegerent-webhook-listener.enabled" .) "true" }}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: webhook-listener
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-listener
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: '53'
+              protocol: UDP
+            - port: '53'
+              protocol: TCP
+          rules:
+            dns:
+              - matchName: connect.ngrok-agent.com
+              - matchName: webhook-egress-proxy.egress-proxy.svc.cluster.local
+    - toFQDNs:
+        - matchName: connect.ngrok-agent.com
+      toPorts:
+        - ports:
+            - port: '443'
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: egress-proxy
+            app.kubernetes.io/name: webhook-egress-proxy
+      toPorts:
+        - ports:
+            - port: '8080'
+              protocol: TCP
+{{- end }}

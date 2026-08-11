@@ -24,6 +24,8 @@ docker run --rm -v "$PWD/images/agent/patches/tests:/tests" \
 
 `test_0007_slack_proxy_bypass.py` has a `--pre-fix` negative control for pristine Hermes and otherwise applies patch `0007` twice to a scratch copy of Hermes and the Slack SDK. It asserts that the SDK ignores ambient proxy variables and standalone text, media, and user-to-DM resolution use the adapter's Slack-aware proxy resolver instead of the generic resolver that ignores `NO_PROXY` without target hosts.
 
+`test_0053_trusted_webhook_proxy.py` runs during the image build against a disposable copy of Hermes's webhook adapter, applies patch `0053` twice, and proves that an explicitly trusted listener route accepts a secretless PagerDuty request while rejecting any route that combines the trust marker with agent-side signing material.
+
 `test_hermes_home_migration.py` needs no Hermes install. It exercises the exact-release state inventory, one-time PVC migration, recoverable destination-wins collision handling, the obsolete split-home layout, preservation of post-migration generic state, the shared-skills compatibility link, custom-home opt-out, and rejection of a root migration target. `scripts/validate.sh` runs it in CI.
 
 `test_shared_skills_sync.py`, `test_skills_scripts_baked.py`, `test_skills_snapshot.py`, and `test_skills_snapshot_retention.py` are the exceptions to the rule above: none needs a Hermes install, only bash + python3, because they read the in-repo shell scripts, Dockerfile, and chart templates directly. Safe to run anywhere, including CI:

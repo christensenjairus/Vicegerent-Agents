@@ -37,6 +37,16 @@ Explicit direct egress
 
 The shim is an agentgateway guardrail, not a separate route the agent chooses. For the public `vmcp` backend, the guardrail runs in `FailClosed` mode; a guardrail failure prevents the call from being forwarded.
 
+## Incoming webhooks
+
+Incoming provider webhooks use one stable ngrok HTTPS origin for the cluster. A dedicated `webhook-listener` Deployment in the `webhooks` namespace opens that outbound tunnel, maps `/webhooks/<agent>/<route>` to a fixed agent Service, authenticates the provider-native signature, strips signature headers, and sends the request through a dedicated `webhook-egress-proxy` before Hermes receives it on port 8644. That proxy uses the platform's canonical secret registry to redact headers, query values, and bodies. PagerDuty, GitHub, GitLab, Svix, Alertmanager, and the timestamped generic V2 format are supported; GitLab's token authenticates the delivery but, by that provider's protocol, does not cryptographically bind the body.
+
+Signing material terminates at the listener and never enters an agent Secret, ConfigMap, environment, or volume. Setup derives one key per active route in the shared `webhooks/vicegerent-webhook-secrets` Secret and the listener rereads the mounted file for every request, so Kubernetes Secret rotation does not require an agent restart. Hermes receives a secretless route marked `trusted_proxy`; a narrow image patch rejects any route that combines that marker with signing material.
+
+The network boundary is load-bearing. The listener has no Kubernetes API token and can reach only DNS, `connect.ngrok-agent.com:443`, and the dedicated webhook proxy. Only the listener can enter that proxy; only that proxy can reach webhook-enabled agent pods on port 8644. Each destination agent adds an HTTP L7 allowlist for its own configured `POST /webhooks/<route>` paths. Agent sandboxes have no egress to the listener or dedicated proxy, and their shared egress proxy has no egress to agent webhook ports, so an agent cannot use either proxy to enter another agent's route. When prompt-injection detection is enabled, only the dedicated proxy gains port 80 egress to the Agentgateway judge. There is no public LoadBalancer, host port-forward, or laptop-supervised ngrok process, so webhook availability follows the Kind cluster rather than the host MCP stack.
+
+The optional webhook prompt-injection gate uses the existing `policy.contentSafety.promptInjection` status and judge model. Secret redaction runs first, then a broad regex prefilter compiled from the same canonical JSON embedded by `mcp-cerbos-shim`; only matches reach the LLM judge. A confirmed injection is rejected, judge-service errors fail open, and exhausting the bounded verification budget fails closed.
+
 ## Four independent enforcement layers
 
 ### 1. Filesystem and container privilege controls

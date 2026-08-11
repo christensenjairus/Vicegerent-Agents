@@ -33,6 +33,21 @@ def installed_uv_version(uv: Path) -> str | None:
     return result.stdout.strip().removeprefix("uv ")
 
 
+def uv_environment(venv: Path) -> dict[str, str]:
+    env = os.environ | {"UV_PROJECT_ENVIRONMENT": str(venv)}
+    for name in (
+        "UV_DEFAULT_INDEX",
+        "UV_EXCLUDE_NEWER",
+        "UV_EXCLUDE_NEWER_PACKAGE",
+        "UV_FORK_STRATEGY",
+        "UV_INDEX_STRATEGY",
+        "UV_PRERELEASE",
+        "UV_RESOLUTION",
+    ):
+        env.pop(name, None)
+    return env
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit(f"usage: {Path(sys.argv[0]).name} REPO_ROOT")
@@ -64,8 +79,12 @@ def main() -> int:
             env = os.environ | {"PIP_DISABLE_PIP_VERSION_CHECK": "1"}
             subprocess.run([python, "-m", "pip", "install", "--quiet", requirement], check=True, env=env)
 
-        env = os.environ | {"UV_PROJECT_ENVIRONMENT": str(venv)}
-        subprocess.run([uv, "sync", "--project", root, "--locked", "--quiet"], check=True, env=env)
+        env = uv_environment(venv)
+        subprocess.run(
+            [uv, "sync", "--project", root, "--locked", "--quiet", "--no-config"],
+            check=True,
+            env=env,
+        )
 
     return 0
 

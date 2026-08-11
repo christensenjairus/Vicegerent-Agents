@@ -1,0 +1,33 @@
+{{- if .Values.webhooks.enabled }}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "vicegerent-agent.name" . }}-webhook-ingress
+  namespace: agent-sandbox
+spec:
+  endpointSelector:
+    matchLabels:
+      vicegerent.io/dashboard: {{ include "vicegerent-agent.name" . }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: egress-proxy
+            app.kubernetes.io/name: webhook-egress-proxy
+      toPorts:
+        - ports:
+            - port: '8644'
+              protocol: TCP
+          rules:
+            http:
+              {{- range $routeName, $route := .Values.webhooks.routes }}
+              {{- $routeEnabled := true }}
+              {{- if hasKey $route "enabled" }}
+              {{- $routeEnabled = get $route "enabled" }}
+              {{- end }}
+              {{- if $routeEnabled }}
+              - method: POST
+                path: {{ printf "^/webhooks/%s$" $routeName | quote }}
+              {{- end }}
+              {{- end }}
+{{- end }}

@@ -118,6 +118,7 @@ def reconcile_hermes(
         ("fallback_providers",),
         ("hooks",),
         ("platform_toolsets",),
+        ("platforms", "webhook"),
         ("kanban",),
         ("mcp_servers",),
         ("toolsets",),

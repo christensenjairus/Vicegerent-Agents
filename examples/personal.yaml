@@ -28,6 +28,8 @@ policy:
   alertmanager:
     maxSilenceSeconds: 1209600
     createdBy: jchristensen
+webhooks:
+  publicUrl: https://popcorn-padlock-raider.ngrok-free.dev
 agents:
   - name: bot-jchristensen
     obsidian:
@@ -36,6 +38,63 @@ agents:
       userName: Jairus Christensen
       userEmail: christensenjairus@gmail.com
     timezone: America/Denver
+    webhooks:
+      enabled: true
+      routes:
+        # Prometheus Alertmanager receiver. Alertmanager signs no payload, so
+        # the route is authenticated by a static credential it sends in the
+        # Authorization header; the listener strips it before the agent sees it.
+        alertmanager-alerts:
+          provider: alertmanager
+          prompt: |-
+            An Alertmanager event requires an autonomous investigation.
+            Status: {status}
+            Alert: {commonLabels.alertname}
+            Severity: {commonLabels.severity}
+            Namespace: {commonLabels.namespace}
+            Summary: {commonAnnotations.summary}
+            Description: {commonAnnotations.description}
+            Use Alertmanager, Kubernetes, monitoring, logs, source control, and
+            deployment history to establish scope, impact, timeline, and the
+            most likely root cause. Do not stop at restating the payload.
+            If the evidence identifies a concrete defect in an authorized
+            repository, create a focused branch, implement the smallest safe
+            fix, validate it, commit it, push it, and open a draft pull or
+            merge request. Do not merely recommend a fix you can safely make.
+            Never merge, deploy, silence the alert, or otherwise mutate
+            production.
+            Before ending, always run `hermes send --to slack --json` with one
+            concise report as its message argument. Include the alert, current
+            status, impact, root cause and evidence, actions taken, validation,
+            and every pull or merge request URL. If no change was appropriate
+            or a blocker remains, say so explicitly. Check that the send
+            succeeded; diagnose a failure before retrying.
+        # Generic-v2 twin for end-to-end rehearsals of the same workflow.
+        alertmanager-alerts-test:
+          provider: generic-v2
+          prompt: |-
+            An Alertmanager event requires an autonomous investigation.
+            Status: {status}
+            Alert: {commonLabels.alertname}
+            Severity: {commonLabels.severity}
+            Namespace: {commonLabels.namespace}
+            Summary: {commonAnnotations.summary}
+            Description: {commonAnnotations.description}
+            Use Alertmanager, Kubernetes, monitoring, logs, source control, and
+            deployment history to establish scope, impact, timeline, and the
+            most likely root cause. Do not stop at restating the payload.
+            If the evidence identifies a concrete defect in an authorized
+            repository, create a focused branch, implement the smallest safe
+            fix, validate it, commit it, push it, and open a draft pull or
+            merge request. Do not merely recommend a fix you can safely make.
+            Never merge, deploy, silence the alert, or otherwise mutate
+            production.
+            Before ending, always run `hermes send --to slack --json` with one
+            concise report as its message argument. Include the alert, current
+            status, impact, root cause and evidence, actions taken, validation,
+            and every pull or merge request URL. If no change was appropriate
+            or a blocker remains, say so explicitly. Check that the send
+            succeeded; diagnose a failure before retrying.
     providers:
       openai:
         model: gpt-5.6-terra

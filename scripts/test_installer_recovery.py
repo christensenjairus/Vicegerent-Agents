@@ -74,7 +74,7 @@ class KubeContextTests(unittest.TestCase):
 
     def test_cluster_setup_creates_the_selected_kind_context(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             bin_dir = root / "bin"
             bin_dir.mkdir()
             log = root / "commands.log"
@@ -127,7 +127,7 @@ class KubeContextTests(unittest.TestCase):
 
     def test_start_waits_for_kind_node_readiness_before_starting_mcp_stack(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             bin_dir = root / "bin"
             venv_bin = root / ".venv" / "bin"
             log = root / "commands.log"
@@ -180,7 +180,7 @@ class KubeContextTests(unittest.TestCase):
 
     def test_start_retries_kind_readiness_before_starting_mcp_stack(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             bin_dir = root / "bin"
             venv_bin = root / ".venv" / "bin"
             log = root / "commands.log"

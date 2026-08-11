@@ -1,0 +1,61 @@
+{{- if eq (include "vicegerent-egress-proxy.webhooksEnabled" .) "true" }}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: webhook-egress-proxy
+  namespace: egress-proxy
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-egress-proxy
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: webhooks
+            app.kubernetes.io/name: webhook-listener
+      toPorts:
+        - ports:
+            - port: '8080'
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: '53'
+              protocol: UDP
+            - port: '53'
+              protocol: TCP
+          rules:
+            dns:
+              {{- range $rawAgent := .Values.agents }}
+              {{- $agent := mergeOverwrite (deepCopy $.Values.agentDefaults) (deepCopy $rawAgent) }}
+              {{- if $agent.webhooks.enabled }}
+              - matchName: {{ $agent.name }}-webhook.agent-sandbox.svc.cluster.local
+              {{- end }}
+              {{- end }}
+              {{- if eq .Values.policy.contentSafety.promptInjection.status "enabled" }}
+              - matchName: agentgateway-proxy.agentgateway-system.svc.cluster.local
+              {{- end }}
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: agent-sandbox
+            vicegerent.io/webhooks: enabled
+      toPorts:
+        - ports:
+            - port: '8644'
+              protocol: TCP
+    {{- if eq .Values.policy.contentSafety.promptInjection.status "enabled" }}
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: agentgateway-system
+            gateway.networking.k8s.io/gateway-name: agentgateway-proxy
+      toPorts:
+        - ports:
+            - port: '80'
+              protocol: TCP
+    {{- end }}
+{{- end }}
