@@ -13,6 +13,7 @@ already-correct uid itself.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -32,12 +33,21 @@ REPLACEMENT = '''if [ -f "$HERMES_HOME/config.yaml" ]; then
     fi
 fi'''
 
+# Account-name-agnostic: 0052 renames every "hermes" account reference (including
+# "actual_hermes_uid") to "actual_agent_uid" later in the patch chain, which would
+# otherwise erase a literal "actual_hermes_uid" marker and make this patch think a
+# 0052-processed tree still needs patching.
+ALREADY_APPLIED_RE = re.compile(
+    r'if \[ "\$\(id -u\)" = "\$actual_\w+_uid" \]; then\n'
+    r'        "\$INSTALL_DIR/\.venv/bin/python" "\$INSTALL_DIR/scripts/docker_config_migrate\.py"'
+)
+
 
 def main() -> int:
     path = Path(os.environ.get("HERMES_STAGE2_HOOK", "/opt/hermes/docker/stage2-hook.sh"))
     src = path.read_text(encoding="utf-8")
 
-    if '"$(id -u)" = "$actual_hermes_uid"' in src:
+    if ALREADY_APPLIED_RE.search(src):
         print("0046: already applied")
         return 0
 
