@@ -93,7 +93,10 @@ def machine_values() -> dict:
         "provider": "gitlab",
     }
     return {
-        "webhooks": {"publicUrl": "https://hooks.example.ngrok.app"},
+        "webhooks": {
+            "publicUrl": "https://hooks.example.com",
+            "tunnelId": "6ff42ae2-765d-4adf-8112-31c55c1551ef",
+        },
         "agents": [agent],
     }
 
@@ -130,18 +133,33 @@ def assert_disabled() -> None:
 
 def assert_invalid_values() -> None:
     for invalid_url in (
-        "http://hooks.example.ngrok.app",
-        "https://hooks.example.ngrok.app/",
-        "https://hooks.example.ngrok.app/path",
-        "https://hooks.example.ngrok.app?query=yes",
-        "https://user@hooks.example.ngrok.app",
-        "https://hooks.example.ngrok.app:443",
+        "http://hooks.example.com",
+        "https://hooks.example.com/",
+        "https://hooks.example.com/path",
+        "https://hooks.example.com?query=yes",
+        "https://user@hooks.example.com",
+        "https://hooks.example.com:443",
+        "https://Hooks.Example.com",
     ):
         machine = machine_values()
         machine["webhooks"]["publicUrl"] = invalid_url
         _, output = render("webhook-listener", [DEFAULTS, machine], expect_failure=True)
         if "webhooks.publicUrl" not in output:
             raise AssertionError(f"invalid public URL produced an unclear error: {invalid_url}")
+
+    # The all-zero UUID is the shipped placeholder, so it has to be rejected by
+    # shape-independent means: it passes the UUID pattern but names no tunnel.
+    for invalid_tunnel in (
+        "",
+        "not-a-uuid",
+        "6FF42AE2-765D-4ADF-8112-31C55C1551EF",
+        "00000000-0000-0000-0000-000000000000",
+    ):
+        machine = machine_values()
+        machine["webhooks"]["tunnelId"] = invalid_tunnel
+        _, output = render("webhook-listener", [DEFAULTS, machine], expect_failure=True)
+        if "webhooks.tunnelId" not in output:
+            raise AssertionError(f"invalid tunnel ID produced an unclear error: {invalid_tunnel!r}")
 
     invalid_routes = {
         "non-map route": "not-a-map",
@@ -354,8 +372,10 @@ def assert_multi_agent_routing() -> None:
 
 def assert_listener(machine: dict) -> None:
     documents, output = render("webhook-listener", [DEFAULTS, machine])
-    if len(documents) != 3:
-        raise AssertionError(f"listener rendered {len(documents)} resources instead of 3")
+    if len(documents) != 7:
+        raise AssertionError(f"listener rendered {len(documents)} resources instead of 7")
+    if "ngrok" in output.lower():
+        raise AssertionError("listener render still references ngrok")
 
     config_map = document(documents, "ConfigMap", "webhook-listener")
     routes = json.loads(config_map["data"]["routes.json"])["routes"]
@@ -375,50 +395,191 @@ def assert_listener(machine: dict) -> None:
         if route["targetURL"] != expected:
             raise AssertionError(f"listener target escaped its agent boundary: {route}")
 
-    deployment = document(documents, "Deployment", "webhook-listener")
-    if deployment["spec"].get("replicas") != 1 or deployment["spec"].get("strategy") != {"type": "Recreate"}:
-        raise AssertionError("listener updates could race two replicas for one ngrok endpoint")
-    pod = deployment["spec"]["template"]["spec"]
-    if pod.get("automountServiceAccountToken") is not False:
-        raise AssertionError("listener mounts a service-account token")
-    if pod.get("dnsConfig", {}).get("options") != [{"name": "ndots", "value": "1"}]:
-        raise AssertionError("listener DNS is not pinned for exact FQDN policy matches")
-    container = pod["containers"][0]
-    if container.get("resources", {}).get("requests") != {"cpu": "25m", "memory": "32Mi"}:
-        raise AssertionError("listener has no scheduler resource floor")
-    environment = {entry["name"]: entry for entry in container["env"]}
-    token_ref = environment["NGROK_AUTHTOKEN"]["valueFrom"]["secretKeyRef"]
-    if token_ref != {"name": "vicegerent-ngrok-authtoken", "key": "authtoken"}:
-        raise AssertionError("listener ngrok credential has the wrong Secret reference")
-    if environment["WEBHOOK_PUBLIC_URL"].get("value") != machine["webhooks"]["publicUrl"]:
-        raise AssertionError("listener public URL drifted")
+    tunnel_config_map = document(documents, "ConfigMap", "cloudflared")
+    tunnel_config = yaml.safe_load(tunnel_config_map["data"]["config.yaml"])
+    if tunnel_config["tunnel"] != machine["webhooks"]["tunnelId"]:
+        raise AssertionError("cloudflared is not pinned to the configured tunnel")
+    if tunnel_config["credentials-file"] != "/etc/cloudflared/creds/credentials.json":
+        raise AssertionError("cloudflared credentials path drifted")
+    if tunnel_config.get("no-autoupdate") is not True:
+        raise AssertionError("cloudflared auto-update is not disabled")
+    expected_host = machine["webhooks"]["publicUrl"].removeprefix("https://")
+    if tunnel_config["ingress"] != [
+        {
+            "hostname": expected_host,
+            "service": "http://webhook-listener.webhooks.svc.cluster.local:8081",
+        },
+        {"service": "http_status:404"},
+    ]:
+        raise AssertionError(f"cloudflared ingress mapping drifted: {tunnel_config['ingress']}")
 
-    secret_volume = next(volume for volume in pod["volumes"] if volume["name"] == "route-secrets")
+    service = document(documents, "Service", "webhook-listener")
+    if service["spec"].get("type") != "ClusterIP":
+        raise AssertionError("listener Service is not ClusterIP-only")
+    if service["spec"].get("selector") != {"app.kubernetes.io/name": "webhook-listener"}:
+        raise AssertionError("listener Service selector escaped the listener workload")
+    if service["spec"].get("ports") != [{"name": "http", "port": 8081, "targetPort": "http"}]:
+        raise AssertionError("listener Service exposes unexpected ports")
+
+    listener_deployment = document(documents, "Deployment", "webhook-listener")
+    cloudflared_deployment = document(documents, "Deployment", "cloudflared")
+    for name, deployment in (
+        ("webhook-listener", listener_deployment),
+        ("cloudflared", cloudflared_deployment),
+    ):
+        if deployment["spec"].get("replicas") != 1 or deployment["spec"].get("strategy") != {"type": "Recreate"}:
+            raise AssertionError(f"{name} rollouts must replace the single replica, never overlap it")
+        expected_selector = {"app.kubernetes.io/name": name}
+        if deployment["spec"].get("selector", {}).get("matchLabels") != expected_selector:
+            raise AssertionError(f"{name} Deployment selector drifted")
+        if deployment["spec"]["template"].get("metadata", {}).get("labels") != expected_selector:
+            raise AssertionError(f"{name} pod labels drifted")
+        pod = deployment["spec"]["template"]["spec"]
+        if pod.get("automountServiceAccountToken") is not False:
+            raise AssertionError(f"{name} mounts a service-account token")
+        if pod.get("dnsConfig", {}).get("options") != [{"name": "ndots", "value": "1"}]:
+            raise AssertionError(f"{name} DNS is not pinned for exact FQDN policy matches")
+
+    listener_pod = listener_deployment["spec"]["template"]["spec"]
+    listener_containers = {container["name"]: container for container in listener_pod["containers"]}
+    if set(listener_containers) != {"webhook-listener"}:
+        raise AssertionError(f"listener pod has unexpected containers: {sorted(listener_containers)}")
+
+    listener = listener_containers["webhook-listener"]
+    if listener.get("resources", {}).get("requests") != {"cpu": "25m", "memory": "32Mi"}:
+        raise AssertionError("listener has no scheduler resource floor")
+    environment = {entry["name"]: entry for entry in listener["env"]}
+    if environment["WEBHOOK_LISTEN_ADDRESS"].get("value") != "0.0.0.0:8081":
+        raise AssertionError("listener bind does not accept traffic from the cloudflared workload")
+
+    listener_volumes = {volume["name"]: volume for volume in listener_pod["volumes"]}
+    if set(listener_volumes) != {"config", "route-secrets"}:
+        raise AssertionError("listener pod can access cloudflared configuration or credentials")
+    secret_volume = listener_volumes["route-secrets"]
     if secret_volume.get("secret") != {"defaultMode": 256, "secretName": "vicegerent-webhook-secrets"}:  # pragma: allowlist secret
         raise AssertionError("listener does not mount the shared webhook Secret")
+    listener_reload = listener_deployment["metadata"].get("annotations", {}).get(
+        "secret.reloader.stakater.com/reload"
+    )
+    if listener_reload != "vicegerent-webhook-secrets":  # pragma: allowlist secret
+        raise AssertionError("listener reload annotation includes unrelated Secrets")
 
-    policy = document(documents, "CiliumNetworkPolicy", "webhook-listener")
-    if "ingress" in policy["spec"] or len(policy["spec"].get("egress", [])) != 3:
-        raise AssertionError("listener policy has an unexpected network direction")
-    dns, ngrok, proxy = policy["spec"]["egress"]
+    cloudflared_pod = cloudflared_deployment["spec"]["template"]["spec"]
+    cloudflared_containers = {container["name"]: container for container in cloudflared_pod["containers"]}
+    if set(cloudflared_containers) != {"cloudflared"}:
+        raise AssertionError(f"cloudflared pod has unexpected containers: {sorted(cloudflared_containers)}")
+    cloudflared = cloudflared_containers["cloudflared"]
+    image = cloudflared["image"]
+    tag = image.rpartition(":")[2]
+    if not image.startswith("docker.io/cloudflare/cloudflared:") or not re.fullmatch(r"\d{4}\.\d+\.\d+", tag):
+        raise AssertionError(f"cloudflared image reference is not pinned: {image}")
+    if cloudflared.get("args") != ["tunnel", "--config", "/etc/cloudflared/config/config.yaml", "run"]:
+        raise AssertionError(f"cloudflared arguments drifted: {cloudflared.get('args')}")
+    tunnel_environment = {entry["name"]: entry.get("value") for entry in cloudflared["env"]}
+    if tunnel_environment.get("TUNNEL_METRICS") != "127.0.0.1:2000":
+        raise AssertionError("cloudflared metrics endpoint is not loopback-only")
+    for probe in ("startupProbe", "readinessProbe", "livenessProbe"):
+        if cloudflared.get(probe, {}).get("exec", {}).get("command") != ["cloudflared", "tunnel", "ready"]:
+            raise AssertionError(f"cloudflared {probe} does not use the built-in readiness command")
+    if cloudflared.get("securityContext") != {
+        "allowPrivilegeEscalation": False,
+        "readOnlyRootFilesystem": True,
+        "capabilities": {"drop": ["ALL"]},
+    }:
+        raise AssertionError("cloudflared is not hardened like the listener")
+    if any(not mount.get("readOnly") for mount in cloudflared.get("volumeMounts", [])):
+        raise AssertionError("cloudflared mounts a writable volume")
+
+    for name, container in {**listener_containers, **cloudflared_containers}.items():
+        for entry in container.get("env", []):
+            reference = entry.get("valueFrom", {}).get("secretKeyRef", {}).get("name")
+            if reference:
+                raise AssertionError(f"{name} reads a Secret through the environment: {reference}")
+
+    cloudflared_volumes = {volume["name"]: volume for volume in cloudflared_pod["volumes"]}
+    if set(cloudflared_volumes) != {"cloudflared-config", "cloudflared-credentials"}:
+        raise AssertionError("cloudflared pod can access listener configuration or signing Secrets")
+    credentials_volume = cloudflared_volumes["cloudflared-credentials"]
+    if credentials_volume.get("secret") != {"defaultMode": 256, "secretName": "vicegerent-cloudflared-credentials"}:  # pragma: allowlist secret
+        raise AssertionError("cloudflared does not mount the tunnel credentials Secret")
+    cloudflared_reload = cloudflared_deployment["metadata"].get("annotations", {}).get(
+        "secret.reloader.stakater.com/reload"
+    )
+    if cloudflared_reload != "vicegerent-cloudflared-credentials":  # pragma: allowlist secret
+        raise AssertionError("cloudflared reload annotation includes unrelated Secrets")
+
+    listener_policy = document(documents, "CiliumNetworkPolicy", "webhook-listener")
+    if listener_policy["spec"].get("endpointSelector") != {
+        "matchLabels": {"app.kubernetes.io/name": "webhook-listener"}
+    }:
+        raise AssertionError("listener policy selects the wrong workload")
+    expected_listener_ingress = [{
+        "fromEndpoints": [{"matchLabels": {"io.kubernetes.pod.namespace": "webhooks", "app.kubernetes.io/name": "cloudflared"}}],
+        "toPorts": [{"ports": [{"port": "8081", "protocol": "TCP"}]}],
+    }]
+    if listener_policy["spec"].get("ingress") != expected_listener_ingress:
+        raise AssertionError("listener ingress is not limited to cloudflared")
+    if len(listener_policy["spec"].get("egress", [])) != 2:
+        raise AssertionError("listener policy has unexpected egress")
+    dns, proxy = listener_policy["spec"]["egress"]
     dns_names = {
         entry["matchName"]
         for entry in dns["toPorts"][0]["rules"]["dns"]
     }
     if dns["toEndpoints"] != [{"matchLabels": {"io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}}]:
         raise AssertionError("listener DNS egress is not limited to kube-dns")
-    if dns_names != {"connect.ngrok-agent.com", "webhook-egress-proxy.egress-proxy.svc.cluster.local"}:
+    if dns_names != {"webhook-egress-proxy.egress-proxy.svc.cluster.local"}:
         raise AssertionError(f"listener DNS names are too broad: {dns_names}")
-    if ngrok != {
-        "toFQDNs": [{"matchName": "connect.ngrok-agent.com"}],
-        "toPorts": [{"ports": [{"port": "443", "protocol": "TCP"}]}],
-    }:
-        raise AssertionError(f"listener ngrok egress is too broad: {ngrok}")
+    if "toFQDNs" in proxy:
+        raise AssertionError("listener can connect to Cloudflare edge hosts")
     if proxy != {
         "toEndpoints": [{"matchLabels": {"io.kubernetes.pod.namespace": "egress-proxy", "app.kubernetes.io/name": "webhook-egress-proxy"}}],
         "toPorts": [{"ports": [{"port": "8080", "protocol": "TCP"}]}],
     }:
         raise AssertionError(f"listener proxy egress is too broad: {proxy}")
+
+    cloudflared_policy = document(documents, "CiliumNetworkPolicy", "cloudflared")
+    if cloudflared_policy["spec"].get("endpointSelector") != {
+        "matchLabels": {"app.kubernetes.io/name": "cloudflared"}
+    }:
+        raise AssertionError("cloudflared policy selects the wrong workload")
+    if cloudflared_policy["spec"].get("ingress") or len(cloudflared_policy["spec"].get("egress", [])) != 3:
+        raise AssertionError("cloudflared policy has an unexpected network direction")
+    # cloudflared accepts nothing from the cluster, and Cilium only enforces a
+    # direction a policy carries rules for, so the deny has to be explicit.
+    if cloudflared_policy["spec"].get("enableDefaultDeny", {}).get("ingress") is not True:
+        raise AssertionError("cloudflared ingress is not default-denied")
+    cloudflared_dns, tunnel, origin = cloudflared_policy["spec"]["egress"]
+    cloudflared_dns_names = {
+        entry["matchName"]
+        for entry in cloudflared_dns["toPorts"][0]["rules"]["dns"]
+    }
+    if cloudflared_dns_names != {
+        "_v2-origintunneld._tcp.argotunnel.com",
+        "region1.v2.argotunnel.com",
+        "region2.v2.argotunnel.com",
+        "protocol-v2.argotunnel.com",
+        "cfd-features.argotunnel.com",
+        "webhook-listener.webhooks.svc.cluster.local",
+    }:
+        raise AssertionError(f"cloudflared DNS names are too broad: {cloudflared_dns_names}")
+    # cloudflared negotiates its own edge transport, so both protocols stay open:
+    # QUIC over UDP is what it picks, HTTP/2 over TCP is the fallback.
+    if tunnel != {
+        "toFQDNs": [
+            {"matchName": "region1.v2.argotunnel.com"},
+            {"matchName": "region2.v2.argotunnel.com"},
+        ],
+        "toPorts": [{"ports": [{"port": "7844", "protocol": "UDP"}, {"port": "7844", "protocol": "TCP"}]}],
+    }:
+        raise AssertionError(f"cloudflared tunnel egress does not cover both edge transports: {tunnel}")
+    if origin != {
+        "toEndpoints": [{"matchLabels": {"io.kubernetes.pod.namespace": "webhooks", "app.kubernetes.io/name": "webhook-listener"}}],
+        "toPorts": [{"ports": [{"port": "8081", "protocol": "TCP"}]}],
+    }:
+        raise AssertionError(f"cloudflared listener egress is too broad: {origin}")
+    if "webhook-egress-proxy.egress-proxy.svc.cluster.local" in cloudflared_dns_names:
+        raise AssertionError("cloudflared can resolve the webhook proxy")
 
 
 def assert_scrubbing_proxy_boundary(machine: dict) -> None:
@@ -502,12 +663,14 @@ def assert_scrubbing_proxy_boundary(machine: dict) -> None:
         raise AssertionError("enabled prompt detection cannot reach its Agentgateway judge")
 
 
-def assert_listener_logs_collected() -> None:
+def assert_webhook_logs_collected() -> None:
+    # Vector scopes by container, so every webhook workload needs its own clause.
     victoria_logs = yaml.safe_load((ROOT / "stages/values/victoria-logs.yaml").read_text(encoding="utf-8"))
     scope = victoria_logs["vector"]["customConfig"]["transforms"]["scope"]["condition"]["source"]
-    required = '(ns == "webhooks" && pod_app_label == "webhook-listener" && container == "webhook-listener")'
-    if required not in scope:
-        raise AssertionError("Vector does not collect webhook-listener delivery logs")
+    for workload in ("webhook-listener", "cloudflared"):
+        required = f'(ns == "webhooks" && pod_app_label == "{workload}" && container == "{workload}")'
+        if required not in scope:
+            raise AssertionError(f"Vector does not collect {workload} logs")
 
 
 def assert_personal_alertmanager_prompts_resolve() -> None:
@@ -588,7 +751,7 @@ def main() -> int:
     assert_multi_agent_routing()
     assert_listener(machine)
     assert_scrubbing_proxy_boundary(machine)
-    assert_listener_logs_collected()
+    assert_webhook_logs_collected()
     assert_personal_alertmanager_prompts_resolve()
     assert_incident_route_contracts()
     print("Webhook ingress render validation passed.")

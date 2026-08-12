@@ -19,7 +19,7 @@
 #   agentgateway-system  ghostunnel-server            server.crt/key,ca.crt (host recovery copy)
 #   searxng              searxng-secret               secret_key           (generated)
 #   cerbos               mcp-cerbos-shim-self-token   token                (generated)
-#   webhooks             vicegerent-ngrok-authtoken   authtoken            (ngrok tunnel)
+#   webhooks             vicegerent-cloudflared-credentials credentials.json (Cloudflare tunnel)
 #   webhooks             vicegerent-webhook-secrets    <agent>__<route>     (one key per enabled route)
 #   egress-proxy         egress-proxy-ca              ca.crt, ca.key       (MITM proxy CA)
 #   agent-sandbox        egress-proxy-ca-cert         ca.crt               (MITM proxy CA cert only)
@@ -46,8 +46,8 @@
 #
 # Env overrides: GHOSTUNNEL_HOST_DIR, RCLONE_S3_HOST_DIR, SERVER_IP,
 #   SERVER_CN, CLIENT_CN, ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY,
-#   ZAI_API_KEY, NGROK_AUTHTOKEN, WEBHOOK_SECRET_<SECRETREF>, and VALUES_FILE
-#   (otherwise selects an example profile when values.yaml is absent).
+#   ZAI_API_KEY, CLOUDFLARED_CREDENTIALS_FILE, WEBHOOK_SECRET_<SECRETREF>, and
+#   VALUES_FILE (otherwise selects an example profile when values.yaml is absent).
 
 set -euo pipefail
 
@@ -174,6 +174,58 @@ ensure_literal_secret() {
     warn "$ns/$name ($key) left empty (optional)."
   fi
   unset val
+}
+
+# ensure_cloudflared_credentials - apply the tunnel credentials JSON written by
+# `cloudflared tunnel create` as webhooks/vicegerent-cloudflared-credentials.
+# Reuses an existing value; otherwise reads a file path from
+# $CLOUDFLARED_CREDENTIALS_FILE or a prompt, validates the JSON shape, and
+# rejects credentials whose TunnelID differs from webhooks.tunnelId in the
+# machine values (a mismatch would crashloop cloudflared at startup).
+ensure_cloudflared_credentials() {
+  local file="${CLOUDFLARED_CREDENTIALS_FILE:-}" credentials source reuse=0
+  if secret_has vicegerent-cloudflared-credentials webhooks credentials.json && [[ -z "$file" ]]; then
+    credentials="$(secret_b64 vicegerent-cloudflared-credentials webhooks credentials.json | base64 -d)" \
+      || die "webhooks/vicegerent-cloudflared-credentials (credentials.json) is not valid base64"
+    source="webhooks/vicegerent-cloudflared-credentials (credentials.json)"
+    reuse=1
+  elif [[ -z "$file" ]]; then
+    if [[ "$ASSUME_YES" == "1" ]]; then
+      warn "No CLOUDFLARED_CREDENTIALS_FILE in environment and --yes is set; leaving webhooks/vicegerent-cloudflared-credentials unset."
+      return 0
+    fi
+    echo
+    echo "${UI_YELLOW}${UI_BOLD}Change${UI_RESET}  Set webhooks/vicegerent-cloudflared-credentials (credentials.json). Path to the JSON written by 'cloudflared tunnel create'."
+    read -r -p "  path (empty to skip): " file
+    if [[ -z "$file" ]]; then
+      warn "webhooks/vicegerent-cloudflared-credentials left unset - the tunnel cannot start until it is applied."
+      return 0
+    fi
+  fi
+  if [[ "$reuse" == "0" ]]; then
+    [[ -s "$file" ]] || die "cloudflared credentials file $file is missing or empty"
+    credentials="$(< "$file")"
+    source="$file"
+  fi
+  printf '%s' "$credentials" | jq -e '
+    type == "object"
+    and (.AccountTag | type == "string" and length > 0)
+    and (.TunnelID | type == "string" and length > 0)
+    and (.TunnelSecret | type == "string" and length > 0)
+  ' >/dev/null 2>&1 \
+    || die "$source is not a cloudflared tunnel credentials JSON (AccountTag/TunnelID/TunnelSecret)"
+  local configured actual
+  configured="$(yq -r '.webhooks.tunnelId // ""' "$VALUES_FILE")"
+  actual="$(printf '%s' "$credentials" | jq -r '.TunnelID')"
+  if [[ -n "$configured" && "$configured" != "$actual" ]]; then
+    die "credentials TunnelID $actual does not match webhooks.tunnelId $configured in $VALUES_FILE"
+  fi
+  if [[ "$reuse" == "1" ]]; then
+    info "webhooks/vicegerent-cloudflared-credentials (credentials.json) is valid; reusing."
+    return 0
+  fi
+  apply_secret vicegerent-cloudflared-credentials webhooks --from-file=credentials.json="$file"
+  info "Set webhooks/vicegerent-cloudflared-credentials (credentials.json)."
 }
 
 # ensure_velero_credentials - Kind etcd is authoritative. The host auth-key is a
@@ -365,9 +417,8 @@ if [[ -f "$VALUES_FILE" ]]; then
   collect_webhook_routes "$VALUES_FILE" "$DEFAULTS_FILE" || die "invalid webhook configuration in $VALUES_FILE"
 fi
 if [[ "$WEBHOOKS_ENABLED" == "1" ]]; then
-  step "Ngrok webhook listener"
-  ensure_literal_secret vicegerent-ngrok-authtoken webhooks authtoken \
-    NGROK_AUTHTOKEN "Authtoken for the platform's shared ngrok domain." 1
+  step "Cloudflare Tunnel webhook listener"
+  ensure_cloudflared_credentials
   for i in "${!WEBHOOK_SECRET_KEYS[@]}"; do
     key="${WEBHOOK_SECRET_KEYS[$i]}"
     envvar="$(webhook_secret_envvar "$key")"
@@ -472,7 +523,7 @@ if provider_enabled zai "$DEFAULTS_FILE" "$VALUES_FILE"; then
   check_optional vicegerent-zai-secrets agentgateway-system Authorization
 fi
 if [[ "$WEBHOOKS_ENABLED" == "1" ]]; then
-  check vicegerent-ngrok-authtoken webhooks authtoken
+  check vicegerent-cloudflared-credentials webhooks credentials.json
   for key in "${WEBHOOK_SECRET_KEYS[@]}"; do
     check vicegerent-webhook-secrets webhooks "$key"
   done

@@ -60,7 +60,8 @@ vector:
             (ns == "agentgateway-system" && starts_with(pod, "agentgateway-proxy-") && container == "agentgateway") ||
             (ns == "agent-sandbox" && sandbox_agent != "" && container == "agent") ||
             (ns == "egress-proxy" && container == "mitmproxy") ||
-            (ns == "webhooks" && pod_app_label == "webhook-listener" && container == "webhook-listener")
+            (ns == "webhooks" && pod_app_label == "webhook-listener" && container == "webhook-listener") ||
+            (ns == "webhooks" && pod_app_label == "cloudflared" && container == "cloudflared")
       parser:
         type: remap
         inputs: [scope]

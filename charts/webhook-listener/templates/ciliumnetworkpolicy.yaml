@@ -9,6 +9,15 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: webhook-listener
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: {{ .Release.Namespace }}
+            app.kubernetes.io/name: cloudflared
+      toPorts:
+        - ports:
+            - port: '8081'
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
@@ -22,14 +31,7 @@ spec:
               protocol: TCP
           rules:
             dns:
-              - matchName: connect.ngrok-agent.com
               - matchName: webhook-egress-proxy.egress-proxy.svc.cluster.local
-    - toFQDNs:
-        - matchName: connect.ngrok-agent.com
-      toPorts:
-        - ports:
-            - port: '443'
-              protocol: TCP
     - toEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: egress-proxy
@@ -37,5 +39,64 @@ spec:
       toPorts:
         - ports:
             - port: '8080'
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cloudflared
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+  # cloudflared serves nothing to the cluster: its tunnel is an outbound
+  # connection and its metrics endpoint is loopback-only. Cilium enforces a
+  # direction only when a policy carries rules for it, so ingress default-deny
+  # is requested explicitly rather than left unenforced with an empty rule list.
+  enableDefaultDeny:
+    ingress: true
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: '53'
+              protocol: UDP
+            - port: '53'
+              protocol: TCP
+          rules:
+            dns:
+              # cloudflared edge discovery queries the SRV record before the
+              # region targets; protocol-v2 and cfd-features are lookup-only
+              # TXT names that need no connection rule. Removing any of these
+              # breaks tunnel startup with DNS "server misbehaving" errors.
+              - matchName: _v2-origintunneld._tcp.argotunnel.com
+              - matchName: region1.v2.argotunnel.com
+              - matchName: region2.v2.argotunnel.com
+              - matchName: protocol-v2.argotunnel.com
+              - matchName: cfd-features.argotunnel.com
+              - matchName: webhook-listener.webhooks.svc.cluster.local
+    # cloudflared reaches the Cloudflare edge on 7844. The transport is left to
+    # its own negotiation, so both are required: QUIC over UDP is what it picks
+    # here, and HTTP/2 over TCP is the fallback if UDP egress ever breaks.
+    - toFQDNs:
+        - matchName: region1.v2.argotunnel.com
+        - matchName: region2.v2.argotunnel.com
+      toPorts:
+        - ports:
+            - port: '7844'
+              protocol: UDP
+            - port: '7844'
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: {{ .Release.Namespace }}
+            app.kubernetes.io/name: webhook-listener
+      toPorts:
+        - ports:
+            - port: '8081'
               protocol: TCP
 {{- end }}

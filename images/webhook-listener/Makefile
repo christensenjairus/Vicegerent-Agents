@@ -1,5 +1,5 @@
 IMAGE := harbor.hahomelabs.com/vicegerent/webhook-listener
-TAG   ?= v0.1.6
+TAG   ?= v0.2.7
 REF   := $(IMAGE):$(TAG)
 
 GO        ?= go

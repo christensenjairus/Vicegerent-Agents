@@ -152,6 +152,30 @@ func verifyGenericV2(headers http.Header, body, secret []byte, now time.Time) er
 	return nil
 }
 
+// replayKey identifies an accepted delivery for the providers whose signature
+// binds a timestamp, which is what bounds how long the key must be remembered.
+// Providers without a signed timestamp are excluded: their deliveries stay
+// replayable forever, so a bounded cache could not reject them anyway. The
+// identity is covered by the verified signature and cannot be forged, and the
+// agent is part of the key so two agents sharing a route name and a signing
+// secret keep independent replay windows.
+func replayKey(agent, provider, route string, headers http.Header) string {
+	var identity string
+	switch provider {
+	case "generic-v2":
+		// Hex decoding accepts either case, so the same signature can be sent in
+		// several spellings. Normalizing keeps them one key.
+		identity = strings.ToLower(headers.Get("X-Webhook-Signature-V2"))
+	case "svix":
+		// Svix publishes Svix-Id as the deduplication identity for a message,
+		// and it is signed alongside the timestamp and body.
+		identity = headers.Get("Svix-Id")
+	default:
+		return ""
+	}
+	return provider + ":" + agent + ":" + route + ":" + identity
+}
+
 func validateTimestamp(raw string, now time.Time) error {
 	seconds, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {

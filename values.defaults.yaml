@@ -71,9 +71,11 @@ policy:
     maxLimit: 200
     maxDepth: 3
     maxBreadth: 50
-# One stable ngrok HTTPS origin is shared by every configured agent route.
+# One stable Cloudflare Tunnel HTTPS origin is shared by every configured agent route.
 webhooks:
   publicUrl: ''
+  # UUID of the locally-managed Cloudflare tunnel that serves publicUrl.
+  tunnelId: ''
 # Per-agent defaults. The installer layers this template under each machine agent. A machine supports at most ten agents; their dashboards use NodePorts 30119-30128 in list order.
 agentDefaults:
   image:

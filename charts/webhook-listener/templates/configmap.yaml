@@ -1,7 +1,4 @@
 {{- if eq (include "vicegerent-webhook-listener.enabled" .) "true" }}
-{{- if not (regexMatch `^https://[A-Za-z0-9.-]+$` .Values.webhooks.publicUrl) }}
-{{- fail "webhook-listener: webhooks.publicUrl must be an HTTPS origin with no path, query, fragment, credentials, or trailing slash" }}
-{{- end }}
 {{- $routes := list }}
 {{- $seen := dict }}
 {{- range $rawAgent := .Values.agents }}
