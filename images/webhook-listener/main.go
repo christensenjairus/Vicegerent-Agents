@@ -5,23 +5,20 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	ngrok "golang.ngrok.com/ngrok/v2"
 )
 
 const (
-	defaultConfigPath = "/etc/vicegerent-webhooks/routes.json"
-	defaultSecretRoot = "/var/run/secrets/vicegerent-webhooks"
-	healthAddress     = "127.0.0.1:8080"
-	// version is reported to ngrok as the agent client version; keep it in step
-	// with the image tag in Makefile and the chart deployment.
-	version = "v0.1.6"
+	defaultConfigPath    = "/etc/vicegerent-webhooks/routes.json"
+	defaultSecretRoot    = "/var/run/secrets/vicegerent-webhooks"
+	defaultListenAddress = "0.0.0.0:8081"
+	healthAddress        = "127.0.0.1:8080"
 )
 
 func main() {
@@ -39,13 +36,9 @@ func main() {
 func run() error {
 	configPath := envOrDefault("WEBHOOK_CONFIG", defaultConfigPath)
 	secretRoot := envOrDefault("WEBHOOK_SECRET_ROOT", defaultSecretRoot)
-	publicURL := os.Getenv("WEBHOOK_PUBLIC_URL")
-	authtoken := os.Getenv("NGROK_AUTHTOKEN")
-	if publicURL == "" {
-		return fmt.Errorf("WEBHOOK_PUBLIC_URL is required")
-	}
-	if authtoken == "" {
-		return fmt.Errorf("NGROK_AUTHTOKEN is required")
+	listenAddress := envOrDefault("WEBHOOK_LISTEN_ADDRESS", defaultListenAddress)
+	if err := validateListenAddress(listenAddress); err != nil {
+		return err
 	}
 
 	config, err := loadConfig(configPath)
@@ -87,20 +80,13 @@ func run() error {
 		healthErrors <- healthServer.ListenAndServe()
 	}()
 
-	agent, err := ngrok.NewAgent(
-		ngrok.WithAuthtoken(authtoken),
-		ngrok.WithClientInfo("vicegerent-webhook-listener", version),
-	)
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
-		return fmt.Errorf("create ngrok agent: %w", err)
-	}
-	listener, err := agent.Listen(ctx, ngrok.WithURL(publicURL))
-	if err != nil {
-		return fmt.Errorf("open ngrok endpoint: %w", err)
+		return fmt.Errorf("listen on %s: %w", listenAddress, err)
 	}
 	defer listener.Close()
 	close(ready)
-	log.Printf("ngrok endpoint ready url=%s routes=%d", listener.URL().String(), len(config.Routes))
+	log.Printf("webhook listener ready address=%s routes=%d", listener.Addr().String(), len(config.Routes))
 
 	publicServer := &http.Server{
 		Handler:           handler,
@@ -125,9 +111,26 @@ func run() error {
 	defer shutdownCancel()
 	_ = publicServer.Shutdown(shutdownContext)
 	_ = healthServer.Shutdown(shutdownContext)
-	_ = agent.Disconnect()
 	if serveErr != nil && serveErr != http.ErrServerClosed {
 		return serveErr
+	}
+	return nil
+}
+
+// validateListenAddress keeps the public handler on a wildcard address, which is
+// the pod-wide address the listener Service targets, so a loopback or single-IP
+// bind cannot silently make the pod unreachable. 0.0.0.0 and :: name the same
+// dual-stack socket here -- Go reports either bind as [::] -- so both spellings
+// are accepted. Restricting who may connect is the listener's Cilium policy,
+// which admits only the cloudflared workload.
+func validateListenAddress(address string) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("parse WEBHOOK_LISTEN_ADDRESS: %w", err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsUnspecified() {
+		return fmt.Errorf("WEBHOOK_LISTEN_ADDRESS must bind a wildcard address (0.0.0.0 or ::)")
 	}
 	return nil
 }

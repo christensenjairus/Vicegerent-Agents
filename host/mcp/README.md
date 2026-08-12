@@ -16,7 +16,7 @@ native host harness (optional, manually supervised)
   -> the same ToolHive workloads
 ```
 
-Incoming webhook ingress is not part of this host stack. The cluster's dedicated `webhook-listener` Deployment owns the shared ngrok tunnel and provider signing Secrets; see [`images/webhook-listener/README.md`](../../images/webhook-listener/README.md).
+Incoming webhook ingress is not part of this host stack. The cluster's dedicated `webhook-listener` Deployment owns the shared Cloudflare Tunnel and provider signing Secrets; see [`images/webhook-listener/README.md`](../../images/webhook-listener/README.md).
 
 `thv` runs the workloads as Docker containers under ToolHive's own daemon - they persist across `start`/`stop` so OAuth tokens are not re-prompted. `start` recreates a workload when its declared package, environment, flags, secrets, or mounted configuration has changed. Supervisord manages the long-lived host processes:
 

@@ -81,9 +81,13 @@ policy:
     maxSilenceSeconds: 86400
     # Replace with the normal username Cerbos uses for silence ownership.
     createdBy: your-username
-# Reserve one stable ngrok domain and reuse it for every agent route.
+# Reuse one Cloudflare Tunnel hostname and tunnel UUID for every agent route.
+# The all-zero tunnelId below is a placeholder the chart rejects, so enabling an
+# agent's webhooks without replacing it fails the install instead of pinning
+# cloudflared to a tunnel that does not exist.
 webhooks:
-  publicUrl: https://your-domain.ngrok.app
+  publicUrl: https://hooks.your-domain.example
+  tunnelId: 00000000-0000-0000-0000-000000000000
 agents:
   - name: my-first-agent  # replace with an operator-chosen release name
     git:
@@ -92,7 +96,7 @@ agents:
       userEmail: you@moveworks.ai
     # IANA timezone used for timestamps and scheduled jobs.
     timezone: America/Los_Angeles
-    # Flip enabled after creating the ngrok and route Secrets described in docs/setup.md.
+    # Flip enabled after creating the Cloudflare Tunnel and route Secrets described in docs/setup.md.
     webhooks:
       enabled: false
       routes:

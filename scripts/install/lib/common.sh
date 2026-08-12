@@ -74,7 +74,8 @@ require_secret() {
 
 require_secret_key() {
   local ns="$1" name="$2" key="$3" hint="$4" value
-  value="$(kc -n "$ns" get secret "$name" -o "jsonpath={.data.${key}}" 2>/dev/null || true)"
+  # Bracket form with escaped dots so keys like credentials.json resolve.
+  value="$(kc -n "$ns" get secret "$name" -o "jsonpath={.data['${key//./\\.}']}" 2>/dev/null || true)"
   [[ -n "$value" ]] \
     || die "missing non-empty Secret key ${ns}/${name}:${key} - run: ${hint}"
 }
@@ -85,7 +86,7 @@ preflight_controller_secrets() {
   collect_webhook_routes "$VALUES_FILE" "$DEFAULTS_FILE" \
     || die "invalid webhook configuration in $VALUES_FILE"
   if [[ "$WEBHOOKS_ENABLED" == "1" ]]; then
-    require_secret_key webhooks vicegerent-ngrok-authtoken authtoken "$hint"
+    require_secret_key webhooks vicegerent-cloudflared-credentials credentials.json "$hint"
     local key
     for key in "${WEBHOOK_SECRET_KEYS[@]}"; do
       require_secret_key webhooks vicegerent-webhook-secrets "$key" "$hint"

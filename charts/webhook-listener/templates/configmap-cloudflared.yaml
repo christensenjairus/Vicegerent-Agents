@@ -1,0 +1,32 @@
+{{- if eq (include "vicegerent-webhook-listener.enabled" .) "true" }}
+{{- if not (regexMatch `^https://[a-z0-9.-]+$` .Values.webhooks.publicUrl) }}
+{{- fail "webhook-listener: webhooks.publicUrl must be an HTTPS origin with a lowercase host and no path, query, fragment, credentials, or trailing slash" }}
+{{- end }}
+{{- if not (regexMatch `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$` .Values.webhooks.tunnelId) }}
+{{- fail "webhook-listener: webhooks.tunnelId must be the lowercase UUID of the Cloudflare tunnel serving webhooks.publicUrl" }}
+{{- end }}
+{{- if eq .Values.webhooks.tunnelId "00000000-0000-0000-0000-000000000000" }}
+{{- fail "webhook-listener: webhooks.tunnelId is still the all-zero placeholder; set the UUID printed by `cloudflared tunnel create`" }}
+{{- end }}
+---
+# Locally-managed tunnel configuration. Keeping the ingress mapping in this
+# reviewed ConfigMap (instead of a remotely-managed tunnel token) means a
+# Cloudflare account compromise cannot repoint public traffic at another
+# in-cluster target such as the webhook scrubbing proxy.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: cloudflared
+data:
+  config.yaml: |
+    tunnel: {{ .Values.webhooks.tunnelId }}
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    no-autoupdate: true
+    ingress:
+      - hostname: {{ trimPrefix "https://" .Values.webhooks.publicUrl }}
+        service: http://webhook-listener.webhooks.svc.cluster.local:8081
+      - service: http_status:404
+{{- end }}

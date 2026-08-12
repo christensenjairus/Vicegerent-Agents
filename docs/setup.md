@@ -143,7 +143,7 @@ See [`host/mcp/README.md`](../host/mcp/README.md#prerequisites) for the exact se
 
 ### Platform-wide
 
-Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, generates the SearXNG signing key, the mcp-cerbos-shim self-token, and the Velero S3 credentials, and applies the model API keys you supply. When `values.yaml` enables webhook routes, it also discovers their Secret references and applies the ngrok authtoken and signing secrets you supply. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start. The Velero `velero/velero-credentials` Secret is authoritative; the host rclone auth key is reconciled from it.
+Generates the ghostunnel CA + server/client certificates and the egress-proxy MITM CA, generates the SearXNG signing key, the mcp-cerbos-shim self-token, and the Velero S3 credentials, and applies the model API keys you supply. When `values.yaml` enables webhook routes, it also discovers their Secret references and applies the Cloudflare tunnel credentials and signing secrets you supply. The host-side ghostunnel material is written to `~/.vicegerent/ghostunnel` (override with `GHOSTUNNEL_HOST_DIR`); the CA private key never enters Kubernetes. The server cert/key + CA cert are mirrored to a `ghostunnel-server` Secret so a host missing them recovers on start. The Velero `velero/velero-credentials` Secret is authoritative; the host rclone auth key is reconciled from it.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # set any key to apply it non-interactively
@@ -168,7 +168,7 @@ agentgateway-system  ghostunnel-ca (ConfigMap)     ca.crt                 (ghost
 agentgateway-system  ghostunnel-server             server.crt/key, ca.crt (host recovery copy)
 searxng              searxng-secret                secret_key             (session/limiter signing key)
 cerbos               mcp-cerbos-shim-self-token    token                  (shim's own re-entrant lookups)
-webhooks             vicegerent-ngrok-authtoken    authtoken              (shared ngrok tunnel, when configured)
+webhooks             vicegerent-cloudflared-credentials credentials.json  (shared Cloudflare tunnel, when configured)
 webhooks             vicegerent-webhook-secrets    <agent>__<route>       (one key per enabled route)
 egress-proxy         egress-proxy-ca               ca.crt, ca.key         (MITM CA private material)
 agent-sandbox        egress-proxy-ca-cert          ca.crt                 (MITM CA cert, trust only)
@@ -200,11 +200,22 @@ Slack remains optional. If any Slack value is configured, all four Slack values 
 
 ## Public webhook ingress
 
-Webhook ingress runs inside the cluster and shares one stable ngrok HTTPS origin across every agent and route. Reserve a static ngrok domain, set it once at `webhooks.publicUrl`, and configure provider metadata under each receiving agent. The public URL for a route is `<webhooks.publicUrl>/webhooks/<agent-name>/<route-name>`.
+Webhook ingress runs inside the cluster and shares one stable Cloudflare Tunnel HTTPS origin across every agent and route. Create a locally-managed tunnel on a zone in your Cloudflare account, set its hostname once at `webhooks.publicUrl` and its UUID at `webhooks.tunnelId`, and configure provider metadata under each receiving agent. The public URL for a route is `<webhooks.publicUrl>/webhooks/<agent-name>/<route-name>`.
+
+Create the tunnel and its DNS record once on the host:
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create vicegerent-webhooks        # note the tunnel UUID and credentials JSON path
+cloudflared tunnel route dns vicegerent-webhooks hooks.your-domain.example
+```
+
+`cloudflared tunnel login` writes an account-scoped `cert.pem`; keep it host-only (it is required only for `tunnel create` and `tunnel route dns`), mirroring how the ghostunnel CA key never enters Kubernetes. Only the tunnel-scoped credentials JSON becomes a cluster Secret, and it can run only this one tunnel; it cannot create endpoints or change DNS. `tunnel route dns` creates the required DNS record; if you skip it or create the tunnel another way, explicitly add a proxied CNAME record for the hostname pointing at `<tunnel UUID>.cfargotunnel.com` in the zone's DNS tab - the hostname serves no traffic until that record exists. The tunnel's ingress mapping is not configured on Cloudflare: the chart renders it into a `cloudflared` ConfigMap that forwards only `webhooks.publicUrl` to the listener's ClusterIP Service, so a dashboard change cannot repoint public traffic inside the cluster.
 
 ```yaml
 webhooks:
-  publicUrl: https://your-domain.ngrok.app
+  publicUrl: https://hooks.your-domain.example
+  tunnelId: 6ff42ae2-765d-4adf-8112-31c55c1551ef
 agents:
   - name: my-first-agent
     webhooks:
@@ -238,10 +249,10 @@ Each route also accepts `enabled`, `description`, `events`, `prompt`, `skills`, 
 
 Webhook permissions are set per agent rather than per route. The default allowlist in `agentDefaults.webhooks.toolsets` permits terminal, file, todo, and the configured `vmcp` MCP server, which supports incident investigation and `hermes send` while omitting browser, delegation, memory, and other unrelated capabilities. Set `agents[].webhooks.toolsets` in machine values to replace that list for all webhook sessions on one agent. Entries may be Hermes toolset names or configured MCP server names. An empty list disables all tools, including MCP access.
 
-Run platform-secret setup after saving these routes. It discovers every enabled route, prompts for its signing secret, and stores them as keys in the shared listener Secret. For a non-interactive run, use `WEBHOOK_SECRET_<AGENT>__<ROUTE>`; hyphens become underscores in the uppercase variable name. <!-- pragma: allowlist secret -->
+Run platform-secret setup after saving these routes. It applies the tunnel credentials JSON (rejecting one whose `TunnelID` does not match `webhooks.tunnelId`), then discovers every enabled route, prompts for its signing secret, and stores them as keys in the shared listener Secret. For a non-interactive run, use `CLOUDFLARED_CREDENTIALS_FILE` and `WEBHOOK_SECRET_<AGENT>__<ROUTE>`; hyphens become underscores in the uppercase variable name. <!-- pragma: allowlist secret -->
 
 ```bash
-export NGROK_AUTHTOKEN='<ngrok authtoken>'
+export CLOUDFLARED_CREDENTIALS_FILE="$HOME/.cloudflared/<tunnel UUID>.json"
 export WEBHOOK_SECRET_MY_FIRST_AGENT__PAGERDUTY_INCIDENTS='<PagerDuty signing secret>'
 ./vicegerent setup secrets platform
 ```
@@ -250,11 +261,11 @@ The equivalent manual commands produce the same Secret shapes:
 
 ```bash
 kubectl --context kind-vicegerent create namespace webhooks --dry-run=client -o yaml | kubectl --context kind-vicegerent apply -f -
-kubectl --context kind-vicegerent -n webhooks create secret generic vicegerent-ngrok-authtoken --from-literal=authtoken='<ngrok authtoken>'
+kubectl --context kind-vicegerent -n webhooks create secret generic vicegerent-cloudflared-credentials --from-file=credentials.json="$HOME/.cloudflared/<tunnel UUID>.json"
 kubectl --context kind-vicegerent -n webhooks create secret generic vicegerent-webhook-secrets --from-literal=my-first-agent__pagerduty-incidents='<PagerDuty signing secret>'
 ```
 
-Configure PagerDuty's webhook subscription URL as `https://your-domain.ngrok.app/webhooks/my-first-agent/pagerduty-incidents`. GitHub uses `X-Hub-Signature-256`, GitLab uses `X-Gitlab-Token`, Svix uses its `svix-*` headers, PagerDuty uses its rotation-aware `X-PagerDuty-Signature`, and generic V2 uses `X-Webhook-Signature-V2` plus `X-Webhook-Timestamp`. The listener rejects an invalid or replay-expired signature before forwarding and rereads the mounted signing Secret on every request, so rotating an existing route key does not copy material into or restart the agent.
+Configure PagerDuty's webhook subscription URL as `https://hooks.your-domain.example/webhooks/my-first-agent/pagerduty-incidents`. GitHub uses `X-Hub-Signature-256`, GitLab uses `X-Gitlab-Token`, Svix uses its `svix-*` headers, PagerDuty uses its rotation-aware `X-PagerDuty-Signature`, and generic V2 uses `X-Webhook-Signature-V2` plus `X-Webhook-Timestamp`. The listener rejects an invalid or replay-expired signature before forwarding and rereads the mounted signing Secret on every request, so rotating an existing route key does not copy material into or restart the agent. Svix and generic V2 are also single-use, so replaying one captured delivery a second time answers `403` with `reason=replay_detected` in the listener log; re-sign the payload with a fresh timestamp when rehearsing a route by hand.
 
 Alertmanager publishes no payload signature, so an `alertmanager` route is authenticated by a route-scoped credential that Alertmanager sends in the `Authorization` header. Store it as that route's key in the listener Secret and reference the same value from Alertmanager's receiver. The listener compares it in constant time and strips the header before the request reaches the agent.
 
@@ -262,12 +273,31 @@ Alertmanager publishes no payload signature, so an `alertmanager` route is authe
 receivers:
   - name: vicegerent
     webhook_configs:
-      - url: https://your-domain.ngrok.app/webhooks/my-first-agent/alertmanager-alerts
+      - url: https://hooks.your-domain.example/webhooks/my-first-agent/alertmanager-alerts
         http_config:
           authorization:
-***            type: Bearer
+            type: Bearer
             credentials_file: /etc/alertmanager/vicegerent-token
 ```
+
+### Harden the hostname on Cloudflare
+
+Signature verification in the listener remains the authentication boundary; Cloudflare-side rules remove scanning, probing, and volumetric noise before it reaches the tunnel. They matter more than they did with a random tunnel subdomain because a hostname on your zone appears in Certificate Transparency logs. All of the following fits the free plan:
+
+- **IP allowlist via an Access application.** In Zero Trust, go to Access controls, Applications, and add a self-hosted application for the webhook hostname. Create one `BYPASS` policy whose Include rules contain every source IP or CIDR that must send webhooks: GitHub publishes its `hooks` ranges at `https://api.github.com/meta`, GitLab.com documents its webhook range, PagerDuty publishes its webhook IPs, and Alertmanager sends from your own egress IP. Do not add a Block policy or an Allow policy. Requests that match the single BYPASS policy skip interactive authentication, while requests from every other source fail closed because they match no policy. Provider ranges drift, so revisit this one policy when a provider announces new egress IPs or deliveries start failing with edge blocks.
+- **Rate limiting.** Add the free rate-limiting rule on the hostname as a volumetric backstop; provider retries are far below any sane threshold.
+
+Choose no application-session duration or the shortest duration the dashboard permits. A BYPASS request does not create an Access session, but avoiding long-lived session settings keeps the application aligned with its machine-to-machine purpose.
+
+After saving the application, test the hostname from a source that is not in the BYPASS policy, replacing the example with your own domain:
+
+```bash
+curl https://hooks.your-domain.example -sSI | grep -Ei '^(HTTP/|location:)'
+```
+
+The request must be stopped at the edge rather than answered by the listener. Access does that either with a `403` or with a redirect to your `cloudflareaccess.com` login page, depending on how it classifies the request, so treat any of those as a pass. Run the same command from an allowlisted source; it must reach the listener, which answers `/` with `404`. Then verify an actual provider redelivery or use the signed rehearsal below.
+
+Keep the tunnel's CNAME record proxied (the `cfargotunnel.com` target only resolves through the proxy), and do not enable Bot Fight Mode for the zone if it would cover this hostname: provider POSTs can be classified as bot traffic and dropped. Access policies that require credentials, including service tokens, do not fit webhook senders because providers cannot attach the required headers; the single IP-based BYPASS policy is the Access pattern that works.
 
 ### Rehearsing a route with dummy data
 
@@ -279,7 +309,7 @@ BODY='{"event":{"event_type":"incident.triggered","data":{"number":42,"title":"D
 TIMESTAMP="$(date +%s)"
 SIGNATURE="$(printf '%s.%s' "$TIMESTAMP" "$BODY" | openssl dgst -sha256 -hmac "$ROUTE_SECRET" -hex | awk '{print $2}')"
 
-curl -sS -X POST https://your-domain.ngrok.app/webhooks/my-first-agent/pagerduty-incidents-test \
+curl -sS -X POST https://hooks.your-domain.example/webhooks/my-first-agent/pagerduty-incidents-test \
   -H 'Content-Type: application/json' \
   -H "X-Webhook-Timestamp: $TIMESTAMP" \
   -H "X-Webhook-Signature-V2: $SIGNATURE" \
@@ -288,7 +318,7 @@ curl -sS -X POST https://your-domain.ngrok.app/webhooks/my-first-agent/pagerduty
 
 The listener replies `202 Accepted` immediately and the agent delivers its findings to the route's configured channel. The signature covers `<timestamp>.<body>`, and the timestamp must be within five minutes, so sign the exact bytes you send and do not reuse an old signature. An explicitly configured `alertmanager-alerts-test` route works the same way with an Alertmanager-shaped body.
 
-The listener is a single replica because two processes cannot own the same ngrok endpoint concurrently. Its ngrok credential and signing material stay in the `webhooks` namespace. After authentication, every delivery passes through the dedicated `webhook-egress-proxy`, which redacts secret-shaped content before forwarding. Set `policy.contentSafety.promptInjection.status: enabled` to run the same two-stage prompt-injection detector used for MCP results over the redacted webhook body; confirmed injections and payloads that exhaust the 20-call verification budget are rejected, while judge-service failures fail open. The agent's port 8644 is a ClusterIP whose Cilium HTTP policy accepts only its configured `POST /webhooks/<route>` paths from that dedicated proxy. Agents have no egress to the listener or dedicated proxy, and the shared agent egress proxy cannot reach agent webhook ports. See [`images/webhook-listener/README.md`](../images/webhook-listener/README.md) for protocol and operational details.
+The listener and `cloudflared` are separate single-replica workloads, each replaced on rollout rather than overlapped. Their Secrets stay in the `webhooks` namespace: tunnel credentials mount only into `cloudflared`, while provider signing material mounts only into the listener. After authentication, every delivery passes through the dedicated `webhook-egress-proxy`, which redacts secret-shaped content before forwarding. Set `policy.contentSafety.promptInjection.status: enabled` to run the same two-stage prompt-injection detector used for MCP results over the redacted webhook body; confirmed injections and payloads that exhaust the 20-call verification budget are rejected, while judge-service failures fail open. The agent's port 8644 is a ClusterIP whose Cilium HTTP policy accepts only its configured `POST /webhooks/<route>` paths from that dedicated proxy. Agents have no egress to the listener or dedicated proxy, and the shared agent egress proxy cannot reach agent webhook ports. See [`images/webhook-listener/README.md`](../images/webhook-listener/README.md) for protocol and operational details.
 
 ### Verify cross-agent isolation
 

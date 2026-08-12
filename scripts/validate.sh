@@ -348,7 +348,7 @@ CHART_ARGS=(
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES"
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES"
   "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set-file secretPatterns=$SECRET_PATTERNS_FILE --set-file promptInjectionPatterns=$PROMPT_INJECTION_PATTERNS_FILE"
-  "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set agents[0].webhooks.enabled=true"
+  "-f $DEFAULTS_VALUES -f $EXAMPLE_VALUES --set agents[0].webhooks.enabled=true --set webhooks.tunnelId=6ff42ae2-765d-4adf-8112-31c55c1551ef"
   "-f $(agent_defaults_slice) -f $(agent0_slice) --set webhooks.enabled=true"
 )
 

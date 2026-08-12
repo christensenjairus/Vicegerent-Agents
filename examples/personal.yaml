@@ -29,7 +29,8 @@ policy:
     maxSilenceSeconds: 1209600
     createdBy: jchristensen
 webhooks:
-  publicUrl: https://popcorn-padlock-raider.ngrok-free.dev
+  publicUrl: https://vicegerent-personal.hahomelabs.com
+  tunnelId: d63445b5-3ce1-43bb-a41e-ddb60667b08c
 agents:
   - name: bot-jchristensen
     obsidian:
