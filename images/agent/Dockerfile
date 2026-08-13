@@ -359,15 +359,16 @@ RUN apt-get -o Acquire::Retries=3 update \
     && find /src/apps -mindepth 1 -maxdepth 1 ! -name shared -exec rm -rf {} +
 
 # ---------------------------------------------------------------------------
-# Final image.
+# Agent image build stages.
 #
 # LAYER ORDER IS LOAD-BEARING -- do not reorder casually.
 #
 # Docker invalidates the cache by prefix: changing instruction N rebuilds N
-# through the end of the stage, regardless of layer size. So this stage is
-# ordered by how often its input changes, most stable first:
+# through the end of its stage, regardless of layer size. The consecutive
+# sandbox-base and runtime stages are ordered by how often their inputs change,
+# most stable first:
 #
-#   base-image-coupled OS packages and runtime substrate
+#   base-image-coupled OS packages and generic sandbox runtime substrate
 #     -> tagged Hermes source + dependency manifests
 #     -> big stable COPY --from trees (go toolchain, model seed, bazel cache)
 #     -> pinned single binaries from the `tools` stage
@@ -387,8 +388,8 @@ RUN apt-get -o Acquire::Retries=3 update \
 # still speeding up rebuilds.
 # ---------------------------------------------------------------------------
 # Keep the readable tag for update discovery and pin its multi-platform index so
-# an upstream DHI rebuild cannot silently invalidate the entire runtime stage.
-FROM dhi.io/python:3.13-debian13-dev@sha256:5985b54ea3f145c9106890612792a0eb17c99e742e11fd9c391658f1946e1777 AS runtime
+# an upstream DHI rebuild cannot silently invalidate the sandbox-base stage.
+FROM dhi.io/python:3.13-debian13-dev@sha256:5985b54ea3f145c9106890612792a0eb17c99e742e11fd9c391658f1946e1777 AS sandbox-base
 USER root
 
 LABEL org.opencontainers.image.title="vicegerent-agent" \
@@ -493,91 +494,16 @@ RUN groupadd --gid 10000 agent \
     && test "$(getent passwd 10000 | cut -d: -f1,6)" = "agent:/opt/data" \
     && ! getent passwd hermes >/dev/null
 
-COPY --chmod=0755 --from=hermes_source /src/docker/tini-shim.sh /usr/bin/tini
-
 COPY --chmod=0755 --from=uv_source /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
 COPY --chmod=0755 --from=node_source /usr/local/bin/node /usr/local/bin/
 COPY --from=node_source /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-WORKDIR /opt/hermes
-
-# Install the tagged source using the same dependency and frontend sequence as
-# its published image. Separate manifest copies preserve the expensive caches.
-COPY --from=hermes_source /src/package.json /src/package-lock.json ./
-COPY --from=hermes_source /src/web/package.json web/
-COPY --from=hermes_source /src/ui-tui/package.json ui-tui/
-COPY --from=hermes_source /src/ui-tui/packages/hermes-ink/ ui-tui/packages/hermes-ink/
-COPY --from=hermes_source /src/apps/shared/ apps/shared/
-ENV npm_config_install_links=false
-RUN npm ci --prefer-offline --no-audit --fetch-retries=5 \
-    && npm cache clean --force \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=hermes_source \
-    /src/plugins/platforms/photon/sidecar/package.json \
-    /src/plugins/platforms/photon/sidecar/package-lock.json \
-    /src/plugins/platforms/photon/sidecar/patch-spectrum-mixed-attachments.mjs \
-    plugins/platforms/photon/sidecar/
-RUN cd plugins/platforms/photon/sidecar \
-    && npm ci --no-audit --fetch-retries=5 \
-    && npm cache clean --force
-
-COPY --from=hermes_source /src/pyproject.toml /src/uv.lock ./
-RUN touch ./README.md \
-    && uv sync --frozen --no-install-project \
-        --extra all \
-        --extra messaging \
-        --extra otlp \
-        --extra anthropic \
-        --extra bedrock \
-        --extra azure-identity \
-        --extra hindsight \
-        --extra matrix
-
-COPY --from=hermes_source /src/web/ web/
-COPY --from=hermes_source /src/ui-tui/ ui-tui/
-COPY --from=hermes_source /src/apps/shared/ apps/shared/
-RUN cd web \
-    && npm run build \
-    && cd ../ui-tui \
-    && npm run build
-
-COPY --link --chmod=a+rX,go-w --from=hermes_source /src/ .
-ARG HERMES_GIT_SHA
-RUN uv pip install --no-cache-dir --no-deps -e "." \
-    && mkdir -p /opt/hermes/bin \
-    && printf 'docker\n' > /opt/hermes/.install_method \
-    && printf '%s\n' "${HERMES_GIT_SHA}" > /opt/hermes/.hermes_build_sha
-
-COPY --from=hermes_source /src/docker/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
-RUN mkdir -p /etc/cont-init.d \
-    && printf '#!/command/with-contenv sh\nexec /opt/hermes/docker/stage2-hook.sh\n' \
-        > /etc/cont-init.d/01-hermes-setup \
-    && chmod +x /etc/cont-init.d/01-hermes-setup
-COPY --chmod=0755 --from=hermes_source /src/docker/cont-init.d/015-supervise-perms /etc/cont-init.d/015-supervise-perms
-COPY --chmod=0755 --from=hermes_source /src/docker/cont-init.d/02-reconcile-profiles /etc/cont-init.d/02-reconcile-profiles
-COPY --chmod=0755 --from=hermes_source /src/docker/hermes-exec-shim.sh /opt/hermes/bin/hermes
-COPY --chmod=0755 --from=hermes_source /src/docker/entrypoint-dispatch.sh /opt/hermes/docker/entrypoint-dispatch.sh
-
-ENV HOME=/opt/data \
-    HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist \
-    HERMES_TUI_DIR=/opt/hermes/ui-tui \
-    HERMES_HOME=/opt/data/.hermes \
-    HERMES_WRITE_SAFE_ROOT=/opt/data \
-    HERMES_DISABLE_LAZY_INSTALLS=1 \
-    HERMES_LAZY_INSTALL_TARGET=/opt/data/.hermes/lazy-packages \
-    PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
-RUN mkdir -p /opt/data/.hermes /opt/data/skills \
-    && chown -R 10000:10000 /opt/data
-VOLUME [ "/opt/data" ]
-
-# requirements.txt tools (pre-commit, detect-secrets, yamllint) live in the
-# Hermes venv but are not on PATH upstream. The Docker ENV covers every process;
-# the profile.d entry preserves the same ordering for base variants that source
-# it. The exec shim must stay ahead of the real venv binary so root invocations
-# drop to the runtime account before writing Hermes state.
+# Bash startup configuration belongs in sandbox-base so every harness has the
+# same non-interactive command telemetry and interactive prompt behavior. The
+# Hermes skill permission adjustment is deferred to runtime, after Hermes creates
+# /opt/hermes/skills; keeping it out of this stage avoids a nonexistent-path run.
 #
 # Shadow low-frequency Bash builtins that have a real coreutils/util-linux
 # equivalent so invoking them triggers a genuine execve() -- Tetragon's
@@ -596,12 +522,7 @@ VOLUME [ "/opt/data" ]
 # logical $PWD, and external kill can't take job specs (%1) -- global
 # BASH_ENV shadowing means every bash -c in the sandbox gets this, not just
 # interactive sessions.
-#
-# Bundled skill files are installed 444 (root-owned in the image); make them
-# 644 so skill_manager_tool can patch them after copytree seeds /opt/data/skills.
-# This chmod duplicates every SKILL.md into this layer (a metadata change
-# forces overlayfs copy-up), so it belongs here with the other base-image-only
-# work rather than after anything that changes more often.
+# The Hermes venv PATH below becomes valid in the final runtime stage.
 ENV BASH_ENV=/etc/bash-shadow-builtins.sh
 COPY --chmod=0644 bash-prompt.sh /etc/vicegerent-bash-prompt.sh
 RUN printf 'export PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:$PATH"\n' > /etc/profile.d/00-agent-venv-path.sh \
@@ -609,8 +530,7 @@ RUN printf 'export PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:$PATH"\n' > /etc/
     && printf 'enable -n echo false kill printf pwd true\n' > /etc/bash-shadow-builtins.sh \
     && BASH_ENV=/etc/bash-shadow-builtins.sh bash -c '[[ $(type -t "[") == builtin && $(type -t test) == builtin ]]' \
     && chmod 644 /etc/bash-shadow-builtins.sh \
-    && printf '\n# Vicegerent interactive Bash prompt (tmux starts non-login Bash).\n[ -r /etc/vicegerent-bash-prompt.sh ] && . /etc/vicegerent-bash-prompt.sh\n' >> /etc/bash.bashrc \
-    && find /opt/hermes/skills -name "SKILL.md" -exec chmod 644 {} +
+    && printf '\n# Vicegerent interactive Bash prompt (tmux starts non-login Bash).\n[ -r /etc/vicegerent-bash-prompt.sh ] && . /etc/vicegerent-bash-prompt.sh\n' >> /etc/bash.bashrc
 
 # Full Go toolchain so agents can build/test Go code (e.g. mcp-cerbos-shim).
 # Large but changes only with the golang builder stage's FROM.
@@ -641,17 +561,6 @@ RUN printf 'export PATH="/usr/local/go/bin:$PATH"\n' >> /etc/profile.d/00-agent-
     && zoekt-local-sync list -index "$smoke/index" | grep -q repo \
     && rm -rf "$smoke" \
     && repo-map --help >/dev/null
-
-# Bake the Mnemosyne + STT model seed outside /opt/data so the data PVC cannot shadow it.
-# The largest single tree in the image and effectively never changes. Modes are
-# set in the mnemosyne-models stage, not here: a `chmod -R` in this stage would
-# copy the whole multi-hundred-MB tree up into a second layer for nothing.
-COPY --from=mnemosyne-models /seed /opt/hermes/mnemosyne-seed
-RUN test -f /opt/hermes/mnemosyne-seed/mnemosyne/models/MiniCPM5-1B-Q4_K_M.gguf \
-    && test -d /opt/hermes/mnemosyne-seed/cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q \
-    && test -d /opt/hermes/mnemosyne-seed/cache/faster-whisper/models--Systran--faster-whisper-base \
-    && find /opt/hermes/mnemosyne-seed -type f -exec sha256sum {} + \
-      | sort -k2 | sha256sum | cut -d' ' -f1 > /opt/hermes/mnemosyne-seed.sha256
 
 # bazelisk + buildifier/buildozer binaries and the pre-warmed bazelisk cache
 # (BAZELISK_HOME, baked in the `tools` stage against BAZEL_PINNED_VERSION --
@@ -748,23 +657,6 @@ RUN --mount=type=bind,source=git-guard,target=/tmp/git-guard \
     && grep -q '^readonly TRUSTED_HOOKS=/opt/vicegerent/git-hooks$' /usr/local/bin/git \
     && bash /tmp/git-guard/test-git-guard.sh /tmp/git-guard
 
-# hermes-lcm must live in Hermes' bundled context_engine tree, not ~/.hermes/plugins.
-# renovate: datasource=github-releases depName=stephenschoettler/hermes-lcm
-ARG HERMES_LCM_VERSION=v0.20.0
-RUN LCM_DEST="$(/opt/hermes/.venv/bin/python -c 'import plugins.context_engine as p, os; print(os.path.dirname(p.__file__))')/lcm" \
-    && mkdir -p "$LCM_DEST" \
-    && curl -fsSL "https://github.com/stephenschoettler/hermes-lcm/archive/refs/tags/${HERMES_LCM_VERSION}.tar.gz" \
-        | tar -xz -C "$LCM_DEST" --strip-components=1 \
-    && /opt/hermes/.venv/bin/python -c "from plugins.context_engine import discover_context_engines as d; assert 'lcm' in [n for n, _, _ in d()], 'lcm engine not discovered after bake'; print('hermes-lcm ${HERMES_LCM_VERSION} baked + discoverable')"
-
-# Runtime Python deps for the egress-locked sandbox; Renovate tracks requirements.txt.
-# Second-largest RUN layer in the image and re-pushed in full whenever any pin
-# moves, so it sits below everything that changes less often. The cache mount
-# keeps uv's download cache out of the image while still making rebuilds fast.
-RUN --mount=type=bind,source=requirements.txt,target=/tmp/requirements.txt \
-    --mount=type=cache,id=vicegerent-agent-uv-v1,target=/root/.cache/uv,sharing=locked \
-    uv pip install --python /opt/hermes/.venv/bin/python -r /tmp/requirements.txt
-
 # Global npm CLIs used by the bundled agent harnesses; package.json is the Renovate-tracked source.
 # The most frequently bumped large input in the image (claude-code, codex, and
 # opencode all move weekly or faster), so it is deliberately the last big layer:
@@ -809,7 +701,124 @@ RUN chmod +x /opt/vicegerent/claude-lsp/bin/typescript-lsp \
 COPY vmcp-bridge/vmcp-stdio-bridge.py /usr/local/bin/vmcp-stdio-bridge
 RUN --mount=type=bind,source=vmcp-bridge,target=/tmp/vmcp-bridge \
     chmod +x /usr/local/bin/vmcp-stdio-bridge \
-    && /opt/hermes/.venv/bin/python -m py_compile /usr/local/bin/vmcp-stdio-bridge \
+    && python3 -m py_compile /usr/local/bin/vmcp-stdio-bridge
+
+# sandbox-base is the reusable hardened harness checkpoint. A future personal
+# overlay repository can build its Hermes-and-patches image FROM this stage, while
+# the org-supported image can stop here for generic claude-code/codex/opencode use.
+FROM sandbox-base AS runtime
+
+COPY --chmod=0755 --from=hermes_source /src/docker/tini-shim.sh /usr/bin/tini
+
+WORKDIR /opt/hermes
+
+# Install the tagged source using the same dependency and frontend sequence as
+# its published image. Separate manifest copies preserve the expensive caches.
+COPY --from=hermes_source /src/package.json /src/package-lock.json ./
+COPY --from=hermes_source /src/web/package.json web/
+COPY --from=hermes_source /src/ui-tui/package.json ui-tui/
+COPY --from=hermes_source /src/ui-tui/packages/hermes-ink/ ui-tui/packages/hermes-ink/
+COPY --from=hermes_source /src/apps/shared/ apps/shared/
+ENV npm_config_install_links=false
+RUN npm ci --prefer-offline --no-audit --fetch-retries=5 \
+    && npm cache clean --force \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=hermes_source \
+    /src/plugins/platforms/photon/sidecar/package.json \
+    /src/plugins/platforms/photon/sidecar/package-lock.json \
+    /src/plugins/platforms/photon/sidecar/patch-spectrum-mixed-attachments.mjs \
+    plugins/platforms/photon/sidecar/
+RUN cd plugins/platforms/photon/sidecar \
+    && npm ci --no-audit --fetch-retries=5 \
+    && npm cache clean --force
+
+COPY --from=hermes_source /src/pyproject.toml /src/uv.lock ./
+RUN touch ./README.md \
+    && uv sync --frozen --no-install-project \
+        --extra all \
+        --extra messaging \
+        --extra otlp \
+        --extra anthropic \
+        --extra bedrock \
+        --extra azure-identity \
+        --extra hindsight \
+        --extra matrix
+
+COPY --from=hermes_source /src/web/ web/
+COPY --from=hermes_source /src/ui-tui/ ui-tui/
+COPY --from=hermes_source /src/apps/shared/ apps/shared/
+RUN cd web \
+    && npm run build \
+    && cd ../ui-tui \
+    && npm run build
+
+COPY --link --chmod=a+rX,go-w --from=hermes_source /src/ .
+ARG HERMES_GIT_SHA
+RUN uv pip install --no-cache-dir --no-deps -e "." \
+    && mkdir -p /opt/hermes/bin \
+    && printf 'docker\n' > /opt/hermes/.install_method \
+    && printf '%s\n' "${HERMES_GIT_SHA}" > /opt/hermes/.hermes_build_sha
+
+COPY --from=hermes_source /src/docker/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+RUN mkdir -p /etc/cont-init.d \
+    && printf '#!/command/with-contenv sh\nexec /opt/hermes/docker/stage2-hook.sh\n' \
+        > /etc/cont-init.d/01-hermes-setup \
+    && chmod +x /etc/cont-init.d/01-hermes-setup
+COPY --chmod=0755 --from=hermes_source /src/docker/cont-init.d/015-supervise-perms /etc/cont-init.d/015-supervise-perms
+COPY --chmod=0755 --from=hermes_source /src/docker/cont-init.d/02-reconcile-profiles /etc/cont-init.d/02-reconcile-profiles
+COPY --chmod=0755 --from=hermes_source /src/docker/hermes-exec-shim.sh /opt/hermes/bin/hermes
+COPY --chmod=0755 --from=hermes_source /src/docker/entrypoint-dispatch.sh /opt/hermes/docker/entrypoint-dispatch.sh
+
+ENV HOME=/opt/data \
+    HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist \
+    HERMES_TUI_DIR=/opt/hermes/ui-tui \
+    HERMES_HOME=/opt/data/.hermes \
+    HERMES_WRITE_SAFE_ROOT=/opt/data \
+    HERMES_DISABLE_LAZY_INSTALLS=1 \
+    HERMES_LAZY_INSTALL_TARGET=/opt/data/.hermes/lazy-packages \
+    PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
+# Bundled skill files are installed 444 (root-owned in the image); make them
+# 644 so skill_manager_tool can patch them after copytree seeds /opt/data/skills.
+# This chmod duplicates every SKILL.md into this layer (a metadata change
+# forces overlayfs copy-up), so it belongs here with the other base-image-only
+# work rather than after anything that changes more often.
+# Hermes creates /opt/hermes/skills; chmod it here rather than sandbox-base,
+# where that path does not exist yet.
+RUN mkdir -p /opt/data/.hermes /opt/data/skills \
+    && chown -R 10000:10000 /opt/data \
+    && find /opt/hermes/skills -name "SKILL.md" -exec chmod 644 {} +
+VOLUME [ "/opt/data" ]
+
+# Bake the Mnemosyne + STT model seed outside /opt/data so the data PVC cannot shadow it.
+# The largest single tree in the image and effectively never changes. Modes are
+# set in the mnemosyne-models stage, not here: a `chmod -R` in this stage would
+# copy the whole multi-hundred-MB tree up into a second layer for nothing.
+COPY --from=mnemosyne-models /seed /opt/hermes/mnemosyne-seed
+RUN test -f /opt/hermes/mnemosyne-seed/mnemosyne/models/MiniCPM5-1B-Q4_K_M.gguf \
+    && test -d /opt/hermes/mnemosyne-seed/cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q \
+    && test -d /opt/hermes/mnemosyne-seed/cache/faster-whisper/models--Systran--faster-whisper-base \
+    && find /opt/hermes/mnemosyne-seed -type f -exec sha256sum {} + \
+      | sort -k2 | sha256sum | cut -d' ' -f1 > /opt/hermes/mnemosyne-seed.sha256
+
+# hermes-lcm must live in Hermes' bundled context_engine tree, not ~/.hermes/plugins.
+# renovate: datasource=github-releases depName=stephenschoettler/hermes-lcm
+ARG HERMES_LCM_VERSION=v0.20.0
+RUN LCM_DEST="$(/opt/hermes/.venv/bin/python -c 'import plugins.context_engine as p, os; print(os.path.dirname(p.__file__))')/lcm" \
+    && mkdir -p "$LCM_DEST" \
+    && curl -fsSL "https://github.com/stephenschoettler/hermes-lcm/archive/refs/tags/${HERMES_LCM_VERSION}.tar.gz" \
+        | tar -xz -C "$LCM_DEST" --strip-components=1 \
+    && /opt/hermes/.venv/bin/python -c "from plugins.context_engine import discover_context_engines as d; assert 'lcm' in [n for n, _, _ in d()], 'lcm engine not discovered after bake'; print('hermes-lcm ${HERMES_LCM_VERSION} baked + discoverable')"
+
+# Runtime Python deps for the egress-locked sandbox; Renovate tracks requirements.txt.
+# This mixed requirements set includes Hermes integrations and installs into Hermes' venv, so it remains in runtime rather than sandbox-base.
+# Second-largest RUN layer in the image and re-pushed in full whenever any pin
+# moves, so it sits below everything that changes less often. The cache mount
+# keeps uv's download cache out of the image while still making rebuilds fast.
+RUN --mount=type=bind,source=requirements.txt,target=/tmp/requirements.txt \
+    --mount=type=cache,id=vicegerent-agent-uv-v1,target=/root/.cache/uv,sharing=locked \
+    --mount=type=bind,source=vmcp-bridge,target=/tmp/vmcp-bridge \
+    uv pip install --python /opt/hermes/.venv/bin/python -r /tmp/requirements.txt \
     && VMCP_BRIDGE_UNDER_TEST=/usr/local/bin/vmcp-stdio-bridge \
         /opt/hermes/.venv/bin/python /tmp/vmcp-bridge/test-vmcp-stdio-bridge.py
 

@@ -35,6 +35,12 @@ make push
 
 Agent builds import and export `harbor.hahomelabs.com/vicegerent/agent:buildcache` using BuildKit's `mode=max` registry cache. This retains independent builder stages such as `sqlite_build` after Docker's local cache garbage collection; override `CACHE_REF` only when deliberately isolating a build cache.
 
+## Runtime checkpoint
+
+`Dockerfile` introduces `sandbox-base` as an internal checkpoint in the final `runtime` build path. It contains the harness-generic substrate built once: base OS packages, the SQLite build, s6-overlay, the `agent` user, Go with `repo-map` and Zoekt, Bazel tooling, the pinned single-binary tools (`buf`, `cerbos`, `fd`, `golangci-lint`, `hadolint`, `helm`, `jq`, `kubeconform`, `kustomize`, `rtk`, `shfmt`, `terraform`, `terraform-ls`, `terragrunt`, `tirith`, and `yq`), the vMCP redirect stub, git guard, globally installed Claude Code/Codex/OpenCode CLIs, `codex-lsp`, and `claude-lsp`.
+
+The final `runtime` image layers Hermes-specific content on that checkpoint: Hermes source, npm and uv installs, the 38 patches, skills synchronization, and s6 Hermes hooks. This is a zero-behavior-change refactor: `docker build .` with no target still produces byte-identical output. The checkpoint gives a future separate personal repository a supported `FROM` base for a Hermes-carrying overlay image without forking this Dockerfile; no Hermes content has been removed or moved.
+
 ## Base and source pins
 
 `FROM` keeps an explicit DHI Python development tag for update discovery and pins its multi-platform index digest so an upstream rebuild cannot silently replace the final-stage parent and invalidate its complete cache chain. Hermes is independently pinned by `HERMES_VERSION` and `HERMES_GIT_SHA`; the clone must resolve the release tag to that exact commit before the build continues. When advancing Hermes, update both pins and re-verify the complete patch stack. The agent `Sandbox` (rendered by `charts/agent`) is repointed at this Harbor image via `values.defaults.yaml`'s `agentDefaults.image`, tracked by Renovate's `custom.regex` manager in `renovate.json`.
