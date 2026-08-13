@@ -10,7 +10,7 @@ policy:
         - christensenjairus/clustercreator
       username: christensenjairus
     gitlab:
-      allowedProjects: ['7', '148', '150']
+      allowedProjects: ['7', '148', '150', '217']
       username: jchristensen
   workManagement:
     jira:

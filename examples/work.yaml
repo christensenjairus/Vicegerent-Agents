@@ -17,7 +17,7 @@ policy:
       forkOwners: [jchristensen_movester]
       username: jchristensen_movester
     gitlab:
-      allowedProjects: ['148']
+      allowedProjects: ['148', '217']
       username: jchristensen
   workManagement:
     jira:
