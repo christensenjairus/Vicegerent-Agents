@@ -14,6 +14,7 @@ policy:
         - christensenjairus/vicegerent-agents
         - jchristensen_movester/Knowledge-Vault
         - moveworks-emu/vicegerent
+        - jchristensen_movester/vicegerent
       forkRequiredOwners: [moveworks-emu, christensenjairus]
       forkOwners: [jchristensen_movester]
       username: jchristensen_movester
