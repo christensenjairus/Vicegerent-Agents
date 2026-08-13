@@ -331,14 +331,19 @@ def validate_platform_naming_contracts() -> None:
         )
     dockerfile = (REPO / "images/agent/Dockerfile").read_text(encoding="utf-8")
     dhi_base = re.search(
-        r"^FROM dhi\.io/python:\d+\.\d+-debian\d+-dev@sha256:[0-9a-f]{64} AS runtime$",
+        r"^FROM dhi\.io/python:\d+\.\d+-debian\d+-dev@sha256:[0-9a-f]{64} AS sandbox-base$",
         dockerfile,
         re.MULTILINE,
     )
     if dhi_base is None:
         die(
-            "the generic agent image runtime stage must use a tagged and "
+            "the generic agent image sandbox-base stage must use a tagged and "
             "digest-pinned DHI base"
+        )
+    if re.search(r"^FROM sandbox-base AS runtime$", dockerfile, re.MULTILINE) is None:
+        die(
+            "the Hermes-specific runtime stage must build FROM the generic "
+            "sandbox-base checkpoint"
         )
     runtime_packages = dockerfile[
         dhi_base.end() : dockerfile.index("COPY --from=sqlite_build", dhi_base.end())
